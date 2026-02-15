@@ -1,0 +1,142 @@
+Overview
+Contexte
+En assurance automobile, la prime d’assurance représente le prix payé par un client pour couvrir le risque de survenance d’un sinistre. Du point de vue de l’assureur, l’objectif est double :
+
+Être compétitif : proposer une prime la plus faible possible aux clients qui ne subiront pas de sinistre.
+Être rentable : s’assurer que, pour les clients ayant un sinistre, la prime couvre en moyenne le coût des indemnisations.
+Dans un cadre actuariel classique, la prime pure peut être décomposée comme suit :
+
+Prime = Probabilité de sinistre × Montant attendu du sinistre
+
+Cette décomposition conduit naturellement à la construction de deux modèles de Machine Learning distincts :
+
+Un modèle de fréquence / sinistralité : prédire la probabilité qu’un client ait au moins un sinistre.
+Un modèle de gravité : prédire le montant du sinistre conditionnellement à l’existence d’un sinistre.
+Objectifs de la compétition
+À partir d’un historique de contrats d’assurance et de sinistres, votre mission est de construire des modèles permettant de tarifer une prime d’assurance automobile pour de nouveaux clients (prospects).
+
+La compétition est organisée en binômes de deux équipes (2 étudiants par équipe) :
+
+Une équipe est responsable du modèle de fréquence (probabilité de sinistre).
+L’autre équipe est responsable du modèle de gravité (montant du sinistre).
+Les deux équipes d’un même binôme devront :
+
+Collaborer sur la compréhension des données et des variables.
+Présenter ensemble leur approche globale de tarification.
+Mutualiser leurs prédictions respectives pour soumettre des propositions de primes.
+Détailler séparément la modélisation, les choix méthodologiques et les résultats de leur propre modèle.
+Tâches attendues
+Selon votre rôle dans le binôme, vous devrez :
+
+Modèle de fréquence
+Modéliser la probabilité qu’un client ait un sinistre.
+Choisir des métriques adaptées à un problème de classification probabiliste.
+Produire des probabilités bien calibrées et interprétables.
+Modèle de gravité
+Modéliser le montant du sinistre pour les clients ayant eu un sinistre.
+Gérer la forte asymétrie et la présence de valeurs extrêmes.
+Choisir une métrique cohérente avec un objectif de coût.
+Livrables attendus
+Un score Kaggle basé sur la performance de votre modèle.
+
+Une présentation commune expliquant :
+
+La compréhension métier du problème.
+
+Les choix de features et de modèles.
+
+Les résultats obtenus.
+
+Une explication détaillée et spécifique du modèle de fréquence ou de gravité selon votre rôle.
+
+Start
+
+8 days ago
+Close
+a month to go
+Evaluation
+Métrique d’évaluation
+L’évaluation des modèles est réalisée au niveau de la prime d’assurance prédite, et non séparément sur la fréquence ou la gravité.
+
+Pour chaque client ( i ), la prime prédite est définie comme :
+
+prime_pred_i = proba_pred_i x montant_pred_i
+La métrique officielle de la compétition est la Mean Squared Error (MSE) entre la prime prédite et le coût réel observé :
+
+RMSE = sqrt(mean((prime_pred_i - cout_i)^2))
+où :
+
+cout_i = 0 si le client n’a pas eu de sinistre,
+cout_i = montant_i si le client a eu un sinistre.
+Pourquoi la RMSE ?
+Elle pénalise fortement les erreurs de tarification importantes, ce qui est critique en assurance.
+Elle reflète directement l’objectif métier : minimiser l’écart entre la prime demandée et le coût réel du sinistre.
+Elle permet de comparer équitablement des approches différentes (modèles simples ou plus complexes).
+Une mauvaise estimation de la probabilité ou du montant impactera négativement le score final.
+
+Format de soumission
+Les prédictions doivent être fournies dans un fichier CSV respectant le format suivant :
+
+Nom du fichier : submission.csv
+Colonnes attendues :
+id : identifiant du client
+pred : prime d’assurance prédite
+Exemple :
+
+```csv id,pred 0,245.73 1,0.00 2,1289.45
+
+
+
+Dataset Description
+Données
+Les données fournies correspondent à un échantillon de contrats d’assurance automobile observés sur une période donnée.
+
+Chaque ligne représente un contrat client et contient :
+
+Des caractéristiques du client (profil, historique, etc.),
+Des caractéristiques du véhicule assuré,
+Des informations sur la sinistralité observée :
+présence ou non d’au moins un sinistre,
+montant total des sinistres sur la période (le cas échéant).
+Ces données permettent de construire :
+
+un modèle de fréquence : probabilité qu’un contrat génère un sinistre,
+un modèle de gravité : montant du sinistre conditionnellement à la survenance d’un sinistre.
+Le jeu de données est déséquilibré :
+
+la majorité des contrats ne génèrent aucun sinistre,
+les montants de sinistres présentent une forte asymétrie et des valeurs extrêmes.
+Variables
+Les variables disponibles décrivent notamment :
+
+le client (âge, ancienneté, usage, etc.),
+le véhicule (type, puissance, âge, valeur, etc.),
+le contrat (options, garanties, ancienneté).
+Les noms exacts des variables sont fournis tels quels dans les fichiers CSV.
+Aucune connaissance métier préalable n’est supposée, mais une analyse exploratoire est fortement recommandée.
+
+Fichiers
+Les fichiers mis à disposition sont les suivants :
+
+train.csv
+Jeu d’apprentissage contenant :
+
+les variables explicatives,
+la sinistralité observée (indicateur de sinistre et/ou montant).
+test.csv
+Jeu de test servant à l’évaluation Kaggle. Il correspond à un échantillon proche d’un contexte de production :
+
+les mêmes variables explicatives que train.csv,
+aucune information de sinistre n’est fournie.
+prime_pred_sandbox.csv
+Exemple de fichier de soumission au format attendu. Il contient :
+
+une colonne id,
+une colonne pred correspondant à la prime d’assurance prédite.
+Remarques importantes
+Le jeu de données ne contient aucune fuite de cible volontaire.
+Il est autorisé (et encouragé) de :
+créer de nouvelles features,
+transformer les variables existantes,
+appliquer des méthodes de régularisation ou de calibration.
+Toute approche doit rester réaliste d’un point de vue métier assurance.
