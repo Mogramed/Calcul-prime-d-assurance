@@ -1,0 +1,20 @@
+{
+  "data_dir": "c:\\Users\\icemo\\Downloads\\Calcul-prime-d-assurance\\data",
+  "n_train": 50000,
+  "n_test": 50000,
+  "n_features": 37,
+  "n_cat": 14,
+  "primary_folds": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "secondary_folds": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ]
+}

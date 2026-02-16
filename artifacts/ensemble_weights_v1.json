@@ -1,0 +1,19 @@
+{
+  "final_strategy": "ensemble",
+  "final_runs": [
+    "catboost|cb_c1|42|classic|none",
+    "lightgbm|lgb_c1|42|classic|isotonic",
+    "xgboost|xgb_c1|42|classic|isotonic"
+  ],
+  "weights": {
+    "catboost|cb_c1|42|classic|none": 0.9999999999999987,
+    "lightgbm|lgb_c1|42|classic|isotonic": 1.3877787807814439e-15,
+    "xgboost|xgb_c1|42|classic|isotonic": 0.0
+  },
+  "best_single_run": "catboost|cb_c1|42|classic|none",
+  "ens_primary_rmse": 542.6725580680649,
+  "ens_secondary_rmse": 542.01752044283,
+  "best_single_rmse": 542.01752044283,
+  "ens_gap_std": 39.803037123881566,
+  "single_gap_std": 39.803037123881566
+}

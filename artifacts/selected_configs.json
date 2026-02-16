@@ -1,0 +1,11 @@
+{
+  "catboost": [
+    "cb_c1"
+  ],
+  "lightgbm": [
+    "lgb_c1"
+  ],
+  "xgboost": [
+    "xgb_c1"
+  ]
+}
