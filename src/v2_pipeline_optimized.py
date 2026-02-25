@@ -2549,6 +2549,8 @@ def _run_benchmark_single(
     bundle: DatasetBundle,
     splits: Mapping[str, Mapping[int, Tuple[np.ndarray, np.ndarray]]],
     seed: int,
+    *,
+    collect_predictions: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     feature_set = str(spec.get("feature_set", "base_v2"))
     engine = str(spec.get("engine", "catboost")).lower()
@@ -2744,8 +2746,9 @@ def _run_benchmark_single(
                     ]
                 )
             )
-            all_pred_rows.append(
-                pd.DataFrame(
+            if collect_predictions:
+                all_pred_rows.append(
+                    pd.DataFrame(
                     {
                         "row_idx": np.arange(n, dtype=int),
                         "is_test": 0,
@@ -2768,8 +2771,9 @@ def _run_benchmark_single(
                     }
                 )
             )
-            all_pred_rows.append(
-                pd.DataFrame(
+            if collect_predictions:
+                all_pred_rows.append(
+                    pd.DataFrame(
                     {
                         "row_idx": np.arange(n_test, dtype=int),
                         "is_test": 1,
@@ -2796,7 +2800,11 @@ def _run_benchmark_single(
 
     fold_df = pd.concat(all_fold_rows, ignore_index=True) if all_fold_rows else pd.DataFrame()
     run_df = pd.concat(all_run_rows, ignore_index=True) if all_run_rows else pd.DataFrame()
-    pred_df = pd.concat(all_pred_rows, ignore_index=True) if all_pred_rows else pd.DataFrame()
+    pred_df = (
+        pd.concat(all_pred_rows, ignore_index=True)
+        if (collect_predictions and all_pred_rows)
+        else pd.DataFrame()
+    )
     if not fold_df.empty:
         fold_df["run_id"] = make_run_id(fold_df)
     if not run_df.empty:
@@ -2812,6 +2820,8 @@ def run_benchmark(
     bundle: DatasetBundle | Mapping[str, DatasetBundle],
     splits: Mapping[str, Mapping[int, Tuple[np.ndarray, np.ndarray]]],
     seed: int,
+    *,
+    collect_predictions: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if isinstance(bundle, Mapping):
         fs_all = list(bundle.keys())
@@ -2826,7 +2836,13 @@ def run_benchmark(
         for fs in fs_requested:
             sp = dict(spec)
             sp["feature_set"] = fs
-            f_df, r_df, p_df = _run_benchmark_single(sp, bundle=bundle[fs], splits=splits, seed=seed)
+            f_df, r_df, p_df = _run_benchmark_single(
+                sp,
+                bundle=bundle[fs],
+                splits=splits,
+                seed=seed,
+                collect_predictions=collect_predictions,
+            )
             all_folds.append(f_df)
             all_runs.append(r_df)
             all_preds.append(p_df)
@@ -2835,7 +2851,13 @@ def run_benchmark(
         pred_df = pd.concat(all_preds, ignore_index=True) if all_preds else pd.DataFrame()
         return fold_df, run_df, pred_df
 
-    return _run_benchmark_single(spec=spec, bundle=bundle, splits=splits, seed=seed)
+    return _run_benchmark_single(
+        spec,
+        bundle=bundle,
+        splits=splits,
+        seed=seed,
+        collect_predictions=collect_predictions,
+    )
 
 
 def fit_full_predict(
