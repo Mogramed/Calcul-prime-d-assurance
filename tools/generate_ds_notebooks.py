@@ -223,10 +223,32 @@ def build_nb_07() -> dict:
                 train_raw, test_raw, group_cols=["utilisation", "type_vehicule", "conducteur2"]
             )
             missing_global = missing_report[missing_report["scope"] == "global"].copy()
-            display(missing_global.sort_values("missing_rate_train", ascending=False).head(20))
+            missing_global = missing_global.sort_values("missing_rate_train_filled", ascending=False)
+            display(missing_global.head(20))
+
+            missing_qc = pd.DataFrame([
+                {
+                    "check": "train_only_columns_count",
+                    "value": int(((missing_global["present_train"] == 1) & (missing_global["present_test"] == 0)).sum()),
+                },
+                {
+                    "check": "unexpected_nan_missing_rate_test_on_present_test_cols",
+                    "value": int(
+                        missing_global.loc[missing_global["present_test"] == 1, "missing_rate_test_effective"].isna().sum()
+                    ),
+                },
+                {
+                    "check": "unexpected_nan_missing_rate_train_on_present_train_cols",
+                    "value": int(
+                        missing_global.loc[missing_global["present_train"] == 1, "missing_rate_train_effective"].isna().sum()
+                    ),
+                },
+            ])
+            display(missing_qc)
 
             pivot_missing = (
-                missing_global[["column","missing_rate_train","missing_rate_test"]]
+                missing_global[["column","missing_rate_train_filled","missing_rate_test_filled"]]
+                .rename(columns={"missing_rate_train_filled":"missing_rate_train", "missing_rate_test_filled":"missing_rate_test"})
                 .set_index("column")
                 .sort_values("missing_rate_train", ascending=False)
                 .head(20)
@@ -290,18 +312,53 @@ def build_nb_07() -> dict:
         code(
             """
             # Drift train/test numérique + catégoriel + cardinalité
+            excluded_core = set([v2.INDEX_COL, *v2.ID_COLS, v2.TARGET_FREQ_COL, v2.TARGET_SEV_COL])
             num_cols = [c for c in train_raw.columns if str(train_raw[c].dtype).startswith(("int","float")) and c in test_raw.columns]
-            cat_cols = [c for c in train_raw.columns if train_raw[c].dtype == "object" and c in test_raw.columns]
+            cat_cols = [c for c in train_raw.columns if train_raw[c].dtype == "object" and c in test_raw.columns and c not in excluded_core]
 
-            drift_num = compute_drift_numeric_ks_psi(train_raw, test_raw, num_cols=num_cols, bins=10)
+            drift_num = compute_drift_numeric_ks_psi(train_raw, test_raw, num_cols=num_cols, bins=10, include_ids=False)
             drift_cat = compute_drift_categorical_chi2(train_raw, test_raw, cat_cols=cat_cols, top_k=50)
             cardinality = build_cardinality_report(train_raw, test_raw)
             ood = v2.compute_ood_diagnostics(train_raw.astype(object), test_raw.astype(object))
+            drift_num_focus = drift_num[~drift_num["column"].isin(excluded_core)].copy()
 
-            display(drift_num.head(20))
+            display(drift_num_focus.head(20))
             display(drift_cat.head(20))
             display(cardinality.head(20))
             display(ood.sort_values("unseen_test_levels", ascending=False).head(20))
+            """
+        ),
+        code(
+            """
+            # Tableau "Anomalie -> décision -> impact modèle" (exportable)
+            anomaly_decision_impact = pd.DataFrame([
+                {
+                    "anomaly": "IDs / identifiants",
+                    "decision": "Exclure comme features brutes",
+                    "impact_modele": "Réduit fuite et mémorisation non généralisable",
+                },
+                {
+                    "anomaly": "Zéros techniques (poids/cylindre)",
+                    "decision": "Recode en NA + indicateur is_missing",
+                    "impact_modele": "Évite signal numérique faux et conserve information de qualité",
+                },
+                {
+                    "anomaly": "NA structurels conducteur2",
+                    "decision": "Imputation conditionnelle + flag has_second_driver",
+                    "impact_modele": "Préserve le sens métier des NA",
+                },
+                {
+                    "anomaly": "OOD catégoriel (code postal / modèle)",
+                    "decision": "Hiérarchies cp2/cp3 + rare grouping + fallback",
+                    "impact_modele": "Améliore robustesse train/test",
+                },
+                {
+                    "anomaly": "Queue lourde sévérité",
+                    "decision": "log1p/Tweedie + audit de distribution/tail",
+                    "impact_modele": "Réduit sous-couverture des extrêmes",
+                },
+            ])
+            display(anomaly_decision_impact)
             """
         ),
         md(
@@ -360,6 +417,7 @@ def build_nb_07() -> dict:
                 "drift_numeric_ks_psi": drift_num,
                 "drift_categorical_chi2": drift_cat,
                 "cardinality_report": cardinality,
+                "anomaly_decision_impact": anomaly_decision_impact,
             }
             export_analysis_tables(tables, ARTIFACT_DS)
             print("Exports DS notebook 1 ->", ARTIFACT_DS)
@@ -380,6 +438,16 @@ def build_nb_07() -> dict:
             - [ ] hiérarchies/fallbacks OOD
             - [ ] traitements robustes de sévérité (log/Tweedie/tail mapping)
             - [ ] traçabilité des règles de nettoyage
+            """
+        ),
+        md(
+            """
+            ## Ce qui est attendu en soutenance (check rapide)
+
+            - Montrer **au moins 3 constats data** qui justifient le modèle (rareté, queue lourde, OOD).
+            - Justifier **explicitement** le split `GroupKFold(id_client)` (anti-fuite).
+            - Montrer une table `anomalie -> décision -> impact modèle`.
+            - Expliquer pourquoi un bon score public n'est **pas suffisant** sans robustesse locale.
             """
         ),
     ]
@@ -525,6 +593,14 @@ def build_nb_08() -> dict:
             display(cramers_v.head(20))
             """
         ),
+        md(
+            """
+            **Rappel méthodologique**
+
+            - Corrélation / association descriptive `!=` causalité.
+            - Ces analyses servent à guider le preprocessing et le feature engineering, pas à conclure sur des relations causales.
+            """
+        ),
         code(
             """
             # Analyse cible par segments (fréquence / sévérité / pure premium)
@@ -606,8 +682,37 @@ def build_nb_08() -> dict:
             """
             # Mapping preprocessing + recommandations
             missing_report = compute_missingness_report(train_raw, test_raw, group_cols=None)
-            prep_reco = compute_preprocessing_recommendations(data_dict, cardinality, missing_report)
+            prep_reco = compute_preprocessing_recommendations(data_dict, cardinality, missing_report, postal_as_categorical=True)
             display(prep_reco.head(50))
+            display(prep_reco[prep_reco["column"].isin(["code_postal","cp2","cp3","conducteur2","age_conducteur2","anciennete_permis2","poids_vehicule","cylindre_vehicule"])].sort_values("column"))
+            """
+        ),
+        code(
+            """
+            # Règles de transformation appliquées / justifiées (cas métier)
+            transform_rules = pd.DataFrame([
+                {
+                    "feature_or_group": "code_postal / cp3 / cp2",
+                    "rule": "traiter comme hiérarchie catégorielle",
+                    "justification": "OOD fort au niveau code fin, plus stable sur agrégats géographiques",
+                },
+                {
+                    "feature_or_group": "conducteur2 + variables conducteur2",
+                    "rule": "NA structurels + has_second_driver + imputation conditionnelle",
+                    "justification": "absence de conducteur2 n'est pas un missing aléatoire",
+                },
+                {
+                    "feature_or_group": "poids_vehicule / cylindre_vehicule",
+                    "rule": "0 technique -> NA + indicateur",
+                    "justification": "zéro impossible physiquement / code technique",
+                },
+                {
+                    "feature_or_group": "montant_sinistre (positifs)",
+                    "rule": "log1p pour certaines familles + audit de queue",
+                    "justification": "asymétrie forte et queue lourde",
+                },
+            ])
+            display(transform_rules)
             """
         ),
         code(
@@ -624,9 +729,27 @@ def build_nb_08() -> dict:
             fs_cmp_path = ARTIFACT_V2 / "feature_set_comparison_v2.csv"
             if fs_cmp_path.exists():
                 fs_cmp = pd.read_csv(fs_cmp_path)
-                display(fs_cmp.sort_values(["rmse_prime","q99_ratio_pos"], ascending=[True, False]).head(30))
+                sort_cols = [c for c in ["rmse_prime","q99_ratio_pos","rmse_gap_secondary","rmse_gap_aux"] if c in fs_cmp.columns]
+                ascending = [True, False, True, True][: len(sort_cols)]
+                display(fs_cmp.sort_values(sort_cols, ascending=ascending).head(30) if sort_cols else fs_cmp.head(30))
+                cmp_cols = [c for c in ["feature_set","split","rmse_prime","q99_ratio_pos","rmse_gap_secondary","rmse_gap_aux"] if c in fs_cmp.columns]
+                if cmp_cols:
+                    display(fs_cmp[cmp_cols].pivot_table(index="feature_set", columns="split", values="rmse_prime", aggfunc="mean"))
             else:
                 print("Artifact absent:", fs_cmp_path)
+            """
+        ),
+        code(
+            """
+            # Features candidates à tester V3 (priorisées par constats EDA)
+            v3_candidates = pd.DataFrame([
+                {"feature_candidate": "vehicule_residual_score (cross-fit)", "hypothese": "capturer effet véhicule non expliqué par base two-part", "risque": "surapprentissage si fuite"},
+                {"feature_candidate": "zone_x_type_vehicule", "hypothese": "interaction géographie × profil de véhicule", "risque": "cardinalité / sparsité"},
+                {"feature_candidate": "bonus_x_usage", "hypothese": "effet bonus différent selon usage", "risque": "redondance"},
+                {"feature_candidate": "power_weight_band", "hypothese": "proxy segment de risque véhicule plus stable", "risque": "discrétisation arbitraire"},
+                {"feature_candidate": "ood_flags_postal_modele", "hypothese": "améliore robustesse test OOD", "risque": "signal faible si mal calibré"},
+            ])
+            display(v3_candidates)
             """
         ),
         code(
@@ -635,7 +758,9 @@ def build_nb_08() -> dict:
             segment_exports = {f"segment_target_{k}": v for k, v in seg_tables.items()}
             tables = {
                 "preprocessing_recommendations": prep_reco,
+                "preprocessing_rules_catalog": transform_rules,
                 "feature_engineering_catalog": fe_catalog,
+                "feature_candidates_v3": v3_candidates,
                 "cardinality_report": cardinality,
                 **segment_exports,
             }
@@ -765,32 +890,74 @@ def build_nb_09() -> dict:
         ),
         code(
             """
-            # Choix du run de diagnostic principal
+            # Choix du run de diagnostic principal + runs comparatifs
+            run_id_main = None
+            run_diag_ids = []
             if not selected_df.empty and "run_id" in selected_df.columns:
                 run_id_main = str(selected_df.iloc[0]["run_id"])
-            elif not run_df.empty:
-                tmp = run_df.copy()
-                if "level" in tmp.columns:
-                    tmp = tmp[tmp["level"] == "run"]
-                tmp = tmp.sort_values("rmse_prime")
-                run_id_main = str(tmp.iloc[0]["run_id"]) if len(tmp) else None
-            else:
-                run_id_main = None
+                run_diag_ids.append(run_id_main)
+            if not run_df.empty:
+                rr = run_df.copy()
+                if "level" in rr.columns:
+                    rr = rr[rr["level"] == "run"]
+                if "split" in rr.columns:
+                    rr_primary = rr[rr["split"] == "primary_time"].copy()
+                else:
+                    rr_primary = rr.copy()
+                if len(rr_primary):
+                    # meilleur RMSE primaire
+                    best_rmse_id = str(rr_primary.sort_values("rmse_prime").iloc[0]["run_id"])
+                    run_diag_ids.append(best_rmse_id)
+                    # meilleur q99 (couverture queue) parmi scores valides
+                    if "q99_ratio_pos" in rr_primary.columns:
+                        qq = rr_primary.copy()
+                        qq["q99_dist_to_1"] = (qq["q99_ratio_pos"] - 1.0).abs()
+                        qq = qq[np.isfinite(qq["q99_dist_to_1"])]
+                        if len(qq):
+                            run_diag_ids.append(str(qq.sort_values(["q99_dist_to_1", "rmse_prime"]).iloc[0]["run_id"]))
+                    # meilleur compromis stabilité si gaps dispo
+                    if {"rmse_gap_secondary","rmse_gap_aux"}.issubset(rr_primary.columns):
+                        ss = rr_primary.copy()
+                        ss["stability_penalty"] = ss[["rmse_gap_secondary","rmse_gap_aux"]].fillna(0.0).abs().sum(axis=1)
+                        run_diag_ids.append(str(ss.sort_values(["stability_penalty","rmse_prime"]).iloc[0]["run_id"]))
+                if run_id_main is None and len(rr_primary):
+                    run_id_main = str(rr_primary.sort_values("rmse_prime").iloc[0]["run_id"])
+            run_diag_ids = list(dict.fromkeys([x for x in run_diag_ids if x is not None]))
             print("run_id_main:", run_id_main)
+            print("run_diag_ids:", run_diag_ids)
             """
         ),
         code(
             """
-            # Diagnostics OOF détaillés (métriques, calibration, déciles, résidus)
+            # Diagnostics OOF détaillés (métriques, calibration, déciles, résidus) + comparatif multi-runs
             diag_tables = {}
+            diag_compare_rows = []
             if run_id_main is not None and not oof_df.empty:
-                diag_tables = compute_oof_model_diagnostics(oof_df, run_id=run_id_main, split="primary_time")
+                diag_tables = compute_oof_model_diagnostics(oof_df, run_id=run_id_main, split="primary_time", decile_mode="zero_aware")
                 for name, df_ in diag_tables.items():
                     print(f"[{name}] ->", getattr(df_, "shape", None))
                     if isinstance(df_, pd.DataFrame) and len(df_):
                         display(df_.head(20))
+
+                # comparatif succinct sur plusieurs runs pour justifier le choix final
+                for rid in run_diag_ids[:4]:
+                    try:
+                        dt = compute_oof_model_diagnostics(oof_df, run_id=rid, split="primary_time", decile_mode="zero_aware")
+                        m = dt.get("metrics", pd.DataFrame())
+                        if not m.empty:
+                            row = m.iloc[0].to_dict()
+                            row["run_id"] = rid
+                            diag_compare_rows.append(row)
+                    except Exception as e:
+                        diag_compare_rows.append({"run_id": rid, "diagnostic_error": f"{type(e).__name__}: {e}"})
+                diag_compare_df = pd.DataFrame(diag_compare_rows)
+                if len(diag_compare_df):
+                    print("Comparatif diagnostics (primary_time):")
+                    cols = [c for c in ["run_id","rmse_prime","mae_prime","rmse_prime_top1pct","auc_freq","brier_freq","rmse_sev_pos","q95_ratio_pos","q99_ratio_pos","mae_prime_nonzero","r2_prime_nonzero"] if c in diag_compare_df.columns]
+                    display(diag_compare_df[cols] if cols else diag_compare_df)
             else:
                 print("OOF ou run_id indisponible.")
+                diag_compare_df = pd.DataFrame()
             """
         ),
         code(
@@ -803,7 +970,8 @@ def build_nb_09() -> dict:
                     if "auc_freq" in metrics_df.columns:
                         metrics_df = metrics_df.copy()
                         metrics_df["gini_freq_check"] = 2 * metrics_df["auc_freq"] - 1
-                        display(metrics_df[["auc_freq","gini_freq","gini_freq_check","brier_freq","logloss_freq","pr_auc_freq","rmse_prime","mae_prime","r2_prime","rmse_sev_pos","q99_ratio_pos"]])
+                        cols_view = [c for c in ["auc_freq","gini_freq","gini_freq_check","brier_freq","logloss_freq","pr_auc_freq","rmse_prime","mae_prime","r2_prime","mae_prime_nonzero","r2_prime_nonzero","rmse_prime_top1pct","rmse_sev_pos","q95_ratio_pos","q99_ratio_pos"] if c in metrics_df.columns]
+                        display(metrics_df[cols_view])
             """
         ),
         code(
@@ -811,10 +979,13 @@ def build_nb_09() -> dict:
             # Distribution des prédictions et audit de collapse de queue
             if not pred_dist_df.empty:
                 display(pred_dist_df.sort_values(["sample","pred_q99"], ascending=[True, False]).head(30))
-            elif diag_tables and "distribution" in diag_tables and len(diag_tables["distribution"]):
+            if diag_tables and "distribution" in diag_tables and len(diag_tables["distribution"]):
+                print("Audit distribution recalculé pour le run diagnostiqué (zero-aware collapse checks)")
                 display(diag_tables["distribution"])
-            else:
+            elif pred_dist_df.empty:
                 print("pred_distribution_audit_v2.csv absent.")
+            else:
+                print("Audit distribution du run diagnostiqué indisponible.")
             """
         ),
         md(
@@ -858,12 +1029,18 @@ def build_nb_09() -> dict:
         ),
         code(
             """
-            # Error analysis par déciles (réel et prédit)
+            # Error analysis par déciles (réel zero-aware, positifs only, prédit)
             if diag_tables:
                 err_true = diag_tables.get("error_by_decile_true", pd.DataFrame())
+                err_true_za = diag_tables.get("error_by_decile_true_zero_aware", pd.DataFrame())
+                err_true_pos = diag_tables.get("error_by_decile_pos_only", pd.DataFrame())
                 err_pred = diag_tables.get("error_by_decile_pred", pd.DataFrame())
                 if not err_true.empty:
                     display(err_true)
+                if not err_true_za.empty:
+                    display(err_true_za)
+                if not err_true_pos.empty:
+                    display(err_true_pos)
                 if not err_pred.empty:
                     display(err_pred)
             """
@@ -898,6 +1075,9 @@ def build_nb_09() -> dict:
             # Extrêmes (top 1% coûts réels et grosses erreurs)
             if diag_tables and "residuals" in diag_tables and len(diag_tables["residuals"]):
                 res_df = diag_tables["residuals"].copy()
+                extreme_summary_df = diag_tables.get("extreme_cases_summary", pd.DataFrame())
+                if not extreme_summary_df.empty:
+                    display(extreme_summary_df)
                 q99_true = res_df["y_true"].quantile(0.99)
                 extreme_true = res_df[res_df["y_true"] >= q99_true].sort_values("y_true", ascending=False).head(20)
                 extreme_err = res_df.sort_values("abs_error", ascending=False).head(20)
@@ -1048,34 +1228,85 @@ def build_nb_09() -> dict:
                 for k, v in diag_tables.items():
                     if isinstance(v, pd.DataFrame):
                         export_tables[f"oof_model_diagnostics_{k}"] = v
+                if "diag_compare_df" in globals() and isinstance(diag_compare_df, pd.DataFrame) and len(diag_compare_df):
+                    export_tables["oof_model_diagnostics_compare_runs"] = diag_compare_df
                 if export_tables:
                     export_analysis_tables(export_tables, ARTIFACT_DS)
 
+            # storytelling summary auto-rempli avec métriques réelles + top drifts + segments
+            metrics_df = diag_tables.get("metrics", pd.DataFrame()) if diag_tables else pd.DataFrame()
+            m0 = metrics_df.iloc[0].to_dict() if isinstance(metrics_df, pd.DataFrame) and len(metrics_df) else {}
+            drift_num_ds = pd.read_csv(ARTIFACT_DS / "drift_numeric_ks_psi.csv") if (ARTIFACT_DS / "drift_numeric_ks_psi.csv").exists() else pd.DataFrame()
+            drift_cat_ds = pd.read_csv(ARTIFACT_DS / "drift_categorical_chi2.csv") if (ARTIFACT_DS / "drift_categorical_chi2.csv").exists() else pd.DataFrame()
+            top_num_lines = []
+            if len(drift_num_ds):
+                cols = [c for c in ["column","psi","ks_stat","ks_pvalue"] if c in drift_num_ds.columns]
+                for _, r in drift_num_ds.head(3)[cols].iterrows():
+                    top_num_lines.append(f\"- {r.get('column')}: PSI={r.get('psi', np.nan):.3f}, KS={r.get('ks_stat', np.nan):.3f}\")
+            top_cat_lines = []
+            if len(drift_cat_ds):
+                cols = [c for c in ["column","unseen_ratio_test","chi2_pvalue"] if c in drift_cat_ds.columns]
+                for _, r in drift_cat_ds.head(3)[cols].iterrows():
+                    unseen = r.get(\"unseen_ratio_test\", np.nan)
+                    top_cat_lines.append(f\"- {r.get('column')}: unseen_test_ratio={unseen:.3f}\" if pd.notna(unseen) else f\"- {r.get('column')}\")
+
+            top_seg_lines = []
+            if 'seg_err_tables' in globals() and isinstance(seg_err_tables, dict):
+                for seg_name, seg_df in list(seg_err_tables.items())[:3]:
+                    if isinstance(seg_df, pd.DataFrame) and len(seg_df):
+                        row = seg_df.iloc[0]
+                        key_col = seg_df.columns[0]
+                        top_seg_lines.append(f\"- {seg_name}: segment {key_col}={row[key_col]} (n={int(row['n'])}, mae={float(row['mae']):.2f})\")
+            if not top_seg_lines:
+                top_seg_lines = [\"- À compléter après exécution de la cellule d'analyse segmentaire.\"] 
+
             storytelling_md = ARTIFACT_DS / "storytelling_summary.md"
-            storytelling_md.write_text(
-                "\\n".join(
+            summary_lines = [
+                "# Storytelling summary (auto + complément manuel)",
+                "",
+                "## 1) Run diagnostiqué",
+                f\"- run_id: {run_id_main}\",
+                f\"- split: primary_time\",
+            ]
+            if m0:
+                summary_lines.extend(
                     [
-                        "# Storytelling summary (draft)",
                         "",
-                        "## 1) Problème métier",
-                        "- Tarifer une prime juste et robuste.",
-                        "",
-                        "## 2) Démarche data science",
-                        "- Cadrage métier -> qualité -> EDA -> FE -> CV -> diagnostics -> robustesse.",
-                        "",
-                        "## 3) Choix techniques justifiés",
-                        "- Two-part model (fréquence × sévérité)",
-                        "- Multi-splits anti-fuite",
-                        "- Garde-fous de queue et de distribution",
-                        "",
-                        "## 4) Points de vigilance",
-                        "- OOD catégoriel et événements extrêmes",
-                        "- Risque de shake-up public/privé",
-                        "",
+                        "## 2) Métriques OOF (primary_time)",
+                        f\"- RMSE prime: {float(m0.get('rmse_prime', np.nan)):.3f}\",
+                        f\"- MAE prime: {float(m0.get('mae_prime', np.nan)):.3f}\",
+                        f\"- RMSE prime top1%: {float(m0.get('rmse_prime_top1pct', np.nan)):.3f}\",
+                        f\"- AUC fréquence: {float(m0.get('auc_freq', np.nan)):.4f}\",
+                        f\"- Brier fréquence: {float(m0.get('brier_freq', np.nan)):.6f}\",
+                        f\"- q95_ratio_pos: {float(m0.get('q95_ratio_pos', np.nan)):.3f}\",
+                        f\"- q99_ratio_pos: {float(m0.get('q99_ratio_pos', np.nan)):.3f}\",
                     ]
-                ),
-                encoding="utf-8"
+                )
+            summary_lines.extend(
+                [
+                    "",
+                    "## 3) Top drifts numériques (hors IDs/targets)",
+                    *(top_num_lines if top_num_lines else [\"- N/A (artefact drift absent)\"]),
+                    "",
+                    "## 4) Top drifts catégoriels",
+                    *(top_cat_lines if top_cat_lines else [\"- N/A (artefact drift absent)\"]),
+                    "",
+                    "## 5) Segments à risque (MAE élevé)",
+                    *top_seg_lines,
+                    "",
+                    "## 6) Limites principales",
+                    "- OOD catégoriel sur granularité fine (ex. code postal / modèle).",
+                    "- Queue lourde des sinistres: le score dépend fortement de peu d'observations extrêmes.",
+                    "- Score public Kaggle potentiellement instable vs privé (1/3 seulement en public).",
+                    "",
+                    "## 7) À compléter manuellement (oral)",
+                    "- Message business principal (compétitivité vs robustesse).",
+                    "- Pourquoi ce run final et pas les alternatives.",
+                    "- Prochaines expériences V3 (résidu véhicule / interactions ciblées).",
+                    "",
+                ]
             )
+            storytelling_md.write_text("\\n".join(summary_lines), encoding="utf-8")
             print("Exports DS notebook 3 ->", ARTIFACT_DS)
             print("Storytelling summary:", storytelling_md)
             """

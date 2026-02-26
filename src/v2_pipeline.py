@@ -1618,10 +1618,31 @@ def compute_prediction_distribution_audit(
     _, counts = np.unique(p_round, return_counts=True)
     identical_share = float(np.max(counts) / n) if len(counts) else 1.0
     share_zero = float(np.mean(p_round <= 0))
+    share_nonzero = float(np.mean(p_round > 0))
     q99_q90_ratio = float(q99 / max(q90, 1e-9))
+    p_nonzero = p[p_round > 0]
+    pred_n_nonzero = int(len(p_nonzero))
+    if pred_n_nonzero:
+        p_nz_round = np.round(p_nonzero, 6)
+        _, counts_nz = np.unique(p_nz_round, return_counts=True)
+        identical_share_nonzero = float(np.max(counts_nz) / pred_n_nonzero) if len(counts_nz) else 1.0
+        q90_nz, q99_nz = np.nanquantile(p_nonzero, [0.90, 0.99])
+        q99_q90_ratio_nonzero = float(q99_nz / max(q90_nz, 1e-9))
+    else:
+        identical_share_nonzero = float("nan")
+        q90_nz = float("nan")
+        q99_nz = float("nan")
+        q99_q90_ratio_nonzero = float("nan")
+
+    # Zero-inflated targets naturally create many identical zeros; collapse should be judged on non-zero support when available.
+    use_nonzero_for_collapse = bool((share_zero >= 0.05) and (pred_n_nonzero >= max(50, int(0.01 * n))))
+    collapse_ratio_eval = q99_q90_ratio_nonzero if use_nonzero_for_collapse and np.isfinite(q99_q90_ratio_nonzero) else q99_q90_ratio
+    collapse_identical_eval = (
+        identical_share_nonzero if use_nonzero_for_collapse and np.isfinite(identical_share_nonzero) else identical_share
+    )
     collapse_flag = int(
-        (q99_q90_ratio <= collapse_q99_q90_ratio)
-        or (identical_share >= collapse_identical_ratio)
+        (collapse_ratio_eval <= collapse_q99_q90_ratio)
+        or (collapse_identical_eval >= collapse_identical_ratio)
     )
 
     out: Dict[str, Any] = {
@@ -1637,8 +1658,15 @@ def compute_prediction_distribution_audit(
         "pred_q99": float(q99),
         "pred_max": pred_max,
         "pred_share_zero": share_zero,
+        "pred_share_nonzero": share_nonzero,
         "pred_identical_share": identical_share,
+        "pred_identical_share_nonzero": identical_share_nonzero,
         "pred_q99_q90_ratio": q99_q90_ratio,
+        "pred_n_nonzero": pred_n_nonzero,
+        "pred_q90_nonzero": float(q90_nz) if np.isfinite(q90_nz) else float("nan"),
+        "pred_q99_nonzero": float(q99_nz) if np.isfinite(q99_nz) else float("nan"),
+        "pred_q99_q90_ratio_nonzero": q99_q90_ratio_nonzero,
+        "collapse_use_nonzero_support": int(use_nonzero_for_collapse),
         "distribution_collapse_flag": collapse_flag,
     }
 
@@ -1648,6 +1676,13 @@ def compute_prediction_distribution_audit(
         q99_true = float(np.nanquantile(y, 0.99))
         out["rmse_pred"] = rmse(y, p)
         out["q99_ratio_to_true"] = float(q99 / max(q99_true, 1e-9))
+        y_nonzero = y[y > 0]
+        if len(y_nonzero) and pred_n_nonzero:
+            out["q99_ratio_to_true_nonzero"] = float(
+                float(np.nanquantile(p_nonzero, 0.99)) / max(float(np.nanquantile(y_nonzero, 0.99)), 1e-9)
+            )
+        else:
+            out["q99_ratio_to_true_nonzero"] = float("nan")
     return out
 
 
