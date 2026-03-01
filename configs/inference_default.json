@@ -1,0 +1,6 @@
+{
+  "input_test": "data/test.csv",
+  "output_submission": "artifacts/submissions/submission.csv",
+  "non_negative": true
+}
+

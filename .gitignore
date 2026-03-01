@@ -1,0 +1,28 @@
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# Runtime logs/caches
+catboost_info/
+notebooks/catboost_info/
+notebooks/**/catboost_info/
+notebooks/**/artifacts/
+artifacts/runtime_cache*/
+artifacts/runtime_cache/
+*.log
+*.tmp
+*.npy
+
+# Notebooks runtime noise
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# Artifacts are runtime outputs (code-only policy)
+artifacts/**
+!artifacts/
+!artifacts/.gitkeep
+!artifacts/README.md
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
