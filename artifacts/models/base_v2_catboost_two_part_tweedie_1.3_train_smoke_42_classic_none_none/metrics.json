@@ -1,0 +1,8 @@
+{
+  "rmse_prime": 546.145199733486,
+  "mae_prime": 150.29749757619246,
+  "rmse_prime_top1pct": 4581.572129632144,
+  "q99_ratio_pos": 0.10728521445424971,
+  "selected_run_id": "base_v2|catboost|two_part_tweedie|1.3|train_smoke|42|classic|none|none",
+  "selected_rmse_primary_time": 554.2186641888006
+}

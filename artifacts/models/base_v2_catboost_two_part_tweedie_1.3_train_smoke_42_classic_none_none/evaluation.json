@@ -1,0 +1,8 @@
+{
+  "rmse_prime":546.1451997335,
+  "mae_prime":150.2974975762,
+  "rmse_prime_top1pct":4581.5721296321,
+  "pred_test_mean":54.0097427294,
+  "pred_test_q99":82.4386202617,
+  "run_id":"base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none"
+}

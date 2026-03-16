@@ -1,0 +1,3 @@
+level,split,feature_set,engine,family,tweedie_power,config_id,seed,severity_mode,calibration,tail_mapper,fold_id,rmse_prime,auc_freq,brier_freq,rmse_sev_pos,q99_ratio_pos,run_id
+fold,primary_time,base_v2,catboost,two_part_tweedie,1.3,train_smoke,42,classic,none,none,1,581.2558511304371,0.648485945756669,0.05413311639116504,1976.7887350328688,0.09711673393672315,base_v2|catboost|two_part_tweedie|1.3|train_smoke|42|classic|none|none
+fold,primary_time,base_v2,catboost,two_part_tweedie,1.3,train_smoke,42,classic,none,none,2,525.7912598371914,0.6409392337711187,0.05489459769050538,1678.4470632680054,0.11623314862538713,base_v2|catboost|two_part_tweedie|1.3|train_smoke|42|classic|none|none

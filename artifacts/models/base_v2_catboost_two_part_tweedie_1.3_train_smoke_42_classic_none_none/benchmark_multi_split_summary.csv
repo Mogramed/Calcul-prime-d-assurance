@@ -1,0 +1,2 @@
+run_id,engine,family,config_id,seed,feature_set,severity_mode,calibration,tail_mapper,primary_time,rmse_primary_time,rmse_secondary_group,rmse_aux_blocked5,rmse_gap_secondary,rmse_gap_aux,rmse_split_std
+base_v2|catboost|two_part_tweedie|1.3|train_smoke|42|classic|none|none,catboost,two_part_tweedie,train_smoke,42,base_v2,classic,none,none,554.2186641888006,554.2186641888006,,,,,0.0
