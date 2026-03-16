@@ -55,3 +55,14 @@ Archive historique:
 1. `python scripts/check_import_graph.py`
 2. `python scripts/validate_repo_structure.py`
 3. `pytest -q`
+
+## Correction encoding notebook
+
+1. Audit sans modification:
+`python scripts/fix_notebook_encoding.py --dry-run`
+2. Application des corrections:
+`python scripts/fix_notebook_encoding.py --apply`
+3. Verification stricte apres correction:
+`python scripts/validate_repo_structure.py --encoding-strict`
+4. Test dedie:
+`pytest -q tests/test_notebook_encoding_health.py`
