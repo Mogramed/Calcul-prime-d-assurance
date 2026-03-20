@@ -5,7 +5,7 @@ from typing import Any, Dict, Mapping, Tuple
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.cv.splits import build_split_registry, validate_folds_disjoint
+from insurance_pricing.cv.splits import build_split_registry, validate_folds_disjoint
 SplitRegistry = Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]]
 
 

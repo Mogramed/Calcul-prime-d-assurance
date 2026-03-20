@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.insurance_pricing.legacy import training_fulltrain_impl as _impl
+from insurance_pricing.legacy import training_fulltrain_impl as _impl
 
 
 def fit_full_predict(*args: Any, **kwargs: Any):

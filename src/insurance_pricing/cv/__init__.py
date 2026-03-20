@@ -1,4 +1,4 @@
-from src.insurance_pricing.cv.splits import (
+from insurance_pricing.cv.splits import (
     build_aux_blocked_folds,
     build_primary_time_folds,
     build_secondary_group_folds,
@@ -9,7 +9,7 @@ from src.insurance_pricing.cv.splits import (
     validate_folds_disjoint,
     validate_group_disjoint,
 )
-from src.insurance_pricing.cv.integrity import build_splits, validate_split_integrity
+from insurance_pricing.cv.integrity import build_splits, validate_split_integrity
 
 __all__ = [
     "build_primary_time_folds",

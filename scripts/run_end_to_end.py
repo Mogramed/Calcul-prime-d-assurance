@@ -12,18 +12,16 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from src.insurance_pricing import (
+from insurance_pricing import (
     build_submission,
     evaluate_run,
     export_ds_tables_and_figures,
     train_run,
 )
-from src.insurance_pricing.data.datasets import load_datasets, validate_data_contract
-from src.insurance_pricing.data.io import ensure_dir
-from src.insurance_pricing.runtime.ds_reporting import save_table
+from insurance_pricing.data.datasets import load_datasets, validate_data_contract
+from insurance_pricing.data.io import ensure_dir
+from insurance_pricing.runtime.ds_reporting import save_table
 
 
 def _utc_now() -> str:

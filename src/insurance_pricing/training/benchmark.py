@@ -4,7 +4,7 @@ from typing import Any, Mapping, Tuple
 
 import pandas as pd
 
-from src.insurance_pricing.legacy import training_benchmark_impl as _impl
+from insurance_pricing.legacy import training_benchmark_impl as _impl
 
 
 def make_run_id(df: pd.DataFrame) -> pd.Series:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 
 warnings.warn(
-    "src.insurance_pricing.experiments.quick is archived (read-only) and "
+    "insurance_pricing.experiments.quick is archived (read-only) and "
     "kept only for transitional compatibility.",
     DeprecationWarning,
     stacklevel=2,

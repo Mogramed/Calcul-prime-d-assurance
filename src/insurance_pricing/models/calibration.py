@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from sklearn.isotonic import IsotonicRegression
-from sklearn.linear_model import LogisticRegression
 
 
 def _resolve_fit_inputs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, str]:
@@ -32,10 +30,14 @@ def fit_calibrator(*args: Any, **kwargs: Any):
     if m == "none":
         return None
     if m == "isotonic":
+        from sklearn.isotonic import IsotonicRegression
+
         model = IsotonicRegression(out_of_bounds="clip")
         model.fit(probs, y_true)
         return model
     if m == "platt":
+        from sklearn.linear_model import LogisticRegression
+
         model = LogisticRegression(max_iter=2000)
         model.fit(probs.reshape(-1, 1), y_true)
         return model

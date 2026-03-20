@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.data.schema import INDEX_COL
+from insurance_pricing.data.schema import INDEX_COL
 
 from .metrics import rmse
 from .run_id import make_run_id_from_df

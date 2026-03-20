@@ -1,11 +1,11 @@
-from src.insurance_pricing.cv.splits import (
+from insurance_pricing.cv.splits import (
     build_split_registry,
     export_split_artifacts_v2,
     validate_folds_disjoint,
     validate_group_disjoint,
 )
-from src.insurance_pricing.cv.integrity import build_splits, validate_split_integrity
-from src.insurance_pricing.data.io import (
+from insurance_pricing.cv.integrity import build_splits, validate_split_integrity
+from insurance_pricing.data.io import (
     build_targets,
     ensure_dir,
     load_json,
@@ -13,8 +13,8 @@ from src.insurance_pricing.data.io import (
     save_json,
     validate_data_contract,
 )
-from src.insurance_pricing.data.datasets import build_feature_sets, load_datasets, select_bundle
-from src.insurance_pricing.data.schema import (
+from insurance_pricing.data.datasets import build_feature_sets, load_datasets, select_bundle
+from insurance_pricing.data.schema import (
     DEFAULT_V2_DIR,
     ID_COLS,
     INDEX_COL,
@@ -22,7 +22,7 @@ from src.insurance_pricing.data.schema import (
     TARGET_SEV_COL,
     DatasetBundle,
 )
-from src.insurance_pricing.evaluation.diagnostics import (
+from insurance_pricing.evaluation.diagnostics import (
     build_model_cards,
     build_prediction_distribution_table,
     compute_ood_diagnostics,
@@ -30,21 +30,21 @@ from src.insurance_pricing.evaluation.diagnostics import (
     compute_segment_bias_from_oof,
     simulate_public_private_shakeup_v2,
 )
-from src.insurance_pricing.evaluation.metrics import rmse, summarize_prime_metrics
-from src.insurance_pricing.features.engineering import (
+from insurance_pricing.evaluation.metrics import rmse, summarize_prime_metrics
+from insurance_pricing.features.engineering import (
     add_engineered_features,
     add_engineered_features_v2,
     prepare_datasets,
     prepare_feature_sets,
 )
-from src.insurance_pricing.features.schema import build_feature_frame_for_inference, build_feature_schema
-from src.insurance_pricing.models.calibration import apply_calibrator, fit_calibrator
-from src.insurance_pricing.models.frequency import FrequencyModel, fit_frequency_model
-from src.insurance_pricing.models.prime import PrimeModel
-from src.insurance_pricing.models.severity import SeverityModel, fit_severity_model
-from src.insurance_pricing.models.tail import apply_tail_mapper_safe, fit_tail_mapper_safe
-from src.insurance_pricing.training.benchmark import make_run_id, run_benchmark
-from src.insurance_pricing.training.config import (
+from insurance_pricing.features.schema import build_feature_frame_for_inference, build_feature_schema
+from insurance_pricing.models.calibration import apply_calibrator, fit_calibrator
+from insurance_pricing.models.frequency import FrequencyModel, fit_frequency_model
+from insurance_pricing.models.prime import PrimeModel
+from insurance_pricing.models.severity import SeverityModel, fit_severity_model
+from insurance_pricing.models.tail import apply_tail_mapper_safe, fit_tail_mapper_safe
+from insurance_pricing.training.benchmark import make_run_id, run_benchmark
+from insurance_pricing.training.config import (
     ModelSpecFreq,
     ModelSpecPrime,
     ModelSpecSev,
@@ -53,19 +53,19 @@ from src.insurance_pricing.training.config import (
     load_training_config,
     save_training_config,
 )
-from src.insurance_pricing.training.fulltrain import fit_full_predict_fulltrain
-from src.insurance_pricing.training.presets import V2_COARSE_CONFIGS, V2_SCREENING_FAMILIES
-from src.insurance_pricing.training.selection import (
+from insurance_pricing.training.fulltrain import fit_full_predict_fulltrain
+from insurance_pricing.training.presets import V2_COARSE_CONFIGS, V2_SCREENING_FAMILIES
+from insurance_pricing.training.selection import (
     optimize_non_negative_weights,
     pick_top_configs,
     select_final_models,
 )
-from src.insurance_pricing.inference.submission import build_submission
+from insurance_pricing.inference.submission import build_submission
 
 # Temporary one-cycle compatibility for V1 notebook symbols.
 # Removal target: next cleanup release after confirming notebooks no longer import
 # COARSE_CONFIGS/run_cv_experiment/fit_full_two_part_predict/simulate_public_private_shakeup.
-from src.insurance_pricing.legacy.v1_pipeline import (
+from insurance_pricing.legacy.v1_pipeline import (
     COARSE_CONFIGS,
     fit_full_two_part_predict,
     run_cv_experiment,

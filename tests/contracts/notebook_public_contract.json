@@ -1,6 +1,6 @@
 {
   "modules": {
-    "src.insurance_pricing.training": [
+    "insurance_pricing.training": [
       "DEFAULT_V2_DIR",
       "INDEX_COL",
       "TARGET_SEV_COL",
@@ -34,7 +34,7 @@
       "build_model_cards",
       "build_submission"
     ],
-    "src.insurance_pricing.analytics": [
+    "insurance_pricing.analytics": [
       "DEFAULT_DS_DIR",
       "load_project_datasets",
       "build_data_dictionary",
@@ -58,7 +58,7 @@
       "export_analysis_tables",
       "fit_kmeans_exploration"
     ],
-    "src.insurance_pricing.experiments.quick": [
+    "insurance_pricing.experiments.quick": [
       "gap_diagnosis",
       "dualtrack",
       "tail_recovery",

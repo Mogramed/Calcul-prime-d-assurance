@@ -5,34 +5,34 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.data.io import ensure_dir
-from src.insurance_pricing.data.schema import DatasetBundle, INDEX_COL
-from src.insurance_pricing.evaluation.diagnostics import (
+from insurance_pricing.data.io import ensure_dir
+from insurance_pricing.data.schema import DatasetBundle, INDEX_COL
+from insurance_pricing.evaluation.diagnostics import (
     build_prediction_distribution_table,
     compute_prediction_distribution_audit,
 )
-from src.insurance_pricing.evaluation.metrics import compute_metric_row, rmse
-from src.insurance_pricing.features.target_encoding import _add_fold_target_encoding
-from src.insurance_pricing.models.calibration import (
+from insurance_pricing.evaluation.metrics import compute_metric_row, rmse
+from insurance_pricing.features.target_encoding import _add_fold_target_encoding
+from insurance_pricing.models.calibration import (
     apply_calibrator,
     crossfit_calibrate_oof,
     fit_calibrator,
 )
-from src.insurance_pricing.legacy.engines.catboost_impl import (
+from insurance_pricing.legacy.engines.catboost_impl import (
     _fit_catboost,
     _fit_catboost_fold_v2,
 )
-from src.insurance_pricing.legacy.engines.lightgbm_impl import (
+from insurance_pricing.legacy.engines.lightgbm_impl import (
     _fit_lgbm,
     _fit_lgbm_fold_v2,
 )
-from src.insurance_pricing.legacy.engines.xgboost_impl import _fit_xgb, _fit_xgb_fold_v2
-from src.insurance_pricing.models.tail import (
+from insurance_pricing.legacy.engines.xgboost_impl import _fit_xgb, _fit_xgb_fold_v2
+from insurance_pricing.models.tail import (
     apply_tail_mapper,
     crossfit_tail_mapper_oof,
     fit_tail_mapper,
 )
-from src.insurance_pricing.training.selection import optimize_non_negative_weights
+from insurance_pricing.training.selection import optimize_non_negative_weights
 
 
 def make_run_id(df: pd.DataFrame) -> pd.Series:

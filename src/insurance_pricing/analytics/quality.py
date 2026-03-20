@@ -8,7 +8,7 @@ import pandas as pd
 from scipy.stats import chi2_contingency, ks_2samp
 from sklearn.metrics import mean_squared_error
 
-from src.insurance_pricing.data.schema import (
+from insurance_pricing.data.schema import (
     ID_COLS,
     INDEX_COL,
     TARGET_FREQ_COL,

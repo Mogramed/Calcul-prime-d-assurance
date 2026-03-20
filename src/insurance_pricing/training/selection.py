@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
-from src.insurance_pricing.evaluation.metrics import rmse
-from src.insurance_pricing.evaluation.run_id import make_run_id_from_df
+from insurance_pricing.evaluation.metrics import rmse
+from insurance_pricing.evaluation.run_id import make_run_id_from_df
 
 def optimize_non_negative_weights(pred_matrix: np.ndarray, y_true: np.ndarray) -> np.ndarray:
     p = np.asarray(pred_matrix, dtype=float)

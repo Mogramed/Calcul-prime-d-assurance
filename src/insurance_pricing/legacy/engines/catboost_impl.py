@@ -5,9 +5,9 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.data.schema import TARGET_SEV_COL
-from src.insurance_pricing.evaluation.metrics import make_tail_weights
-from src.insurance_pricing.features.target_encoding import (
+from insurance_pricing.data.schema import TARGET_SEV_COL
+from insurance_pricing.evaluation.metrics import make_tail_weights
+from insurance_pricing.features.target_encoding import (
     _apply_winsor,
     _smearing_inverse,
 )

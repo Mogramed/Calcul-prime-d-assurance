@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "insurance-pricing"
+version = "0.1.0"
+description = "Industrialized insurance pricing package with CLI workflows and FastAPI inference."
+readme = "README_architecture.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "numpy>=2.2.6",
+  "pandas>=2.3.0",
+  "scikit-learn>=1.6.1",
+  "catboost>=1.2.8",
+]
+
+[project.scripts]
+insurance-pricing-train = "insurance_pricing.cli:train_main"
+insurance-pricing-evaluate = "insurance_pricing.cli:evaluate_main"
+insurance-pricing-predict = "insurance_pricing.cli:predict_main"
+insurance-pricing-make-submission = "insurance_pricing.cli:make_submission_main"
+insurance-pricing-api = "insurance_pricing.cli:serve_api_main"
+
+[dependency-groups]
+api = [
+  "fastapi>=0.115.9",
+  "uvicorn[standard]>=0.34.0",
+  "pydantic-settings>=2.7.0",
+]
+train = [
+  "scipy>=1.15.0",
+  "pyarrow>=19.0.1",
+  "xgboost>=3.0.2",
+  "lightgbm>=4.6.0",
+]
+test = [
+  "pytest>=8.3.5",
+  "httpx>=0.28.1",
+]
+lint = [
+  "ruff>=0.11.2",
+  "mypy>=1.15.0",
+]
+dev = [
+  "pre-commit>=4.2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/insurance_pricing"]

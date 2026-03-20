@@ -5,9 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.data.schema import INDEX_COL
-from src.insurance_pricing.inference.submission import build_submission as build_submission_df
-from src.insurance_pricing.runtime.persistence import load_model_bundle
+from insurance_pricing.data.schema import INDEX_COL
+from insurance_pricing.inference.submission import build_submission as build_submission_df
+from insurance_pricing.runtime.persistence import load_model_bundle
 
 
 def predict_from_run(run_id: str, input_df: pd.DataFrame) -> pd.DataFrame:

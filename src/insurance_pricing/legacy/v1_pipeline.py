@@ -1140,6 +1140,6 @@ def pick_top_configs(
 
 
 def train_run(config_path: str) -> dict:
-    from src.insurance_pricing import train_run as _train_run
+    from insurance_pricing import train_run as _train_run
 
     return _train_run(config_path)

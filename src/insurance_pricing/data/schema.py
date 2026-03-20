@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import OrdinalEncoder
+
+if TYPE_CHECKING:
+    from sklearn.preprocessing import OrdinalEncoder
 
 TARGET_FREQ_COL = "nombre_sinistres"
 
@@ -34,11 +36,13 @@ class DatasetBundle:
 class OrdinalFrameEncoder:
     def __init__(self, cat_cols: Sequence[str]):
         self.cat_cols = list(cat_cols)
-        self.encoder: Optional[OrdinalEncoder] = None
+        self.encoder: Optional[Any] = None
 
     def fit(self, X: pd.DataFrame) -> "OrdinalFrameEncoder":
         if not self.cat_cols:
             return self
+        from sklearn.preprocessing import OrdinalEncoder
+
         self.encoder = OrdinalEncoder(
             handle_unknown="use_encoded_value",
             unknown_value=-1,

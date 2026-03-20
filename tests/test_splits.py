@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from src.insurance_pricing.cv.integrity import build_splits, validate_split_integrity
-from src.insurance_pricing.data.datasets import load_datasets
-from src.insurance_pricing.training.config import SplitConfig
+from insurance_pricing.cv.integrity import build_splits, validate_split_integrity
+from insurance_pricing.data.datasets import load_datasets
+from insurance_pricing.training.config import SplitConfig
 
 
 def test_split_integrity():

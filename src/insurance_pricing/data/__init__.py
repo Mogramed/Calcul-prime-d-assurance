@@ -1,4 +1,4 @@
-from src.insurance_pricing.data.io import (
+from insurance_pricing.data.io import (
     build_targets,
     ensure_dir,
     load_json,
@@ -6,12 +6,12 @@ from src.insurance_pricing.data.io import (
     save_json,
     validate_data_contract,
 )
-from src.insurance_pricing.data.datasets import (
+from insurance_pricing.data.datasets import (
     build_feature_sets,
     load_datasets,
     select_bundle,
 )
-from src.insurance_pricing.data.schema import (
+from insurance_pricing.data.schema import (
     DEFAULT_V2_DIR,
     ID_COLS,
     INDEX_COL,

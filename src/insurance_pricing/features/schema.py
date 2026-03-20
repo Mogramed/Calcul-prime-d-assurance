@@ -5,7 +5,7 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.features.engineering import add_engineered_features
+from insurance_pricing.features.engineering import add_engineered_features
 
 
 def build_feature_frame_for_inference(

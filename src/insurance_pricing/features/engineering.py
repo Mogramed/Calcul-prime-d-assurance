@@ -5,8 +5,8 @@ from typing import Dict, Mapping, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.data.io import build_targets
-from src.insurance_pricing.data.schema import (
+from insurance_pricing.data.io import build_targets
+from insurance_pricing.data.schema import (
     DatasetBundle,
     ID_COLS,
     INDEX_COL,

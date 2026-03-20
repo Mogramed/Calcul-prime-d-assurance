@@ -13,7 +13,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from src.insurance_pricing.data.schema import TARGET_SEV_COL
+from insurance_pricing.data.schema import TARGET_SEV_COL
 
 def compute_segment_target_tables(train: pd.DataFrame, segment_cols: list[str]) -> dict[str, pd.DataFrame]:
     out: dict[str, pd.DataFrame] = {}

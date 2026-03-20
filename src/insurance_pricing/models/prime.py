@@ -6,10 +6,10 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.models.calibration import apply_calibrator
-from src.insurance_pricing.models.frequency import FrequencyModel
-from src.insurance_pricing.models.severity import SeverityModel
-from src.insurance_pricing.models.tail import apply_tail_mapper
+from insurance_pricing.models.calibration import apply_calibrator
+from insurance_pricing.models.frequency import FrequencyModel
+from insurance_pricing.models.severity import SeverityModel
+from insurance_pricing.models.tail import apply_tail_mapper
 
 
 @dataclass

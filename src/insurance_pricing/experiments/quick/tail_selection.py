@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any
 import warnings
 
-from src.insurance_pricing.legacy.quick import tail_selection_impl as _impl
+from insurance_pricing.legacy.quick import tail_selection_impl as _impl
 
 warnings.warn(
-    "src.insurance_pricing.experiments.quick.tail_selection is archived "
+    "insurance_pricing.experiments.quick.tail_selection is archived "
     "(read-only) and should not be used for new development.",
     DeprecationWarning,
     stacklevel=2,
