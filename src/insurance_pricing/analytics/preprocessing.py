@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.data.schema import ID_COLS, INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL
-from src.insurance_pricing.features.engineering import add_engineered_features_v2
+from insurance_pricing.data.schema import ID_COLS, INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL
+from insurance_pricing.features.engineering import add_engineered_features_v2
 
 def build_feature_blocks(df: pd.DataFrame) -> pd.DataFrame:
     rows = []

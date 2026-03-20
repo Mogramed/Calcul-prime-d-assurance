@@ -6,8 +6,8 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing import analytics as ds
-from src.insurance_pricing import training as v2
+from insurance_pricing import analytics as ds
+from insurance_pricing import training as v2
 from .common import (
     safe_read_csv as _safe_read_csv,
     safe_read_json as _safe_read_json,
@@ -1254,6 +1254,6 @@ def write_submission_decision_report(
 
 
 def train_run(config_path: str) -> dict:
-    from src.insurance_pricing import train_run as _train_run
+    from insurance_pricing import train_run as _train_run
 
     return _train_run(config_path)

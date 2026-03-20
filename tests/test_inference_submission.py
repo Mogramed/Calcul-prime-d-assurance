@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.insurance_pricing.inference.predict import build_submission_from_run
+from insurance_pricing.inference.predict import build_submission_from_run
 
 
 def _latest_run_id_from_registry() -> str | None:

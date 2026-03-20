@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.insurance_pricing.data.io import load_train_test
+from insurance_pricing.data.io import load_train_test
 
 DEFAULT_DS_DIR = Path("artifacts") / "ds"
 

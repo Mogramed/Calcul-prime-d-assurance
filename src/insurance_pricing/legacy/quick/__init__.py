@@ -1,4 +1,4 @@
-from src.insurance_pricing.legacy.quick import (
+from insurance_pricing.legacy.quick import (
     dualtrack_impl,
     gap_diagnosis_impl,
     tail_recovery_impl,

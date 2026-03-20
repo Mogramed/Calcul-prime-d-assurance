@@ -1,4 +1,4 @@
-from src.insurance_pricing.legacy.engines import (
+from insurance_pricing.legacy.engines import (
     catboost_impl,
     lightgbm_impl,
     xgboost_impl,

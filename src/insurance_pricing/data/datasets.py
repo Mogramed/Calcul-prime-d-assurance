@@ -5,9 +5,9 @@ from typing import Dict
 
 import pandas as pd
 
-from src.insurance_pricing.data.io import load_train_test, validate_data_contract
-from src.insurance_pricing.data.schema import DatasetBundle
-from src.insurance_pricing.features.engineering import prepare_feature_sets
+from insurance_pricing.data.io import load_train_test, validate_data_contract
+from insurance_pricing.data.schema import DatasetBundle
+from insurance_pricing.features.engineering import prepare_feature_sets
 
 
 def load_datasets(data_dir: str | Path = "data") -> tuple[pd.DataFrame, pd.DataFrame]:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.insurance_pricing.data.datasets import load_datasets, validate_data_contract
+from insurance_pricing.data.datasets import load_datasets, validate_data_contract
 
 
 def test_data_contract_basic():

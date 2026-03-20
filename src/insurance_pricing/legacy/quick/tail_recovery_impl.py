@@ -7,8 +7,8 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing import analytics as ds
-from src.insurance_pricing import training as v2
+from insurance_pricing import analytics as ds
+from insurance_pricing import training as v2
 
 from . import dualtrack_impl as w23
 from . import gap_diagnosis_impl as w22
@@ -820,6 +820,6 @@ def materialize_tail_recovery_submissions(
 
 
 def train_run(config_path: str) -> dict:
-    from src.insurance_pricing import train_run as _train_run
+    from insurance_pricing import train_run as _train_run
 
     return _train_run(config_path)

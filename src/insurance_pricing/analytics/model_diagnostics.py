@@ -7,8 +7,8 @@ import pandas as pd
 from sklearn.metrics import average_precision_score, brier_score_loss, log_loss, mean_absolute_error, r2_score, roc_auc_score
 
 from .quality import _rmse
-from src.insurance_pricing.data.schema import TARGET_SEV_COL
-from src.insurance_pricing.evaluation import diagnostics as v2diag
+from insurance_pricing.data.schema import TARGET_SEV_COL
+from insurance_pricing.evaluation import diagnostics as v2diag
 
 def compute_error_by_deciles(
     y_true: np.ndarray,

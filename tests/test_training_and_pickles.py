@@ -7,8 +7,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.insurance_pricing import train_run
-from src.insurance_pricing.runtime.persistence import load_model_bundle
+from insurance_pricing import train_run
+from insurance_pricing.runtime.persistence import load_model_bundle
 
 
 @pytest.mark.skipif(

@@ -6,7 +6,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.features.schema import build_feature_frame_for_inference
+from insurance_pricing.features.schema import build_feature_frame_for_inference
 
 
 @dataclass

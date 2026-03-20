@@ -6,9 +6,8 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.evaluation.metrics import make_tail_weights
-from src.insurance_pricing.features.schema import build_feature_frame_for_inference
-from src.insurance_pricing.features.target_encoding import _apply_winsor
+from insurance_pricing.features.schema import build_feature_frame_for_inference
+from insurance_pricing.features.target_encoding import _apply_winsor
 
 
 @dataclass
@@ -49,6 +48,7 @@ def _fit_catboost_severity(
     params: Mapping[str, Any],
 ) -> SeverityModel:
     from catboost import CatBoostRegressor
+    from insurance_pricing.evaluation.metrics import make_tail_weights
 
     pos = np.asarray(y_freq, dtype=int) == 1
     X_pos = X_train.loc[pos].copy()
@@ -151,4 +151,3 @@ def fit_severity_model(
         seed=seed,
         params=dict(params or {}),
     )
-

@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
-from src.insurance_pricing.data.io import ensure_dir
-from src.insurance_pricing.data.schema import DEFAULT_V2_DIR, INDEX_COL
+from insurance_pricing.data.io import ensure_dir
+from insurance_pricing.data.schema import DEFAULT_V2_DIR, INDEX_COL
 
 def build_primary_time_folds(
     train: pd.DataFrame,

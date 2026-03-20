@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold
 
-from src.insurance_pricing import analytics as ds
-from src.insurance_pricing import training as v2
+from insurance_pricing import analytics as ds
+from insurance_pricing import training as v2
 
 from . import gap_diagnosis_impl as w22
 from .common import (
@@ -1479,6 +1479,6 @@ def write_submission_decision_report(
 
 
 def train_run(config_path: str) -> dict:
-    from src.insurance_pricing import train_run as _train_run
+    from insurance_pricing import train_run as _train_run
 
     return _train_run(config_path)

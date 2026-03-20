@@ -2,29 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.cv.integrity import build_splits, validate_split_integrity
-from src.insurance_pricing.data.datasets import build_feature_sets, load_datasets, select_bundle
-from src.insurance_pricing.data.schema import TARGET_SEV_COL
-from src.insurance_pricing.evaluation.metrics import summarize_prime_metrics
-from src.insurance_pricing.features.schema import build_feature_schema
-from src.insurance_pricing.inference.predict import (
-    build_submission_from_run as _build_submission,
-    predict_from_run as _predict_from_run,
-)
-from src.insurance_pricing.models.calibration import fit_calibrator
-from src.insurance_pricing.models.frequency import fit_frequency_model
-from src.insurance_pricing.models.prime import PrimeModel
-from src.insurance_pricing.models.severity import fit_severity_model
-from src.insurance_pricing.models.tail import fit_tail_mapper
-from src.insurance_pricing.runtime.persistence import load_model_bundle, save_model_bundle
-from src.insurance_pricing.training.benchmark import run_benchmark
-from src.insurance_pricing.training.config import TrainingConfig, load_training_config
-from src.insurance_pricing.training.selection import score_multi_split, select_best_run
+if TYPE_CHECKING:
+    from insurance_pricing.training.config import TrainingConfig
 
 
 def _build_benchmark_spec(cfg: TrainingConfig) -> dict:
@@ -49,6 +33,21 @@ def _build_benchmark_spec(cfg: TrainingConfig) -> dict:
 
 
 def train_run(config_path: str) -> dict:
+    from insurance_pricing.cv.integrity import build_splits, validate_split_integrity
+    from insurance_pricing.data.datasets import build_feature_sets, load_datasets, select_bundle
+    from insurance_pricing.data.schema import TARGET_SEV_COL
+    from insurance_pricing.evaluation.metrics import summarize_prime_metrics
+    from insurance_pricing.features.schema import build_feature_schema
+    from insurance_pricing.models.calibration import fit_calibrator
+    from insurance_pricing.models.frequency import fit_frequency_model
+    from insurance_pricing.models.prime import PrimeModel
+    from insurance_pricing.models.severity import fit_severity_model
+    from insurance_pricing.models.tail import fit_tail_mapper
+    from insurance_pricing.runtime.persistence import save_model_bundle
+    from insurance_pricing.training.benchmark import run_benchmark
+    from insurance_pricing.training.config import load_training_config
+    from insurance_pricing.training.selection import score_multi_split, select_best_run
+
     cfg = load_training_config(config_path)
     train, test = load_datasets(cfg.data_dir)
     feature_sets = build_feature_sets(train, test, drop_identifiers=cfg.drop_identifiers)
@@ -155,6 +154,11 @@ def train_run(config_path: str) -> dict:
 
 
 def evaluate_run(run_id: str) -> dict:
+    from insurance_pricing.data.datasets import load_datasets
+    from insurance_pricing.data.schema import TARGET_SEV_COL
+    from insurance_pricing.evaluation.metrics import summarize_prime_metrics
+    from insurance_pricing.runtime.persistence import load_model_bundle
+
     loaded = load_model_bundle(run_id)
     cfg = loaded["manifest"].get("config", {})
     data_dir = str(cfg.get("data_dir", "data"))
@@ -176,8 +180,14 @@ def evaluate_run(run_id: str) -> dict:
 
 
 def predict_from_run(run_id: str, input_df: pd.DataFrame) -> pd.DataFrame:
+    from insurance_pricing.inference.predict import predict_from_run as _predict_from_run
+
     return _predict_from_run(run_id, input_df)
 
 
 def build_submission(run_id: str, test_df: pd.DataFrame) -> pd.DataFrame:
+    from insurance_pricing.inference.predict import (
+        build_submission_from_run as _build_submission,
+    )
+
     return _build_submission(run_id, test_df)

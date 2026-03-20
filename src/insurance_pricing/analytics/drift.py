@@ -7,7 +7,7 @@ import pandas as pd
 from scipy import stats
 from scipy.stats import chi2_contingency, ks_2samp
 
-from src.insurance_pricing.data.schema import ID_COLS, INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL
+from insurance_pricing.data.schema import ID_COLS, INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL
 
 from .quality import _safe_series
 from .quality import _mad

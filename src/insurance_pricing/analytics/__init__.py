@@ -1,35 +1,35 @@
-from src.insurance_pricing.analytics.association import compute_cramers_v_table
-from src.insurance_pricing.analytics.dictionary import (
+from insurance_pricing.analytics.association import compute_cramers_v_table
+from insurance_pricing.analytics.dictionary import (
     build_data_dictionary,
     classify_columns,
 )
-from src.insurance_pricing.analytics.drift import (
+from insurance_pricing.analytics.drift import (
     compute_drift_categorical_chi2,
     compute_drift_numeric_ks_psi,
 )
-from src.insurance_pricing.analytics.exports import export_analysis_tables
-from src.insurance_pricing.analytics.loading import (
+from insurance_pricing.analytics.exports import export_analysis_tables
+from insurance_pricing.analytics.loading import (
     DEFAULT_DS_DIR,
     load_project_datasets,
 )
-from src.insurance_pricing.analytics.model_diagnostics import (
+from insurance_pricing.analytics.model_diagnostics import (
     compute_calibration_table,
     compute_error_by_deciles,
     compute_oof_model_diagnostics,
 )
-from src.insurance_pricing.analytics.preprocessing import (
+from insurance_pricing.analytics.preprocessing import (
     build_cardinality_report,
     build_feature_blocks,
     build_feature_engineering_catalog,
     compute_preprocessing_recommendations,
 )
-from src.insurance_pricing.analytics.quality import (
+from insurance_pricing.analytics.quality import (
     compute_missingness_report,
     compute_outlier_report,
     compute_rule_violations,
     detect_leakage_risk_columns,
 )
-from src.insurance_pricing.analytics.segmentation import (
+from insurance_pricing.analytics.segmentation import (
     compute_linkage_from_distance,
     compute_gower_like_distance_sample,
     compute_segment_target_tables,

@@ -20,7 +20,8 @@ Code canonique actif:
 7. `src/insurance_pricing/inference/`
 8. `src/insurance_pricing/analytics/`
 9. `src/insurance_pricing/runtime/`
-10. `src/insurance_pricing/api.py`
+10. `src/insurance_pricing/workflows.py`
+11. `src/insurance_pricing/api/`
 
 Archive historique:
 
@@ -35,14 +36,16 @@ Archive historique:
 4. DS analysis: `src/insurance_pricing/analytics/`
 5. Inference/submission: `src/insurance_pricing/inference/`
 6. Persistence/export DS: `src/insurance_pricing/runtime/`
+7. Facade Python stable: `src/insurance_pricing/workflows.py`
+8. Couche HTTP FastAPI: `src/insurance_pricing/api/`
 
 ## API publique
 
-1. `src.insurance_pricing.train_run`
-2. `src.insurance_pricing.evaluate_run`
-3. `src.insurance_pricing.predict_from_run`
-4. `src.insurance_pricing.build_submission`
-5. `src.insurance_pricing.export_ds_tables_and_figures`
+1. `insurance_pricing.train_run`
+2. `insurance_pricing.evaluate_run`
+3. `insurance_pricing.predict_from_run`
+4. `insurance_pricing.build_submission`
+5. `insurance_pricing.export_ds_tables_and_figures`
 
 ## Politique Git
 
@@ -52,9 +55,9 @@ Archive historique:
 
 ## Checks recommandes
 
-1. `python scripts/check_import_graph.py`
-2. `python scripts/validate_repo_structure.py`
-3. `pytest -q`
+1. `uv sync --group api --group train --group test`
+2. `uv run pytest -q`
+3. `uv run insurance-pricing-api --help`
 
 ## Correction encoding notebook
 
@@ -62,7 +65,5 @@ Archive historique:
 `python scripts/fix_notebook_encoding.py --dry-run`
 2. Application des corrections:
 `python scripts/fix_notebook_encoding.py --apply`
-3. Verification stricte apres correction:
-`python scripts/validate_repo_structure.py --encoding-strict`
-4. Test dedie:
-`pytest -q tests/test_notebook_encoding_health.py`
+3. Verification package/API apres correction:
+`uv run pytest -q`

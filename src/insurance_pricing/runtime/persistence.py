@@ -4,12 +4,13 @@ import json
 import pickle
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
 import pandas as pd
 
-from src.insurance_pricing.data.io import ensure_dir
+from insurance_pricing.data.io import ensure_dir
 
 
 MODEL_ROOT = Path("artifacts") / "models"
@@ -27,6 +28,23 @@ class RunArtifacts:
     manifest_path: Path
 
 
+class _CompatibilityUnpickler(pickle.Unpickler):
+    """Load legacy artifacts serialized before the package import-path cleanup."""
+
+    _MODULE_PREFIX_MAP = {
+        "src.insurance_pricing": "insurance_pricing",
+    }
+
+    def find_class(self, module: str, name: str) -> Any:
+        target_module = module
+        for old_prefix, new_prefix in self._MODULE_PREFIX_MAP.items():
+            if module == old_prefix or module.startswith(f"{old_prefix}."):
+                target_module = module.replace(old_prefix, new_prefix, 1)
+                break
+        resolved_module = import_module(target_module)
+        return getattr(resolved_module, name)
+
+
 def _pickle_dump(obj: Any, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as f:
@@ -35,7 +53,7 @@ def _pickle_dump(obj: Any, path: Path) -> None:
 
 def _pickle_load(path: Path) -> Any:
     with path.open("rb") as f:
-        return pickle.load(f)
+        return _CompatibilityUnpickler(f).load()
 
 
 def _build_run_id(prefix: str = "run") -> str:

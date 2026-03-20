@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.insurance_pricing.data.io import ensure_dir
+from insurance_pricing.data.io import ensure_dir
 
 def export_analysis_tables(tables: dict[str, pd.DataFrame], out_dir: str | Path) -> None:
     out = ensure_dir(out_dir)

@@ -5,12 +5,12 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from src.insurance_pricing.data.schema import DatasetBundle, INDEX_COL
-from src.insurance_pricing.features.target_encoding import _add_fold_target_encoding
-from src.insurance_pricing.legacy.engines.catboost_impl import _fit_catboost_fulltrain_v2
-from src.insurance_pricing.legacy.engines.lightgbm_impl import _fit_lgbm_fulltrain_v2
-from src.insurance_pricing.legacy.engines.xgboost_impl import _fit_xgb_fulltrain_v2
-from src.insurance_pricing.training.benchmark import _fit_predict_fold_v2
+from insurance_pricing.data.schema import DatasetBundle, INDEX_COL
+from insurance_pricing.features.target_encoding import _add_fold_target_encoding
+from insurance_pricing.legacy.engines.catboost_impl import _fit_catboost_fulltrain_v2
+from insurance_pricing.legacy.engines.lightgbm_impl import _fit_lgbm_fulltrain_v2
+from insurance_pricing.legacy.engines.xgboost_impl import _fit_xgb_fulltrain_v2
+from insurance_pricing.training.benchmark import _fit_predict_fold_v2
 
 def fit_full_two_part_predict(
     *,
