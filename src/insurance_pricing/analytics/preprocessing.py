@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 from insurance_pricing.data.schema import ID_COLS, INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL
-from insurance_pricing.features.engineering import add_engineered_features_v2
 
 def build_feature_blocks(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
@@ -167,7 +166,7 @@ def build_cardinality_report(train: pd.DataFrame, test: pd.DataFrame) -> pd.Data
         if not tr_present and not te_present:
             continue
         tr = train[c].astype(str) if tr_present else pd.Series(dtype=str)
-        te = test[c].astype(str) if te_present else pd.Series(dtype=str)
+        te = test[c].astype(str) if te_present else pd.Series(dtype=str)  # noqa: F841
         rows.append(
             {
                 "column": c,

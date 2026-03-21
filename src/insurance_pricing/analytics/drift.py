@@ -5,12 +5,10 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.stats import chi2_contingency, ks_2samp
 
 from insurance_pricing.data.schema import ID_COLS, INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL
 
 from .quality import _safe_series
-from .quality import _mad
 
 def _psi_from_series(train_s: pd.Series, test_s: pd.Series, bins: int = 10) -> float:
     a = pd.to_numeric(train_s, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()

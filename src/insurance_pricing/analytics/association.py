@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.stats import chi2_contingency
 
 def _cramers_v(x: pd.Series, y: pd.Series) -> float:
     tab = pd.crosstab(x.astype(str), y.astype(str))

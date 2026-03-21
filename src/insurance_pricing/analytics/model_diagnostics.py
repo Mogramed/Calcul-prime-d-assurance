@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, brier_score_loss, log_loss, mean_absolute_error, r2_score, roc_auc_score
 
 from .quality import _rmse
-from insurance_pricing.data.schema import TARGET_SEV_COL
 from insurance_pricing.evaluation import diagnostics as v2diag
 
 def compute_error_by_deciles(
@@ -220,7 +218,7 @@ def compute_oof_model_diagnostics(
     if not err_true_zero_aware.empty:
         err_true_zero_aware.insert(0, "decile_basis", "y_true_zero_aware")
         if {"bin", "bin_type"}.issubset(err_true_zero_aware.columns):
-            bucket_map = (
+            bucket_map = (  # noqa: F841
                 err_true_zero_aware[["bin", "bin_type"]]
                 .assign(bucket=lambda x: x["bin_type"].astype(str) + ":" + x["bin"].astype(str))
             )

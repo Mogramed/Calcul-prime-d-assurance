@@ -61,11 +61,11 @@ def fit_full_two_part_predict(
 
         pos = y_freq_train == 1
         if int(pos.sum()) < 5:
-            _, m_te = _severity_fallback(y_sev_train, 1, len(X_test))
+            _, m_te = _severity_fallback(y_sev_train, 1, len(X_test))  # noqa: F821
             return p_te, m_te
         y_pos = y_sev_train[pos]
         y_log = np.log1p(y_pos)
-        w = make_tail_weights(y_pos) if severity_mode == "weighted_tail" else None
+        w = make_tail_weights(y_pos) if severity_mode == "weighted_tail" else None  # noqa: F821
         reg = CatBoostRegressor(**sp)
         reg.fit(Pool(X_train.loc[pos], y_log, cat_features=cat_idx, weight=w))
         z_te = reg.predict(Pool(X_test, cat_features=cat_idx))
@@ -88,7 +88,7 @@ def fit_full_two_part_predict(
         else:
             from xgboost import XGBClassifier, XGBRegressor
 
-        enc = OrdinalFrameEncoder(cat_cols).fit(X_train)
+        enc = OrdinalFrameEncoder(cat_cols).fit(X_train)  # noqa: F821
         Xtr = enc.transform(X_train)
         Xte = enc.transform(X_test)
 
@@ -155,11 +155,11 @@ def fit_full_two_part_predict(
 
         pos = y_freq_train == 1
         if int(pos.sum()) < 5:
-            _, m_te = _severity_fallback(y_sev_train, 1, len(X_test))
+            _, m_te = _severity_fallback(y_sev_train, 1, len(X_test))  # noqa: F821
             return p_te, m_te
         y_pos = y_sev_train[pos]
         y_log = np.log1p(y_pos)
-        w = make_tail_weights(y_pos) if severity_mode == "weighted_tail" else None
+        w = make_tail_weights(y_pos) if severity_mode == "weighted_tail" else None  # noqa: F821
         if e == "xgboost":
             reg.fit(Xtr.loc[pos], y_log, sample_weight=w, verbose=False)
         else:

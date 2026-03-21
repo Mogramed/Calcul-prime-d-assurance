@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -524,7 +524,7 @@ def save_gap_diagnosis_artifacts(
 ) -> None:
     out = v2.ensure_dir(out_dir)
     report_df.to_csv(out / "gap_diagnosis_report.csv", index=False)
-    (out / "gap_diagnosis_summary.json").write_text(json.dumps(dict(summary), indent=2), encoding="utf-8")
+    (out / "gap_diagnosis_summary.json").write_text(json.dumps(dict(summary), indent=2), encoding="utf-8")  # noqa: F821
 
 
 def run_quick_benchmark(

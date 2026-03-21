@@ -9,7 +9,7 @@ warnings.warn(
     stacklevel=2,
 )
 
-from . import dualtrack, gap_diagnosis, tail_recovery, tail_selection
+from . import dualtrack, gap_diagnosis, tail_recovery, tail_selection  # noqa: E402
 
 __all__ = [
     "gap_diagnosis",

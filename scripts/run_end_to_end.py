@@ -13,15 +13,15 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from insurance_pricing import (
+from insurance_pricing import (  # noqa: E402
     build_submission,
     evaluate_run,
     export_ds_tables_and_figures,
     train_run,
 )
-from insurance_pricing.data.datasets import load_datasets, validate_data_contract
-from insurance_pricing.data.io import ensure_dir
-from insurance_pricing.runtime.ds_reporting import save_table
+from insurance_pricing.data.datasets import load_datasets, validate_data_contract  # noqa: E402
+from insurance_pricing.data.io import ensure_dir  # noqa: E402
+from insurance_pricing.runtime.ds_reporting import save_table  # noqa: E402
 
 
 def _utc_now() -> str:

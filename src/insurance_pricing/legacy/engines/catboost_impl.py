@@ -5,7 +5,6 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from insurance_pricing.data.schema import TARGET_SEV_COL
 from insurance_pricing.evaluation.metrics import make_tail_weights
 from insurance_pricing.features.target_encoding import (
     _apply_winsor,

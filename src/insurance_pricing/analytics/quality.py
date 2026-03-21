@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import re
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
-from scipy.stats import chi2_contingency, ks_2samp
 from sklearn.metrics import mean_squared_error
 
 from insurance_pricing.data.schema import (

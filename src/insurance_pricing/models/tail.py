@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping
 
 import numpy as np
-import pandas as pd
-from sklearn.isotonic import IsotonicRegression
 
 def _safe_slope(dx: float, dy: float, fallback: float) -> float:
     if dx <= 0 or not np.isfinite(dx) or not np.isfinite(dy):

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from sklearn.preprocessing import OrdinalEncoder
+    pass
 
 TARGET_FREQ_COL = "nombre_sinistres"
 
