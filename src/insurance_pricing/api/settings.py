@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,3 +11,11 @@ class AppSettings(BaseSettings):
     )
 
     run_id: str = Field(min_length=1)
+    database_url: str = Field(min_length=1)
+    log_level: str = Field(default="INFO", min_length=1)
+    log_json: bool = True
+
+    @field_validator("log_level")
+    @classmethod
+    def normalize_log_level(cls, value: str) -> str:
+        return value.strip().upper()

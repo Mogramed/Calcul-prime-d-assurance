@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from insurance_pricing import __version__
+from insurance_pricing.api.audit import AuditStore
+from insurance_pricing.api.db import PostgresAuditStore
 from insurance_pricing.api.dependencies import get_settings
+from insurance_pricing.api.errors import install_exception_handlers
+from insurance_pricing.api.logging import configure_logging, get_logger
 from insurance_pricing.api.middleware import install_observability_middleware
 from insurance_pricing.api.routers.health import router as health_router
 from insurance_pricing.api.routers.metadata import router as metadata_router
@@ -13,19 +18,47 @@ from insurance_pricing.api.routers.predict import router as predict_router
 from insurance_pricing.api.service import PredictionService
 from insurance_pricing.api.settings import AppSettings
 
+APP_LOGGER = get_logger("insurance_pricing.api.app")
 
-def create_app(settings: AppSettings | None = None) -> FastAPI:
+
+def create_app(
+    settings: AppSettings | None = None,
+    *,
+    prediction_service: PredictionService | None = None,
+    audit_store: AuditStore | None = None,
+) -> FastAPI:
     resolved_settings = settings if settings is not None else get_settings()
+    configure_logging(level=resolved_settings.log_level, json_logs=resolved_settings.log_json)
+    resolved_audit_store = (
+        audit_store
+        if audit_store is not None
+        else PostgresAuditStore(resolved_settings.database_url)
+    )
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
-            app.state.prediction_service = PredictionService.load(resolved_settings.run_id)
+            app.state.prediction_service = (
+                prediction_service
+                if prediction_service is not None
+                else PredictionService.load(resolved_settings.run_id)
+            )
+            app.state.audit_store = resolved_audit_store
+            await resolved_audit_store.startup()
         except Exception as exc:
             raise RuntimeError(
-                f"Failed to load prediction service for run_id '{resolved_settings.run_id}'."
+                f"Failed to initialize the API runtime for run_id '{resolved_settings.run_id}'."
             ) from exc
+        APP_LOGGER.info(
+            "api_startup_completed",
+            extra={
+                "run_id": resolved_settings.run_id,
+                "database_configured": True,
+            },
+        )
         yield
+        await resolved_audit_store.shutdown()
+        APP_LOGGER.info("api_shutdown_completed", extra={"run_id": resolved_settings.run_id})
 
     app = FastAPI(
         title="Insurance Pricing API",
@@ -86,6 +119,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     )
     app.state.settings = resolved_settings
     install_observability_middleware(app)
+    install_exception_handlers(app)
     app.include_router(metadata_router)
     app.include_router(health_router)
     app.include_router(predict_router)

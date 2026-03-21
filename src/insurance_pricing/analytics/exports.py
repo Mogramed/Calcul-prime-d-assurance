@@ -6,6 +6,7 @@ import pandas as pd
 
 from insurance_pricing.data.io import ensure_dir
 
+
 def export_analysis_tables(tables: dict[str, pd.DataFrame], out_dir: str | Path) -> None:
     out = ensure_dir(out_dir)
     for name, df in tables.items():
@@ -15,4 +16,3 @@ def export_analysis_tables(tables: dict[str, pd.DataFrame], out_dir: str | Path)
             df.to_csv(out / f"{name}.csv", index=False)
         else:
             raise TypeError(f"Unsupported table type for {name}: {type(df)}")
-

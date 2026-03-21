@@ -4,10 +4,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 
-NumericValue = StrictInt | StrictFloat
-PostalCodeValue = StrictInt | StrictStr
+type NumericValue = StrictInt | StrictFloat
+type PostalCodeValue = StrictInt | StrictStr
+type JsonPrimitive = str | int | float | bool | None
+type JsonValue = JsonPrimitive | dict[str, JsonValue] | list[JsonValue]
 
-SINGLE_PREDICTION_EXAMPLE = {
+SINGLE_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "index": 50000,
     "bonus": 0.58,
     "type_contrat": "Maxi",
@@ -38,7 +40,7 @@ SINGLE_PREDICTION_EXAMPLE = {
     "poids_vehicule": 830,
 }
 
-BATCH_PREDICTION_EXAMPLE = {
+BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "records": [
         SINGLE_PREDICTION_EXAMPLE,
         {
@@ -54,24 +56,24 @@ BATCH_PREDICTION_EXAMPLE = {
     ]
 }
 
-FREQUENCY_PREDICTION_EXAMPLE = {
+FREQUENCY_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "index": 50000,
     "frequency_prediction": 0.0835,
 }
 
-SEVERITY_PREDICTION_EXAMPLE = {
+SEVERITY_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "index": 50000,
     "severity_prediction": 2410.24,
 }
 
-PRIME_PREDICTION_EXAMPLE = {
+PRIME_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "index": 50000,
     "frequency_prediction": 0.0835,
     "severity_prediction": 2410.24,
     "prime_prediction": 201.25504,
 }
 
-FREQUENCY_BATCH_PREDICTION_EXAMPLE = {
+FREQUENCY_BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
     "count": 2,
     "predictions": [
@@ -83,7 +85,7 @@ FREQUENCY_BATCH_PREDICTION_EXAMPLE = {
     ],
 }
 
-SEVERITY_BATCH_PREDICTION_EXAMPLE = {
+SEVERITY_BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
     "count": 2,
     "predictions": [
@@ -95,7 +97,7 @@ SEVERITY_BATCH_PREDICTION_EXAMPLE = {
     ],
 }
 
-PRIME_BATCH_PREDICTION_EXAMPLE = {
+PRIME_BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
     "count": 2,
     "predictions": [
@@ -109,13 +111,13 @@ PRIME_BATCH_PREDICTION_EXAMPLE = {
     ],
 }
 
-HEALTH_RESPONSE_EXAMPLE = {
+HEALTH_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
     "status": "ok",
     "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
     "model_loaded": True,
 }
 
-API_INDEX_EXAMPLE = {
+API_INDEX_EXAMPLE: dict[str, JsonValue] = {
     "name": "Insurance Pricing API",
     "api_version": "0.1.0",
     "docs_url": "http://127.0.0.1:8000/docs",
@@ -128,12 +130,12 @@ API_INDEX_EXAMPLE = {
     "prediction_schema_url": "http://127.0.0.1:8000/predict/schema",
 }
 
-VERSION_RESPONSE_EXAMPLE = {
+VERSION_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
     "api_version": "0.1.0",
     "model_run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
 }
 
-MODEL_METADATA_EXAMPLE = {
+MODEL_METADATA_EXAMPLE: dict[str, JsonValue] = {
     "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
     "created_at_utc": "2026-03-20T10:15:00+00:00",
     "notes": None,
@@ -168,7 +170,7 @@ MODEL_METADATA_EXAMPLE = {
     },
 }
 
-PREDICTION_SCHEMA_EXAMPLE = {
+PREDICTION_SCHEMA_EXAMPLE: dict[str, JsonValue] = {
     "record_model": "InsurancePricingRecord",
     "batch_model": "InsurancePricingBatchRequest",
     "supports_batch": True,
@@ -364,25 +366,49 @@ class HealthResponse(BaseModel):
 
 
 class FeatureSchemaSummary(BaseModel):
-    feature_count: int = Field(description="Total number of engineered features used at inference time.")
+    feature_count: int = Field(
+        description="Total number of engineered features used at inference time."
+    )
     categorical_feature_count: int = Field(description="Number of categorical engineered features.")
     numerical_feature_count: int = Field(description="Number of numerical engineered features.")
-    feature_columns: list[str] = Field(description="Ordered engineered feature list expected by the models.")
-    categorical_columns: list[str] = Field(description="Categorical subset of the engineered feature list.")
-    numerical_columns: list[str] = Field(description="Numerical subset of the engineered feature list.")
+    feature_columns: list[str] = Field(
+        description="Ordered engineered feature list expected by the models."
+    )
+    categorical_columns: list[str] = Field(
+        description="Categorical subset of the engineered feature list."
+    )
+    numerical_columns: list[str] = Field(
+        description="Numerical subset of the engineered feature list."
+    )
 
 
 class ModelConfigSummary(BaseModel):
-    feature_set: str | None = Field(default=None, description="Feature-set identifier used during training.")
-    drop_identifiers: bool | None = Field(default=None, description="Whether identifiers were excluded from training features.")
-    frequency_engine: str | None = Field(default=None, description="Training engine used for the frequency model.")
-    frequency_calibration: str | None = Field(default=None, description="Calibration method applied to the raw frequency scores.")
-    severity_engine: str | None = Field(default=None, description="Training engine used for the severity model.")
+    feature_set: str | None = Field(
+        default=None, description="Feature-set identifier used during training."
+    )
+    drop_identifiers: bool | None = Field(
+        default=None, description="Whether identifiers were excluded from training features."
+    )
+    frequency_engine: str | None = Field(
+        default=None, description="Training engine used for the frequency model."
+    )
+    frequency_calibration: str | None = Field(
+        default=None, description="Calibration method applied to the raw frequency scores."
+    )
+    severity_engine: str | None = Field(
+        default=None, description="Training engine used for the severity model."
+    )
     severity_family: str | None = Field(default=None, description="Severity modeling family.")
     severity_mode: str | None = Field(default=None, description="Severity training mode.")
-    tweedie_power: float | None = Field(default=None, description="Tweedie variance power when applicable.")
-    tail_mapper_enabled: bool | None = Field(default=None, description="Whether a tail correction mapper is enabled.")
-    non_negative: bool | None = Field(default=None, description="Whether final outputs are clipped to non-negative values.")
+    tweedie_power: float | None = Field(
+        default=None, description="Tweedie variance power when applicable."
+    )
+    tail_mapper_enabled: bool | None = Field(
+        default=None, description="Whether a tail correction mapper is enabled."
+    )
+    non_negative: bool | None = Field(
+        default=None, description="Whether final outputs are clipped to non-negative values."
+    )
 
 
 class ModelMetadataResponse(BaseModel):
@@ -394,12 +420,24 @@ class ModelMetadataResponse(BaseModel):
     )
 
     run_id: str = Field(description="Identifier of the model bundle currently served by the API.")
-    created_at_utc: str | None = Field(default=None, description="UTC timestamp at which the bundle manifest was created.")
-    notes: str | None = Field(default=None, description="Optional free-form notes attached to the bundle.")
-    model_files: dict[str, str] = Field(description="Filesystem paths of the loaded model artifacts.")
-    metrics: dict[str, Any] = Field(description="Training or evaluation metrics captured with the model bundle.")
-    feature_schema: FeatureSchemaSummary = Field(description="Summary of the engineered feature schema used for inference.")
-    config: ModelConfigSummary = Field(description="Training configuration summary extracted from the bundle manifest.")
+    created_at_utc: str | None = Field(
+        default=None, description="UTC timestamp at which the bundle manifest was created."
+    )
+    notes: str | None = Field(
+        default=None, description="Optional free-form notes attached to the bundle."
+    )
+    model_files: dict[str, str] = Field(
+        description="Filesystem paths of the loaded model artifacts."
+    )
+    metrics: dict[str, Any] = Field(
+        description="Training or evaluation metrics captured with the model bundle."
+    )
+    feature_schema: FeatureSchemaSummary = Field(
+        description="Summary of the engineered feature schema used for inference."
+    )
+    config: ModelConfigSummary = Field(
+        description="Training configuration summary extracted from the bundle manifest."
+    )
 
 
 class VersionResponse(BaseModel):
@@ -411,7 +449,9 @@ class VersionResponse(BaseModel):
     )
 
     api_version: str = Field(description="Version of the installed `insurance_pricing` package.")
-    model_run_id: str = Field(description="Identifier of the model bundle configured for this API instance.")
+    model_run_id: str = Field(
+        description="Identifier of the model bundle configured for this API instance."
+    )
 
 
 class ApiIndexResponse(BaseModel):
@@ -430,15 +470,21 @@ class ApiIndexResponse(BaseModel):
     health_url: str = Field(description="Absolute URL of the health endpoint.")
     ready_url: str = Field(description="Absolute URL of the readiness endpoint.")
     version_url: str = Field(description="Absolute URL of the version endpoint.")
-    current_model_url: str = Field(description="Absolute URL of the current model metadata endpoint.")
-    prediction_schema_url: str = Field(description="Absolute URL of the prediction input contract endpoint.")
+    current_model_url: str = Field(
+        description="Absolute URL of the current model metadata endpoint."
+    )
+    prediction_schema_url: str = Field(
+        description="Absolute URL of the prediction input contract endpoint."
+    )
 
 
 class PredictionFieldDescriptor(BaseModel):
     name: str = Field(description="Field name expected by the prediction API.")
     type: str = Field(description="JSON/OpenAPI type summary for this field.")
     required: bool = Field(description="Whether the field must be provided by the client.")
-    description: str | None = Field(default=None, description="Human-readable description of the field.")
+    description: str | None = Field(
+        default=None, description="Human-readable description of the field."
+    )
 
 
 class PredictionSchemaResponse(BaseModel):

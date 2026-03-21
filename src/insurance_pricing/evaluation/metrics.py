@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
-
 import numpy as np
 from sklearn.metrics import brier_score_loss, mean_absolute_error, mean_squared_error, roc_auc_score
 
@@ -14,7 +12,7 @@ def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(mean_absolute_error(y_true, y_pred))
 
 
-def summarize_prime_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+def summarize_prime_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(y_pred, dtype=float)
     top1_thr = float(np.quantile(y, 0.99))
@@ -47,8 +45,8 @@ def compute_metric_row(
     y_sev_true: np.ndarray,
     pred_freq: np.ndarray,
     pred_sev: np.ndarray,
-    pred_prime: Optional[np.ndarray] = None,
-) -> Dict[str, float]:
+    pred_prime: np.ndarray | None = None,
+) -> dict[str, float]:
     pred_freq = np.nan_to_num(np.asarray(pred_freq, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
     pred_sev = np.nan_to_num(np.asarray(pred_sev, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
     y_freq_true = np.asarray(y_freq_true, dtype=int)

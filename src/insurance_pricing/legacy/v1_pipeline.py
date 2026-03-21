@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -28,17 +29,17 @@ class DatasetBundle:
     X_test: pd.DataFrame
     y_freq: pd.Series
     y_sev: pd.Series
-    feature_cols: List[str]
-    cat_cols: List[str]
-    num_cols: List[str]
+    feature_cols: list[str]
+    cat_cols: list[str]
+    num_cols: list[str]
 
 
 class OrdinalFrameEncoder:
     def __init__(self, cat_cols: Sequence[str]):
         self.cat_cols = list(cat_cols)
-        self.encoder: Optional[OrdinalEncoder] = None
+        self.encoder: OrdinalEncoder | None = None
 
-    def fit(self, X: pd.DataFrame) -> "OrdinalFrameEncoder":
+    def fit(self, X: pd.DataFrame) -> OrdinalFrameEncoder:
         if not self.cat_cols:
             return self
         self.encoder = OrdinalEncoder(
@@ -71,18 +72,18 @@ def save_json(data: Mapping[str, Any], path: str | Path) -> None:
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def load_json(path: str | Path) -> Dict[str, Any]:
+def load_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def load_train_test(data_dir: str | Path = "data") -> Tuple[pd.DataFrame, pd.DataFrame]:
+def load_train_test(data_dir: str | Path = "data") -> tuple[pd.DataFrame, pd.DataFrame]:
     base = Path(data_dir)
     train = pd.read_csv(base / "train.csv")
     test = pd.read_csv(base / "test.csv")
     return train, test
 
 
-def build_targets(train: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
+def build_targets(train: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     y_sev = train[TARGET_SEV_COL].astype(float).rename("y_sev")
     y_freq = (y_sev > 0).astype(int).rename("y_freq")
     return y_freq, y_sev
@@ -140,9 +141,7 @@ def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
         out["prix_par_kg"] = out["prix_vehicule"] / out["poids_vehicule"].replace(0, np.nan)
 
     if {"din_vehicule", "cylindre_vehicule"}.issubset(out.columns):
-        out["din_par_cylindre"] = (
-            out["din_vehicule"] / out["cylindre_vehicule"].replace(0, np.nan)
-        )
+        out["din_par_cylindre"] = out["din_vehicule"] / out["cylindre_vehicule"].replace(0, np.nan)
 
     out = _add_binary_indicators(out)
 
@@ -191,10 +190,10 @@ def build_primary_time_folds(
     *,
     n_blocks: int = 5,
     index_col: str = INDEX_COL,
-) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, tuple[np.ndarray, np.ndarray]]:
     order = np.argsort(train[index_col].to_numpy())
     blocks = np.array_split(order, n_blocks)
-    folds: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+    folds: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     for fold in range(1, n_blocks):
         tr = np.concatenate(blocks[:fold]).astype(int)
         va = blocks[fold].astype(int)
@@ -207,22 +206,22 @@ def build_secondary_group_folds(
     *,
     n_splits: int = 5,
     group_col: str = "id_client",
-) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, tuple[np.ndarray, np.ndarray]]:
     gkf = GroupKFold(n_splits=n_splits)
     groups = train[group_col].to_numpy()
-    out: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+    out: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     for i, (tr, va) in enumerate(gkf.split(train, groups=groups), start=1):
         out[i] = (tr.astype(int), va.astype(int))
     return out
 
 
 def validate_folds_disjoint(
-    folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
     *,
     check_full_coverage: bool = False,
-    n_rows: Optional[int] = None,
+    n_rows: int | None = None,
 ) -> None:
-    valid_union: List[int] = []
+    valid_union: list[int] = []
     for fold, (tr, va) in folds.items():
         inter = set(map(int, tr)).intersection(set(map(int, va)))
         if inter:
@@ -238,12 +237,12 @@ def validate_folds_disjoint(
 
 
 def folds_to_frame(
-    folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
     *,
     split_name: str,
     n_rows: int,
 ) -> pd.DataFrame:
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for fold, (tr, va) in folds.items():
         rows.extend(
             {"split": split_name, "fold_id": int(fold), "row_idx": int(i), "role": "train"}
@@ -261,17 +260,17 @@ def folds_to_frame(
 def export_fold_artifacts(
     *,
     train: pd.DataFrame,
-    primary_folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
-    secondary_folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    primary_folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    secondary_folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
     output_dir: str | Path = "artifacts",
 ) -> None:
     out = ensure_dir(output_dir)
-    folds_to_frame(
-        primary_folds, split_name="primary_time", n_rows=len(train)
-    ).to_parquet(out / "folds_primary.parquet", index=False)
-    folds_to_frame(
-        secondary_folds, split_name="secondary_group", n_rows=len(train)
-    ).to_parquet(out / "folds_secondary.parquet", index=False)
+    folds_to_frame(primary_folds, split_name="primary_time", n_rows=len(train)).to_parquet(
+        out / "folds_primary.parquet", index=False
+    )
+    folds_to_frame(secondary_folds, split_name="secondary_group", n_rows=len(train)).to_parquet(
+        out / "folds_secondary.parquet", index=False
+    )
 
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -299,7 +298,7 @@ def compute_metric_row(
     y_sev_true: np.ndarray,
     pred_freq: np.ndarray,
     pred_sev: np.ndarray,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     pred_freq = np.nan_to_num(np.asarray(pred_freq, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
     pred_sev = np.nan_to_num(np.asarray(pred_sev, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
     y_freq_true = np.asarray(y_freq_true, dtype=int)
@@ -318,7 +317,7 @@ def compute_metric_row(
     }
 
 
-def _severity_fallback(y_sev_tr: np.ndarray, n_va: int, n_te: int) -> Tuple[np.ndarray, np.ndarray]:
+def _severity_fallback(y_sev_tr: np.ndarray, n_va: int, n_te: int) -> tuple[np.ndarray, np.ndarray]:
     pos = np.asarray(y_sev_tr, dtype=float)
     pos = pos[pos > 0]
     base = float(np.nanmean(pos)) if len(pos) else 0.0
@@ -399,7 +398,7 @@ def _fit_catboost(
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
     cat_idx = [X_tr.columns.get_loc(c) for c in cat_cols]
@@ -453,13 +452,21 @@ def _fit_catboost(
     z_te = reg.predict(Pool(X_te, cat_features=cat_idx))
     z_tr = reg.predict(Pool(X_tr.loc[pos], cat_features=cat_idx))
     resid = y_log - z_tr
-    smear = float(np.average(np.exp(resid), weights=w)) if w is not None else float(np.mean(np.exp(resid)))
+    smear = (
+        float(np.average(np.exp(resid), weights=w))
+        if w is not None
+        else float(np.mean(np.exp(resid)))
+    )
     if not np.isfinite(smear) or smear <= 0:
         smear = 1.0
     m_va = np.maximum(smear * np.exp(z_va) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-    m_va = np.nan_to_num(m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
-    m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+    m_va = np.nan_to_num(
+        m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
+    m_te = np.nan_to_num(
+        m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
     return p_va, m_va, p_te, m_te
 
 
@@ -477,7 +484,7 @@ def _fit_lgbm(
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     from lightgbm import LGBMClassifier, LGBMRegressor
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_tr)
@@ -528,13 +535,21 @@ def _fit_lgbm(
     z_te = reg.predict(Xte)
     z_tr = reg.predict(Xtr.loc[pos])
     resid = y_log - z_tr
-    smear = float(np.average(np.exp(resid), weights=w)) if w is not None else float(np.mean(np.exp(resid)))
+    smear = (
+        float(np.average(np.exp(resid), weights=w))
+        if w is not None
+        else float(np.mean(np.exp(resid)))
+    )
     if not np.isfinite(smear) or smear <= 0:
         smear = 1.0
     m_va = np.maximum(smear * np.exp(z_va) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-    m_va = np.nan_to_num(m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
-    m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+    m_va = np.nan_to_num(
+        m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
+    m_te = np.nan_to_num(
+        m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
     return p_va, m_va, p_te, m_te
 
 
@@ -552,7 +567,7 @@ def _fit_xgb(
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     from xgboost import XGBClassifier, XGBRegressor
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_tr)
@@ -607,13 +622,21 @@ def _fit_xgb(
     z_te = reg.predict(Xte)
     z_tr = reg.predict(Xtr.loc[pos])
     resid = y_log - z_tr
-    smear = float(np.average(np.exp(resid), weights=w)) if w is not None else float(np.mean(np.exp(resid)))
+    smear = (
+        float(np.average(np.exp(resid), weights=w))
+        if w is not None
+        else float(np.mean(np.exp(resid)))
+    )
     if not np.isfinite(smear) or smear <= 0:
         smear = 1.0
     m_va = np.maximum(smear * np.exp(z_va) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-    m_va = np.nan_to_num(m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
-    m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+    m_va = np.nan_to_num(
+        m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
+    m_te = np.nan_to_num(
+        m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
     return p_va, m_va, p_te, m_te
 
 
@@ -632,7 +655,7 @@ def fit_predict_two_part(
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     e = engine.lower()
     if e == "catboost":
         return _fit_catboost(
@@ -694,7 +717,7 @@ def fit_full_two_part_predict(
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Train on full train and return (test_freq_raw, test_sev)."""
     e = engine.lower()
 
@@ -749,7 +772,9 @@ def fit_full_two_part_predict(
         if not np.isfinite(smear) or smear <= 0:
             smear = 1.0
         m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-        m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+        m_te = np.nan_to_num(
+            m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+        )
         return p_te, m_te
 
     if e in {"lightgbm", "xgboost"}:
@@ -845,7 +870,9 @@ def fit_full_two_part_predict(
         if not np.isfinite(smear) or smear <= 0:
             smear = 1.0
         m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-        m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+        m_te = np.nan_to_num(
+            m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+        )
         return p_te, m_te
 
     raise ValueError(f"Unsupported engine: {engine}")
@@ -859,7 +886,7 @@ def run_cv_experiment(
     X: pd.DataFrame,
     y_freq: pd.Series,
     y_sev: pd.Series,
-    folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -867,7 +894,7 @@ def run_cv_experiment(
     calibration_methods: Sequence[str],
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     n = len(X)
     fold_assign = np.full(n, np.nan)
     oof_freq = np.full(n, np.nan)
@@ -875,9 +902,9 @@ def run_cv_experiment(
     y_freq_np = y_freq.to_numpy(dtype=int)
     y_sev_np = y_sev.to_numpy(dtype=float)
 
-    test_freq_parts: List[np.ndarray] = []
-    test_sev_parts: List[np.ndarray] = []
-    fold_rows: List[Dict[str, Any]] = []
+    test_freq_parts: list[np.ndarray] = []
+    test_sev_parts: list[np.ndarray] = []
+    fold_rows: list[dict[str, Any]] = []
 
     for fold_id, (tr, va) in folds.items():
         p_va, m_va, p_te, m_te = fit_predict_two_part(
@@ -923,8 +950,8 @@ def run_cv_experiment(
     valid = ~np.isnan(oof_freq)
     test_freq_mean = np.nanmean(np.vstack(test_freq_parts), axis=0)
     test_sev_mean = np.nanmean(np.vstack(test_sev_parts), axis=0)
-    run_rows: List[Dict[str, Any]] = []
-    pred_frames: List[pd.DataFrame] = []
+    run_rows: list[dict[str, Any]] = []
+    pred_frames: list[pd.DataFrame] = []
 
     for calib in calibration_methods:
         c = calib.lower()
@@ -1045,7 +1072,7 @@ def simulate_public_private_shakeup(
     n = len(y)
     n_pub = int(round(n * public_ratio))
     idx = np.arange(n)
-    rows: List[Dict[str, float]] = []
+    rows: list[dict[str, float]] = []
     for s in range(n_sim):
         rng.shuffle(idx)
         pub = idx[:n_pub]
@@ -1064,12 +1091,14 @@ def simulate_public_private_shakeup(
 
 
 def build_submission(index_series: pd.Series, pred: np.ndarray) -> pd.DataFrame:
-    sub = pd.DataFrame({"index": index_series.astype(int).to_numpy(), "pred": np.asarray(pred, dtype=float)})
+    sub = pd.DataFrame(
+        {"index": index_series.astype(int).to_numpy(), "pred": np.asarray(pred, dtype=float)}
+    )
     sub["pred"] = sub["pred"].clip(lower=0.0)
     return sub
 
 
-COARSE_CONFIGS: Dict[str, List[Dict[str, Any]]] = {
+COARSE_CONFIGS: dict[str, list[dict[str, Any]]] = {
     "catboost": [
         {
             "config_id": "cb_c1",
@@ -1129,11 +1158,11 @@ def pick_top_configs(
     *,
     split_name: str = "primary_time",
     top_k_per_engine: int = 2,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     rr = run_registry.copy()
     rr = rr[(rr["level"] == "run") & (rr["split"] == split_name)]
     rr = rr.sort_values(["engine", "rmse_prime", "brier_freq"])
-    out: Dict[str, List[str]] = {}
+    out: dict[str, list[str]] = {}
     for engine, g in rr.groupby("engine"):
         out[engine] = g["config_id"].drop_duplicates().head(top_k_per_engine).tolist()
     return out

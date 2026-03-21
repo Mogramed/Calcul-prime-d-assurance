@@ -10,7 +10,9 @@ import pandas as pd
 def train_main() -> None:
     from insurance_pricing.workflows import train_run
 
-    parser = argparse.ArgumentParser(description="Train insurance pricing models and save artifacts.")
+    parser = argparse.ArgumentParser(
+        description="Train insurance pricing models and save artifacts."
+    )
     parser.add_argument("--config", required=True, help="Path to the training JSON config file.")
     args = parser.parse_args()
     print(json.dumps(train_run(args.config), indent=2, ensure_ascii=False))
@@ -20,7 +22,9 @@ def evaluate_main() -> None:
     from insurance_pricing.workflows import evaluate_run
 
     parser = argparse.ArgumentParser(description="Evaluate a saved run on train and test data.")
-    parser.add_argument("--run-id", required=True, help="Model run_id from artifacts/models/registry.csv.")
+    parser.add_argument(
+        "--run-id", required=True, help="Model run_id from artifacts/models/registry.csv."
+    )
     args = parser.parse_args()
     print(json.dumps(evaluate_run(args.run_id), indent=2, ensure_ascii=False))
 
@@ -28,7 +32,9 @@ def evaluate_main() -> None:
 def predict_main() -> None:
     from insurance_pricing.workflows import predict_from_run
 
-    parser = argparse.ArgumentParser(description="Predict frequency, severity, and prime from a saved run.")
+    parser = argparse.ArgumentParser(
+        description="Predict frequency, severity, and prime from a saved run."
+    )
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--input", required=True, help="Input CSV path.")
     parser.add_argument("--output", required=True, help="Output CSV path.")

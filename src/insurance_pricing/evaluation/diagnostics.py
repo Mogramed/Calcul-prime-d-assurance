@@ -1,25 +1,25 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from insurance_pricing.data.schema import INDEX_COL
-
 from .metrics import rmse
 from .run_id import make_run_id_from_df
+
 
 def compute_prediction_distribution_audit(
     pred: np.ndarray,
     *,
-    y_true: Optional[np.ndarray] = None,
-    run_id: Optional[str] = None,
-    split: Optional[str] = None,
-    sample: Optional[str] = None,
+    y_true: np.ndarray | None = None,
+    run_id: str | None = None,
+    split: str | None = None,
+    sample: str | None = None,
     collapse_q99_q90_ratio: float = 1.03,
     collapse_identical_ratio: float = 0.15,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     p = np.asarray(pred, dtype=float)
     p = np.maximum(np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     n = int(len(p))
@@ -81,7 +81,7 @@ def compute_prediction_distribution_audit(
         or (collapse_identical_eval >= collapse_identical_ratio)
     )
 
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         "run_id": run_id,
         "split": split,
         "sample": sample,
@@ -127,7 +127,7 @@ def build_prediction_distribution_table(pred_df: pd.DataFrame) -> pd.DataFrame:
     d = pred_df.copy()
     if "run_id" not in d.columns:
         d["run_id"] = make_run_id_from_df(d)
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for (run_id, split, is_test), g in d.groupby(["run_id", "split", "is_test"], dropna=False):
         g = g.copy()
         sample = "test" if int(is_test) == 1 else "oof"
@@ -149,11 +149,11 @@ def compute_ood_diagnostics(
     train: pd.DataFrame,
     test: pd.DataFrame,
     *,
-    cat_cols: Optional[Sequence[str]] = None,
+    cat_cols: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     if cat_cols is None:
         cat_cols = [c for c in train.columns if train[c].dtype == "object" and c in test.columns]
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for c in cat_cols:
         tr_u = set(train[c].astype(str).dropna().unique())
         te_u = set(test[c].astype(str).dropna().unique())
@@ -176,7 +176,7 @@ def compute_segment_bias_from_oof(
     *,
     run_id: str,
     split_name: str = "primary_time",
-    segment_cols: Optional[Sequence[str]] = None,
+    segment_cols: Sequence[str] | None = None,
     min_count: int = 150,
 ) -> pd.DataFrame:
     if segment_cols is None:
@@ -199,7 +199,7 @@ def compute_segment_bias_from_oof(
     tr["y_true"] = dd["y_sev"].to_numpy()
     tr["pred_prime"] = dd["pred_prime"].to_numpy()
     tr["error"] = tr["pred_prime"] - tr["y_true"]
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for c in segment_cols:
         if c not in tr.columns:
             continue
@@ -269,7 +269,7 @@ def simulate_public_private_shakeup(
     n = len(y)
     n_pub = int(round(n * public_ratio))
     idx = np.arange(n)
-    rows: List[Dict[str, float]] = []
+    rows: list[dict[str, float]] = []
     for s in range(n_sim):
         rng.shuffle(idx)
         pub = idx[:n_pub]
@@ -303,7 +303,7 @@ def simulate_public_private_shakeup_v2(
     n = len(y)
     n_pub = int(round(n * public_ratio))
     idx = np.arange(n)
-    rows: List[Dict[str, float]] = []
+    rows: list[dict[str, float]] = []
 
     if stratified_tail:
         thr = float(np.nanquantile(y, tail_quantile))

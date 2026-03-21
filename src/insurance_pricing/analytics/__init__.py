@@ -30,8 +30,8 @@ from insurance_pricing.analytics.quality import (
     detect_leakage_risk_columns,
 )
 from insurance_pricing.analytics.segmentation import (
-    compute_linkage_from_distance,
     compute_gower_like_distance_sample,
+    compute_linkage_from_distance,
     compute_segment_target_tables,
     fit_kmeans_exploration,
     fit_mixed_embedding_proxy,

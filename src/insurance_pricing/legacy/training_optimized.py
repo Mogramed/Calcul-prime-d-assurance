@@ -1,11 +1,13 @@
-from __future__ import annotations
-
 """Optimized compatibility helpers built on top of modular V2 pipeline."""
 
-from typing import Any, Mapping, Tuple
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
 
 import pandas as pd
 
+from insurance_pricing.cv.splits import build_split_registry
 from insurance_pricing.evaluation.diagnostics import (
     build_model_cards,
     build_prediction_distribution_table,
@@ -18,7 +20,6 @@ from insurance_pricing.features.engineering import prepare_feature_sets
 from insurance_pricing.inference.submission import build_submission
 from insurance_pricing.models.calibration import apply_calibrator, fit_calibrator
 from insurance_pricing.models.tail import apply_tail_mapper_safe, fit_tail_mapper_safe
-from insurance_pricing.cv.splits import build_split_registry
 from insurance_pricing.training.benchmark import run_benchmark
 from insurance_pricing.training.fulltrain import fit_full_predict_fulltrain
 from insurance_pricing.training.presets import (
@@ -36,7 +37,7 @@ def run_benchmark_optimized(
     bundle: Any,
     splits: Mapping[str, Mapping[int, tuple]],
     seed: int,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Drop-in helper used by old optimized experiments."""
     return run_benchmark(spec=spec, bundle=bundle, splits=splits, seed=seed)
 

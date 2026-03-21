@@ -3,9 +3,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-IGNORED_DIRS = {".git", ".pytest_cache", ".venv", "artifacts", "catboost_info", "notebooks", "__pycache__"}
+IGNORED_DIRS = {
+    ".git",
+    ".pytest_cache",
+    ".venv",
+    "artifacts",
+    "catboost_info",
+    "notebooks",
+    "__pycache__",
+}
 DEPRECATED_IMPORT_PATTERN = re.compile(
     r"(^|\n)\s*(from|import)\s+src\.insurance_pricing\b",
 )
@@ -13,9 +20,7 @@ DEPRECATED_IMPORT_PATTERN = re.compile(
 
 def _iter_python_files() -> list[Path]:
     return [
-        path
-        for path in ROOT.rglob("*.py")
-        if not any(part in IGNORED_DIRS for part in path.parts)
+        path for path in ROOT.rglob("*.py") if not any(part in IGNORED_DIRS for part in path.parts)
     ]
 
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Tuple
+from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from insurance_pricing.cv.splits import build_split_registry, validate_folds_disjoint
-SplitRegistry = Dict[str, Dict[int, Tuple[np.ndarray, np.ndarray]]]
+
+SplitRegistry = dict[str, dict[int, tuple[np.ndarray, np.ndarray]]]
 
 
 def build_splits(train: pd.DataFrame, config: Any) -> SplitRegistry:
@@ -19,7 +21,7 @@ def build_splits(train: pd.DataFrame, config: Any) -> SplitRegistry:
 
 
 def validate_split_integrity(
-    splits: Mapping[str, Mapping[int, Tuple[np.ndarray, np.ndarray]]],
+    splits: Mapping[str, Mapping[int, tuple[np.ndarray, np.ndarray]]],
     *,
     train: pd.DataFrame,
     group_col: str = "id_client",

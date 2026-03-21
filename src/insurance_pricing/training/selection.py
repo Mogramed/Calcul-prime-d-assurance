@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Sequence
+from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -8,6 +9,7 @@ from scipy.optimize import minimize
 
 from insurance_pricing.evaluation.metrics import rmse
 from insurance_pricing.evaluation.run_id import make_run_id_from_df
+
 
 def optimize_non_negative_weights(pred_matrix: np.ndarray, y_true: np.ndarray) -> np.ndarray:
     p = np.asarray(pred_matrix, dtype=float)
@@ -27,19 +29,21 @@ def optimize_non_negative_weights(pred_matrix: np.ndarray, y_true: np.ndarray) -
     s = w.sum()
     return x0 if s <= 0 else w / s
 
+
 def pick_top_configs(
     run_registry: pd.DataFrame,
     *,
     split_name: str = "primary_time",
     top_k_per_engine: int = 2,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     rr = run_registry.copy()
     rr = rr[(rr["level"] == "run") & (rr["split"] == split_name)]
     rr = rr.sort_values(["engine", "rmse_prime", "brier_freq"])
-    out: Dict[str, List[str]] = {}
+    out: dict[str, list[str]] = {}
     for engine, g in rr.groupby("engine"):
         out[engine] = g["config_id"].drop_duplicates().head(top_k_per_engine).tolist()
     return out
+
 
 def select_final_models(
     run_registry: pd.DataFrame,
@@ -117,7 +121,9 @@ def select_final_models(
         return pd.DataFrame()
 
     piv_rmse = rr.pivot_table(index="run_id", columns="split", values="rmse_prime", aggfunc="mean")
-    piv_q99 = rr.pivot_table(index="run_id", columns="split", values="q99_ratio_pos", aggfunc="mean")
+    piv_q99 = rr.pivot_table(
+        index="run_id", columns="split", values="q99_ratio_pos", aggfunc="mean"
+    )
     meta_cols_all = [
         "feature_set",
         "engine",
@@ -189,9 +195,8 @@ def select_final_models(
     out["rmse_split_std"] = out[
         ["rmse_primary_time", "rmse_secondary_group", "rmse_aux_blocked5"]
     ].std(axis=1, ddof=0)
-    out["gap_penalty"] = (
-        np.maximum(out["rmse_gap_secondary"].fillna(0.0), 0.0)
-        + np.maximum(out["rmse_gap_aux"].fillna(0.0), 0.0)
+    out["gap_penalty"] = np.maximum(out["rmse_gap_secondary"].fillna(0.0), 0.0) + np.maximum(
+        out["rmse_gap_aux"].fillna(0.0), 0.0
     )
     out["tail_penalty"] = (1.0 - out["q99_primary_time"].fillna(0.0)).abs()
     out["selection_score"] = (
@@ -229,7 +234,7 @@ def select_final_models(
     )
 
     def _build_reason(r: pd.Series) -> str:
-        reasons: List[str] = []
+        reasons: list[str] = []
         if not bool(r["accepted_secondary"]):
             reasons.append("secondary_gap")
         if not bool(r["accepted_aux"]):
@@ -243,7 +248,9 @@ def select_final_models(
         return "accepted" if not reasons else ",".join(reasons)
 
     out["decision_reason"] = out.apply(_build_reason, axis=1)
-    out = out.sort_values(["accepted", "selection_score"], ascending=[False, True]).reset_index(drop=True)
+    out = out.sort_values(["accepted", "selection_score"], ascending=[False, True]).reset_index(
+        drop=True
+    )
     out["rank"] = np.arange(1, len(out) + 1, dtype=int)
 
     if return_report:
@@ -295,7 +302,9 @@ def score_multi_split(run_df: pd.DataFrame) -> pd.DataFrame:
         ]
         if c in d.columns
     ]
-    piv = d.pivot_table(index=keys, columns="split", values="rmse_prime", aggfunc="first").reset_index()
+    piv = d.pivot_table(
+        index=keys, columns="split", values="rmse_prime", aggfunc="first"
+    ).reset_index()
     piv["rmse_primary_time"] = pd.to_numeric(piv.get("primary_time"), errors="coerce")
     piv["rmse_secondary_group"] = pd.to_numeric(piv.get("secondary_group"), errors="coerce")
     piv["rmse_aux_blocked5"] = pd.to_numeric(piv.get("aux_blocked5"), errors="coerce")
@@ -310,4 +319,3 @@ def score_multi_split(run_df: pd.DataFrame) -> pd.DataFrame:
     ).T
     piv["rmse_split_std"] = np.nanstd(arr, axis=1)
     return piv.sort_values("rmse_primary_time", na_position="last").reset_index(drop=True)
-

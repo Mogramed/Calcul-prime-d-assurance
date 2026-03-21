@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,7 @@ def safe_read_parquet(path: str | Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def safe_read_json(path: str | Path, default: Optional[dict] = None) -> dict[str, Any]:
+def safe_read_json(path: str | Path, default: dict | None = None) -> dict[str, Any]:
     p = Path(path)
     if not p.exists():
         return {} if default is None else dict(default)

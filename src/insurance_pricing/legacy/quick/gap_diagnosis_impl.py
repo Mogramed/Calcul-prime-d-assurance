@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from insurance_pricing import analytics as ds
 from insurance_pricing import training as v2
+
 from .common import (
     safe_read_csv as _safe_read_csv,
+)
+from .common import (
     safe_read_json as _safe_read_json,
+)
+from .common import (
     safe_read_parquet as _safe_read_parquet,
 )
-
 
 ARTIFACT_QUICK_DIR = Path("artifacts") / "v2_2_quick"
 
@@ -22,14 +28,14 @@ def ensure_quick_dir(root: str | Path = ".") -> Path:
     return v2.ensure_dir(Path(root) / ARTIFACT_QUICK_DIR)
 
 
-def load_existing_artifacts(root: str | Path = ".") -> Dict[str, Any]:
+def load_existing_artifacts(root: str | Path = ".") -> dict[str, Any]:
     root = Path(root)
     a_v1 = root / "artifacts"
     a_v2 = root / v2.DEFAULT_V2_DIR
     a_ds = root / ds.DEFAULT_DS_DIR
     out_dir = ensure_quick_dir(root)
 
-    ctx: Dict[str, Any] = {
+    ctx: dict[str, Any] = {
         "root": root,
         "data_dir": root / "data",
         "artifact_v1": a_v1,
@@ -64,8 +70,8 @@ def load_existing_artifacts(root: str | Path = ".") -> Dict[str, Any]:
     return ctx
 
 
-def summarize_submission_df(df: pd.DataFrame, name: str) -> Dict[str, Any]:
-    out: Dict[str, Any] = {"name": name, "exists": int(df is not None and len(df) > 0)}
+def summarize_submission_df(df: pd.DataFrame, name: str) -> dict[str, Any]:
+    out: dict[str, Any] = {"name": name, "exists": int(df is not None and len(df) > 0)}
     if df is None or len(df) == 0 or "pred" not in df.columns:
         return out
     s = pd.to_numeric(df["pred"], errors="coerce").fillna(0.0).clip(lower=0.0)
@@ -84,7 +90,7 @@ def summarize_submission_df(df: pd.DataFrame, name: str) -> Dict[str, Any]:
     return out
 
 
-def build_cfg_lookup() -> Dict[str, Dict[str, Dict[str, Any]]]:
+def build_cfg_lookup() -> dict[str, dict[str, dict[str, Any]]]:
     return {
         engine: {cfg["config_id"]: cfg for cfg in cfgs}
         for engine, cfgs in v2.V2_COARSE_CONFIGS.items()
@@ -96,8 +102,8 @@ def build_spec_from_row(
     *,
     cfg_lookup: Mapping[str, Mapping[str, Mapping[str, Any]]],
     te_cols: Sequence[str],
-    feature_set_override: Optional[str] = None,
-) -> Dict[str, Any]:
+    feature_set_override: str | None = None,
+) -> dict[str, Any]:
     engine = str(row["engine"])
     config_id = str(row["config_id"])
     cfg = cfg_lookup.get(engine, {}).get(config_id)
@@ -131,7 +137,7 @@ def build_spec_from_row(
     }
 
 
-def extract_row_from_run_table(run_df: pd.DataFrame, run_id: str) -> Optional[Dict[str, Any]]:
+def extract_row_from_run_table(run_df: pd.DataFrame, run_id: str) -> dict[str, Any] | None:
     if len(run_df) == 0:
         return None
     d = run_df.copy()
@@ -222,7 +228,7 @@ def compute_distribution_alignment_from_dist(
     run_id: str,
     *,
     split: str = "primary_time",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     base = {
         "pred_q90_oof": np.nan,
         "pred_q99_oof": np.nan,
@@ -394,7 +400,7 @@ def build_gap_diagnosis(
     *,
     kaggle_public_rmse: float,
     top_k: int = 10,
-) -> tuple[pd.DataFrame, Dict[str, Any]]:
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     v2_selection_report_df = ctx.get("v2_selection_report", pd.DataFrame())
     v2_run_df = ctx.get("v2_run_registry", pd.DataFrame())
     v2_pred_dist_df = ctx.get("v2_pred_dist", pd.DataFrame())
@@ -533,10 +539,10 @@ def run_quick_benchmark(
     candidates_df: pd.DataFrame,
     te_cols: Sequence[str],
     seed: int = 42,
-    feature_set_override: Optional[str] = None,
-    out_dir: Optional[str | Path] = None,
-) -> Dict[str, Any]:
-    result: Dict[str, Any] = {
+    feature_set_override: str | None = None,
+    out_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "fold_df": pd.DataFrame(),
         "run_df": pd.DataFrame(),
         "pred_df": pd.DataFrame(),
@@ -739,7 +745,7 @@ def score_quick_runs(
     return reg.reset_index()
 
 
-def choose_robust_and_challenger(scored_df: pd.DataFrame) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+def choose_robust_and_challenger(scored_df: pd.DataFrame) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if len(scored_df) == 0:
         return None, None
     d = scored_df.copy()
@@ -770,7 +776,7 @@ def build_submission_with_refit(
     te_cols: Sequence[str],
     oof_source_df: pd.DataFrame,
     seed_default: int = 42,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     r = dict(run_row)
     run_id = str(r["run_id"])
     fs_name = str(r.get("feature_set", "base_v2"))
@@ -831,7 +837,7 @@ def build_submission_with_refit(
     return {"run_id": run_id, "sub": sub, "pred": pred, "audit": audit}
 
 
-def _find_scored_row(scored_df: pd.DataFrame, run_id: Optional[str]) -> Optional[Dict[str, Any]]:
+def _find_scored_row(scored_df: pd.DataFrame, run_id: str | None) -> dict[str, Any] | None:
     if len(scored_df) == 0 or not run_id:
         return None
     d = scored_df[scored_df["run_id"].astype(str) == str(run_id)]
@@ -845,12 +851,12 @@ def build_quick_submissions(
     *,
     quick_result: Mapping[str, Any],
     scored_df: pd.DataFrame,
-    robust_row: Optional[Mapping[str, Any]],
-    challenger_row: Optional[Mapping[str, Any]],
+    robust_row: Mapping[str, Any] | None,
+    challenger_row: Mapping[str, Any] | None,
     te_cols: Sequence[str],
     seed: int = 42,
-    out_dir: Optional[str | Path] = None,
-) -> Dict[str, Any]:
+    out_dir: str | Path | None = None,
+) -> dict[str, Any]:
     out_dir = v2.ensure_dir(out_dir or ctx["artifact_quick"])
     train_raw = quick_result.get("train_raw", pd.DataFrame())
     test_raw = quick_result.get("test_raw", pd.DataFrame())
@@ -876,7 +882,7 @@ def build_quick_submissions(
     robust_target = dict(robust_row) if robust_row else baseline_v2_selected_row
     challenger_target = dict(challenger_row) if challenger_row else baseline_v2_selected_row
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "robust_submission": pd.DataFrame(),
         "challenger_submission": pd.DataFrame(),
         "robust_meta": {},
@@ -956,15 +962,15 @@ def build_quick_checks(
     challenger_meta: Mapping[str, Any],
     robust_submission: pd.DataFrame,
     challenger_submission: pd.DataFrame,
-    baseline_row_v2: Optional[Mapping[str, Any]],
+    baseline_row_v2: Mapping[str, Any] | None,
     seed: int = 42,
     n_sim_shakeup: int = 300,
-    out_dir: Optional[str | Path] = None,
-) -> Dict[str, Any]:
+    out_dir: str | Path | None = None,
+) -> dict[str, Any]:
     out_dir = v2.ensure_dir(out_dir or ARTIFACT_QUICK_DIR)
     checks_rows: list[dict[str, Any]] = []
 
-    def _append_check(name: str, run_id: Optional[str]):
+    def _append_check(name: str, run_id: str | None):
         row = _find_scored_row(scored_df, run_id)
         out: dict[str, Any] = {"submission": name, "run_id": run_id}
         if row is None:
@@ -1037,7 +1043,7 @@ def build_quick_checks(
     shakeup_robust = pd.DataFrame()
     shakeup_challenger = pd.DataFrame()
 
-    def _run_shakeup(run_id: Optional[str], name: str) -> pd.DataFrame:
+    def _run_shakeup(run_id: str | None, name: str) -> pd.DataFrame:
         if not run_id or len(quick_pred_df) == 0:
             return pd.DataFrame()
         d = quick_pred_df[
@@ -1075,9 +1081,9 @@ def build_oof_compare_artifact(
     ctx: Mapping[str, Any],
     *,
     quick_pred_df: pd.DataFrame,
-    robust_run_id: Optional[str],
-    challenger_run_id: Optional[str],
-    out_dir: Optional[str | Path] = None,
+    robust_run_id: str | None,
+    challenger_run_id: str | None,
+    out_dir: str | Path | None = None,
 ) -> pd.DataFrame:
     out_dir = v2.ensure_dir(out_dir or ctx["artifact_quick"])
     v1_run_df = ctx.get("v1_run_registry", pd.DataFrame())
@@ -1110,7 +1116,7 @@ def build_oof_compare_artifact(
         d = d[["row_idx", "y_sev", "pred_prime"]].drop_duplicates(subset=["row_idx"], keep="last")
         return d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_v1_best"})
 
-    def _extract_v2_by_run(run_id: Optional[str], col_name: str, source_df: pd.DataFrame) -> pd.DataFrame:
+    def _extract_v2_by_run(run_id: str | None, col_name: str, source_df: pd.DataFrame) -> pd.DataFrame:
         if not run_id or len(source_df) == 0:
             return pd.DataFrame()
         d = source_df[
@@ -1158,8 +1164,8 @@ def write_submission_decision_report(
     scored_df: pd.DataFrame,
     robust_meta: Mapping[str, Any],
     challenger_meta: Mapping[str, Any],
-    baseline_v2_row: Optional[Mapping[str, Any]],
-    out_dir: Optional[str | Path] = None,
+    baseline_v2_row: Mapping[str, Any] | None,
+    out_dir: str | Path | None = None,
 ) -> Path:
     out_dir = v2.ensure_dir(out_dir or ctx["artifact_quick"])
     lines: list[str] = []
