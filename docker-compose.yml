@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: insurance_pricing
+      POSTGRES_USER: insurance_pricing
+      POSTGRES_PASSWORD: insurance_pricing
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insurance_pricing -d insurance_pricing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: .
+    profiles: ["ops"]
+    environment:
+      INSURANCE_PRICING_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@postgres:5432/insurance_pricing
+      INSURANCE_PRICING_RUN_ID: ${INSURANCE_PRICING_RUN_ID}
+      INSURANCE_PRICING_LOG_LEVEL: ${INSURANCE_PRICING_LOG_LEVEL:-INFO}
+      INSURANCE_PRICING_LOG_JSON: ${INSURANCE_PRICING_LOG_JSON:-true}
+    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ${INSURANCE_PRICING_ARTIFACTS_DIR:-./artifacts}:/app/artifacts:ro
+
+  api:
+    build:
+      context: .
+    environment:
+      INSURANCE_PRICING_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@postgres:5432/insurance_pricing
+      INSURANCE_PRICING_RUN_ID: ${INSURANCE_PRICING_RUN_ID}
+      INSURANCE_PRICING_LOG_LEVEL: ${INSURANCE_PRICING_LOG_LEVEL:-INFO}
+      INSURANCE_PRICING_LOG_JSON: ${INSURANCE_PRICING_LOG_JSON:-true}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - ${INSURANCE_PRICING_ARTIFACTS_DIR:-./artifacts}:/app/artifacts:ro
+
+volumes:
+  postgres_data:

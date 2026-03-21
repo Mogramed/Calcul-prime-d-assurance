@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
 import warnings
+from typing import Any
 
 from insurance_pricing.legacy.quick import dualtrack_impl as _impl
 

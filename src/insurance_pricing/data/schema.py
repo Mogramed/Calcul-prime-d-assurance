@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from sklearn.preprocessing import OrdinalEncoder
+    pass
 
 TARGET_FREQ_COL = "nombre_sinistres"
 
@@ -29,16 +30,17 @@ class DatasetBundle:
     X_test: pd.DataFrame
     y_freq: pd.Series
     y_sev: pd.Series
-    feature_cols: List[str]
-    cat_cols: List[str]
-    num_cols: List[str]
+    feature_cols: list[str]
+    cat_cols: list[str]
+    num_cols: list[str]
+
 
 class OrdinalFrameEncoder:
     def __init__(self, cat_cols: Sequence[str]):
         self.cat_cols = list(cat_cols)
-        self.encoder: Optional[Any] = None
+        self.encoder: Any | None = None
 
-    def fit(self, X: pd.DataFrame) -> "OrdinalFrameEncoder":
+    def fit(self, X: pd.DataFrame) -> OrdinalFrameEncoder:
         if not self.cat_cols:
             return self
         from sklearn.preprocessing import OrdinalEncoder
@@ -59,4 +61,3 @@ class OrdinalFrameEncoder:
                 out[self.cat_cols].astype(str).fillna("NA")
             )
         return out.astype(np.float64)
-

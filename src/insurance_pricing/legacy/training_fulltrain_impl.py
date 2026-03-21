@@ -1,16 +1,22 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from insurance_pricing.data.schema import DatasetBundle, INDEX_COL
+from insurance_pricing.data.schema import INDEX_COL, DatasetBundle, OrdinalFrameEncoder
+from insurance_pricing.evaluation.metrics import make_tail_weights
 from insurance_pricing.features.target_encoding import _add_fold_target_encoding
-from insurance_pricing.legacy.engines.catboost_impl import _fit_catboost_fulltrain_v2
+from insurance_pricing.legacy.engines.catboost_impl import (
+    _fit_catboost_fulltrain_v2,
+    _severity_fallback,
+)
 from insurance_pricing.legacy.engines.lightgbm_impl import _fit_lgbm_fulltrain_v2
 from insurance_pricing.legacy.engines.xgboost_impl import _fit_xgb_fulltrain_v2
 from insurance_pricing.training.benchmark import _fit_predict_fold_v2
+
 
 def fit_full_two_part_predict(
     *,
@@ -24,7 +30,7 @@ def fit_full_two_part_predict(
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Train on full train and return (test_freq_raw, test_sev)."""
     e = engine.lower()
 
@@ -79,7 +85,9 @@ def fit_full_two_part_predict(
         if not np.isfinite(smear) or smear <= 0:
             smear = 1.0
         m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-        m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+        m_te = np.nan_to_num(
+            m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+        )
         return p_te, m_te
 
     if e in {"lightgbm", "xgboost"}:
@@ -175,10 +183,13 @@ def fit_full_two_part_predict(
         if not np.isfinite(smear) or smear <= 0:
             smear = 1.0
         m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-        m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+        m_te = np.nan_to_num(
+            m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+        )
         return p_te, m_te
 
     raise ValueError(f"Unsupported engine: {engine}")
+
 
 def fit_full_predict(
     *,
@@ -186,7 +197,7 @@ def fit_full_predict(
     bundle: DatasetBundle,
     seed: int,
     valid_ratio: float = 0.1,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     n = len(bundle.X_train)
     n_val = max(int(n * valid_ratio), 1000)
     order = np.argsort(bundle.train_raw[INDEX_COL].to_numpy())
@@ -240,13 +251,14 @@ def fit_full_predict(
         "test_prime": np.maximum(np.nan_to_num(prime_te, nan=0.0), 0.0),
     }
 
+
 def _apply_fulltrain_complexity(
     engine: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
     direct_params: Mapping[str, Any],
-    complexity: Optional[Mapping[str, Any]],
-) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    complexity: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     fp = dict(freq_params)
     sp = dict(sev_params)
     dp = dict(direct_params)
@@ -277,13 +289,14 @@ def _apply_fulltrain_complexity(
 
     return fp, sp, dp
 
+
 def fit_full_predict_fulltrain(
     *,
     spec: Mapping[str, Any],
     bundle: DatasetBundle,
     seed: int,
-    complexity: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, np.ndarray]:
+    complexity: Mapping[str, Any] | None = None,
+) -> dict[str, np.ndarray]:
     engine = str(spec.get("engine", "catboost")).lower()
     family = str(spec.get("family", "two_part_classic")).lower()
     severity_mode = str(spec.get("severity_mode", "classic")).lower()
@@ -373,4 +386,3 @@ def fit_full_predict_fulltrain(
         "test_sev": np.maximum(np.nan_to_num(m_te, nan=0.0, posinf=0.0, neginf=0.0), 0.0),
         "test_prime": np.maximum(np.nan_to_num(prime_te, nan=0.0, posinf=0.0, neginf=0.0), 0.0),
     }
-

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -11,7 +12,9 @@ from insurance_pricing.features.target_encoding import (
     _apply_winsor,
     _smearing_inverse,
 )
+
 from .catboost_impl import _severity_fallback, _severity_fallback_v2
+
 
 def _fit_lgbm(
     *,
@@ -27,7 +30,7 @@ def _fit_lgbm(
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     from lightgbm import LGBMClassifier, LGBMRegressor
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_tr)
@@ -78,14 +81,23 @@ def _fit_lgbm(
     z_te = reg.predict(Xte)
     z_tr = reg.predict(Xtr.loc[pos])
     resid = y_log - z_tr
-    smear = float(np.average(np.exp(resid), weights=w)) if w is not None else float(np.mean(np.exp(resid)))
+    smear = (
+        float(np.average(np.exp(resid), weights=w))
+        if w is not None
+        else float(np.mean(np.exp(resid)))
+    )
     if not np.isfinite(smear) or smear <= 0:
         smear = 1.0
     m_va = np.maximum(smear * np.exp(z_va) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-    m_va = np.nan_to_num(m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
-    m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+    m_va = np.nan_to_num(
+        m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
+    m_te = np.nan_to_num(
+        m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
     return p_va, m_va, p_te, m_te
+
 
 def _fit_lgbm_fold_v2(
     *,
@@ -104,7 +116,7 @@ def _fit_lgbm_fold_v2(
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
     direct_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_tr)
@@ -235,6 +247,7 @@ def _fit_lgbm_fold_v2(
     prime_te = np.maximum(p_te * m_te, 0.0)
     return p_va, m_va, prime_va, p_te, m_te, prime_te
 
+
 def _fit_lgbm_fulltrain_v2(
     *,
     X_train: pd.DataFrame,
@@ -249,7 +262,7 @@ def _fit_lgbm_fulltrain_v2(
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
     direct_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     from lightgbm import LGBMClassifier, LGBMRegressor
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_train)
@@ -348,4 +361,3 @@ def _fit_lgbm_fulltrain_v2(
     m_te = np.maximum(np.nan_to_num(m_te, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     prime_te = np.maximum(p_te * m_te, 0.0)
     return p_te, m_te, prime_te
-

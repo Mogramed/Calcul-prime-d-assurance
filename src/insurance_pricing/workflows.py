@@ -56,7 +56,9 @@ def train_run(config_path: str) -> dict:
     split_report = validate_split_integrity(splits, train=train, group_col=cfg.split.group_col)
 
     spec = _build_benchmark_spec(cfg)
-    fold_df, run_df, pred_df = run_benchmark(spec=spec, bundle=feature_sets, splits=splits, seed=cfg.seed)
+    fold_df, run_df, pred_df = run_benchmark(
+        spec=spec, bundle=feature_sets, splits=splits, seed=cfg.seed
+    )
 
     if run_df.empty:
         raise RuntimeError("run_benchmark returned empty run_df.")
@@ -143,7 +145,9 @@ def train_run(config_path: str) -> dict:
     fold_df.to_csv(artifacts.run_dir / "benchmark_folds.csv", index=False)
     run_df.to_csv(artifacts.run_dir / "benchmark_runs.csv", index=False)
     pred_df.to_parquet(artifacts.run_dir / "benchmark_oof_predictions.parquet", index=False)
-    score_multi_split(run_df).to_csv(artifacts.run_dir / "benchmark_multi_split_summary.csv", index=False)
+    score_multi_split(run_df).to_csv(
+        artifacts.run_dir / "benchmark_multi_split_summary.csv", index=False
+    )
 
     return {
         "run_id": artifacts.run_id,

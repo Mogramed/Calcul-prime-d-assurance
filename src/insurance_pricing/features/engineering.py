@@ -1,22 +1,24 @@
 from __future__ import annotations
 
-from typing import Dict, Mapping, Sequence, Tuple
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
 
 from insurance_pricing.data.io import build_targets
 from insurance_pricing.data.schema import (
-    DatasetBundle,
     ID_COLS,
     INDEX_COL,
     TARGET_FREQ_COL,
     TARGET_SEV_COL,
+    DatasetBundle,
 )
+
 
 def _binary_indicator_name(col: str, token: str) -> str:
     token = token.lower().replace(" ", "_").replace("/", "_").replace("-", "_")
     return f"is_{col}_{token}"
+
 
 def _add_binary_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
@@ -39,6 +41,7 @@ def _add_binary_indicators(df: pd.DataFrame) -> pd.DataFrame:
             out[c].astype(str).str.lower().eq(str(pos).lower()).astype(int)
         )
     return out
+
 
 def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
@@ -64,9 +67,7 @@ def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
         out["prix_par_kg"] = out["prix_vehicule"] / out["poids_vehicule"].replace(0, np.nan)
 
     if {"din_vehicule", "cylindre_vehicule"}.issubset(out.columns):
-        out["din_par_cylindre"] = (
-            out["din_vehicule"] / out["cylindre_vehicule"].replace(0, np.nan)
-        )
+        out["din_par_cylindre"] = out["din_vehicule"] / out["cylindre_vehicule"].replace(0, np.nan)
 
     out = _add_binary_indicators(out)
 
@@ -75,6 +76,7 @@ def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
             out[c] = out[c].astype(str).fillna("NA")
 
     return out
+
 
 def prepare_datasets(
     train: pd.DataFrame,
@@ -108,6 +110,7 @@ def prepare_datasets(
         num_cols=num_cols,
     )
 
+
 def _normalize_object_cols(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     for c in out.columns:
@@ -115,16 +118,18 @@ def _normalize_object_cols(df: pd.DataFrame) -> pd.DataFrame:
             out[c] = out[c].fillna("NA").astype(str)
     return out
 
+
 def _build_rare_maps(
     train_df: pd.DataFrame, *, cat_cols: Sequence[str], min_count: int = 30
-) -> Dict[str, set]:
-    maps: Dict[str, set] = {}
+) -> dict[str, set]:
+    maps: dict[str, set] = {}
     for c in cat_cols:
         if c not in train_df.columns:
             continue
         vc = train_df[c].astype(str).value_counts(dropna=False)
         maps[c] = set(vc[vc < min_count].index.astype(str))
     return maps
+
 
 def _apply_rare_maps(df: pd.DataFrame, rare_maps: Mapping[str, set]) -> pd.DataFrame:
     out = df.copy()
@@ -135,11 +140,13 @@ def _apply_rare_maps(df: pd.DataFrame, rare_maps: Mapping[str, set]) -> pd.DataF
         out[c] = np.where(s.isin(rare), "__RARE__", s)
     return out
 
+
 def _safe_div(a: pd.Series | np.ndarray, b: pd.Series | np.ndarray) -> np.ndarray:
     aa = np.asarray(a, dtype=float)
     bb = np.asarray(b, dtype=float)
     out = np.divide(aa, bb, out=np.full_like(aa, np.nan), where=np.isfinite(bb) & (bb != 0))
     return out
+
 
 def _add_engineered_features_core_v2(df: pd.DataFrame) -> pd.DataFrame:
     out = add_engineered_features(df)
@@ -155,12 +162,16 @@ def _add_engineered_features_core_v2(df: pd.DataFrame) -> pd.DataFrame:
     if "anciennete_vehicule" in out.columns:
         bins = [-np.inf, 2, 5, 9, 14, np.inf]
         labels = ["v_new", "v_recent", "v_mid", "v_old", "v_very_old"]
-        out["veh_age_band"] = pd.cut(out["anciennete_vehicule"], bins=bins, labels=labels).astype(str)
+        out["veh_age_band"] = pd.cut(out["anciennete_vehicule"], bins=bins, labels=labels).astype(
+            str
+        )
 
     if "power_weight_ratio" in out.columns:
         bins = [-np.inf, 0.04, 0.06, 0.08, 0.12, np.inf]
         labels = ["pw_low", "pw_mid", "pw_high", "pw_perf", "pw_extreme"]
-        out["power_weight_band"] = pd.cut(out["power_weight_ratio"], bins=bins, labels=labels).astype(str)
+        out["power_weight_band"] = pd.cut(
+            out["power_weight_ratio"], bins=bins, labels=labels
+        ).astype(str)
 
     if {"bonus", "utilisation"}.issubset(out.columns):
         out["bonus_x_usage"] = out["bonus"].astype(float) * (
@@ -186,9 +197,10 @@ def _add_engineered_features_core_v2(df: pd.DataFrame) -> pd.DataFrame:
     out = _normalize_object_cols(out)
     return out
 
+
 def add_engineered_features_v2(
     train: pd.DataFrame, test: pd.DataFrame, *, rare_min_count: int = 30
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     tr = _add_engineered_features_core_v2(train)
     te = _add_engineered_features_core_v2(test)
 
@@ -218,16 +230,21 @@ def add_engineered_features_v2(
         rare_mm = set(vc[vc < 20].index.astype(str))
         seen_mm = set(vc.index.astype(str))
         tr["is_rare_marque_modele"] = tr["marque_modele"].astype(str).isin(rare_mm).astype(int)
-        te_mm = te["marque_modele"].astype(str) if "marque_modele" in te.columns else pd.Series("", index=te.index)
-        te["is_rare_marque_modele"] = (
-            te_mm.isin(rare_mm) | (~te_mm.isin(seen_mm))
-        ).astype(int)
+        te_mm = (
+            te["marque_modele"].astype(str)
+            if "marque_modele" in te.columns
+            else pd.Series("", index=te.index)
+        )
+        te["is_rare_marque_modele"] = (te_mm.isin(rare_mm) | (~te_mm.isin(seen_mm))).astype(int)
     else:
         tr["is_rare_marque_modele"] = 0
         te["is_rare_marque_modele"] = 0
     return tr, te
 
-def _make_bundle(train_fe: pd.DataFrame, test_fe: pd.DataFrame, *, keep_cols: Sequence[str], name: str) -> DatasetBundle:
+
+def _make_bundle(
+    train_fe: pd.DataFrame, test_fe: pd.DataFrame, *, keep_cols: Sequence[str], name: str
+) -> DatasetBundle:
     y_freq, y_sev = build_targets(train_fe)
     cols = [c for c in keep_cols if c in train_fe.columns and c in test_fe.columns]
     X_train = train_fe[cols].copy()
@@ -246,13 +263,14 @@ def _make_bundle(train_fe: pd.DataFrame, test_fe: pd.DataFrame, *, keep_cols: Se
         num_cols=num_cols,
     )
 
+
 def prepare_feature_sets(
     train: pd.DataFrame,
     test: pd.DataFrame,
     *,
     rare_min_count: int = 30,
     drop_identifiers: bool = True,
-) -> Dict[str, DatasetBundle]:
+) -> dict[str, DatasetBundle]:
     train_fe, test_fe = add_engineered_features_v2(train, test, rare_min_count=rare_min_count)
     exclude = {INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL}
     all_cols = [c for c in train_fe.columns if c in test_fe.columns and c not in exclude]
@@ -265,10 +283,15 @@ def prepare_feature_sets(
     return {
         "base_v2": _make_bundle(train_fe, test_fe, keep_cols=all_cols, name="base_v2"),
         "robust_v2": _make_bundle(
-            train_fe, test_fe, keep_cols=[c for c in all_cols if c not in robust_drop], name="robust_v2"
+            train_fe,
+            test_fe,
+            keep_cols=[c for c in all_cols if c not in robust_drop],
+            name="robust_v2",
         ),
         "compact_v2": _make_bundle(
-            train_fe, test_fe, keep_cols=[c for c in all_cols if c not in compact_drop], name="compact_v2"
+            train_fe,
+            test_fe,
+            keep_cols=[c for c in all_cols if c not in compact_drop],
+            name="compact_v2",
         ),
     }
-

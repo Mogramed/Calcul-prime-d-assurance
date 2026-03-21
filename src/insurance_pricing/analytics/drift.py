@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.stats import chi2_contingency, ks_2samp
 
 from insurance_pricing.data.schema import ID_COLS, INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL
 
 from .quality import _safe_series
-from .quality import _mad
+
 
 def _psi_from_series(train_s: pd.Series, test_s: pd.Series, bins: int = 10) -> float:
     a = pd.to_numeric(train_s, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
@@ -34,6 +33,7 @@ def _psi_from_series(train_s: pd.Series, test_s: pd.Series, bins: int = 10) -> f
     a_p = np.clip(a_p, eps, None)
     b_p = np.clip(b_p, eps, None)
     return float(np.sum((a_p - b_p) * np.log(a_p / b_p)))
+
 
 def compute_drift_numeric_ks_psi(
     train: pd.DataFrame,
@@ -91,7 +91,12 @@ def compute_drift_numeric_ks_psi(
                 "psi",
             ]
         )
-    return pd.DataFrame(rows).sort_values(["psi", "ks_stat"], ascending=[False, False]).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["psi", "ks_stat"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+
 
 def compute_drift_categorical_chi2(
     train: pd.DataFrame,
@@ -139,7 +144,8 @@ def compute_drift_categorical_chi2(
                 "top_train_levels": " | ".join(map(str, top_levels[:10])),
             }
         )
-    return pd.DataFrame(rows).sort_values(
-        ["unseen_ratio_on_test_rows", "unseen_test_levels"], ascending=[False, False]
-    ).reset_index(drop=True)
-
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["unseen_ratio_on_test_rows", "unseen_test_levels"], ascending=[False, False])
+        .reset_index(drop=True)
+    )

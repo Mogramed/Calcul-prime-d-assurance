@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -55,11 +56,14 @@ def fit_frequency_model(
     }
     base.update(params)
     model = CatBoostClassifier(**base)
-    model.fit(X_train, y_freq, cat_features=[X_train.columns.get_loc(c) for c in cat_cols if c in X_train.columns])
+    model.fit(
+        X_train,
+        y_freq,
+        cat_features=[X_train.columns.get_loc(c) for c in cat_cols if c in X_train.columns],
+    )
     return FrequencyModel(
         model=model,
         feature_cols=list(X_train.columns),
         cat_cols=[c for c in cat_cols if c in X_train.columns],
         engine="catboost",
     )
-

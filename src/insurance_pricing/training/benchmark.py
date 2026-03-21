@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Mapping, Tuple
+from collections.abc import Mapping
+from typing import Any
 
 import pandas as pd
 
@@ -18,7 +19,7 @@ def run_benchmark(
     splits: Mapping[str, Mapping[int, tuple]],
     seed: int,
     collect_predictions: bool = True,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     _ = collect_predictions  # Compatibility arg kept for notebook/API stability.
     return _impl.run_benchmark(
         spec=spec,

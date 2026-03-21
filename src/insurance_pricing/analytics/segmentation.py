@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -15,7 +15,10 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from insurance_pricing.data.schema import TARGET_SEV_COL
 
-def compute_segment_target_tables(train: pd.DataFrame, segment_cols: list[str]) -> dict[str, pd.DataFrame]:
+
+def compute_segment_target_tables(
+    train: pd.DataFrame, segment_cols: list[str]
+) -> dict[str, pd.DataFrame]:
     out: dict[str, pd.DataFrame] = {}
     if TARGET_SEV_COL not in train.columns:
         return out
@@ -32,10 +35,22 @@ def compute_segment_target_tables(train: pd.DataFrame, segment_cols: list[str]) 
             .agg(
                 n=("_y_sev", "size"),
                 claim_rate=("_y_freq", "mean"),
-                severity_mean_pos=("_y_sev", lambda s: float(np.mean(s[s > 0])) if (s > 0).any() else np.nan),
-                severity_median_pos=("_y_sev", lambda s: float(np.median(s[s > 0])) if (s > 0).any() else np.nan),
-                severity_q95_pos=("_y_sev", lambda s: float(np.quantile(s[s > 0], 0.95)) if (s > 0).any() else np.nan),
-                severity_q99_pos=("_y_sev", lambda s: float(np.quantile(s[s > 0], 0.99)) if (s > 0).any() else np.nan),
+                severity_mean_pos=(
+                    "_y_sev",
+                    lambda s: float(np.mean(s[s > 0])) if (s > 0).any() else np.nan,
+                ),
+                severity_median_pos=(
+                    "_y_sev",
+                    lambda s: float(np.median(s[s > 0])) if (s > 0).any() else np.nan,
+                ),
+                severity_q95_pos=(
+                    "_y_sev",
+                    lambda s: float(np.quantile(s[s > 0], 0.95)) if (s > 0).any() else np.nan,
+                ),
+                severity_q99_pos=(
+                    "_y_sev",
+                    lambda s: float(np.quantile(s[s > 0], 0.99)) if (s > 0).any() else np.nan,
+                ),
                 pure_premium_obs=("_y_sev", "mean"),
             )
             .reset_index()
@@ -44,6 +59,7 @@ def compute_segment_target_tables(train: pd.DataFrame, segment_cols: list[str]) 
         grp.insert(0, "segment_col", c)
         out[c] = grp.sort_values("pure_premium_obs", ascending=False).reset_index(drop=True)
     return out
+
 
 def sample_for_exploration(
     df: pd.DataFrame,
@@ -70,6 +86,7 @@ def sample_for_exploration(
     if len(out) > n:
         out = out.sample(n=n, random_state=seed)
     return out.copy()
+
 
 def _prepare_mixed_matrix(
     df: pd.DataFrame,
@@ -116,6 +133,7 @@ def _prepare_mixed_matrix(
         feat_names = [f"x{i}" for i in range(X.shape[1])]
     return np.asarray(X, dtype=float), feat_names
 
+
 def compute_gower_like_distance_sample(
     df: pd.DataFrame,
     num_cols: list[str],
@@ -157,6 +175,7 @@ def compute_gower_like_distance_sample(
     np.fill_diagonal(D, 0.0)
     return D
 
+
 def fit_mixed_embedding_proxy(
     df: pd.DataFrame,
     num_cols: list[str],
@@ -165,14 +184,21 @@ def fit_mixed_embedding_proxy(
 ) -> pd.DataFrame:
     X, feat_names = _prepare_mixed_matrix(df, num_cols=num_cols, cat_cols=cat_cols)
     if X.shape[1] == 0:
-        return pd.DataFrame({"comp_1": np.zeros(len(df)), "comp_2": np.zeros(len(df))}, index=df.index)
-    reducer = TruncatedSVD(n_components=n_components, random_state=42) if X.shape[1] > 50 else PCA(n_components=n_components, random_state=42)
+        return pd.DataFrame(
+            {"comp_1": np.zeros(len(df)), "comp_2": np.zeros(len(df))}, index=df.index
+        )
+    reducer = (
+        TruncatedSVD(n_components=n_components, random_state=42)
+        if X.shape[1] > 50
+        else PCA(n_components=n_components, random_state=42)
+    )
     comps = reducer.fit_transform(X)
-    cols = [f"comp_{i+1}" for i in range(comps.shape[1])]
+    cols = [f"comp_{i + 1}" for i in range(comps.shape[1])]
     out = pd.DataFrame(comps, index=df.index, columns=cols)
     for i in range(n_components - comps.shape[1]):
         out[f"comp_{comps.shape[1] + i + 1}"] = 0.0
-    return out[[f"comp_{i+1}" for i in range(n_components)]]
+    return out[[f"comp_{i + 1}" for i in range(n_components)]]
+
 
 def fit_kmeans_exploration(
     df: pd.DataFrame,
@@ -190,9 +216,11 @@ def fit_kmeans_exploration(
     out["cluster"] = labels
     return out
 
-def compute_linkage_from_distance(distance_matrix: np.ndarray, method: str = "average") -> np.ndarray:
+
+def compute_linkage_from_distance(
+    distance_matrix: np.ndarray, method: str = "average"
+) -> np.ndarray:
     if distance_matrix.shape[0] < 2:
         return np.zeros((0, 4))
     condensed = squareform(distance_matrix, checks=False)
     return linkage(condensed, method=method)
-

@@ -4,14 +4,12 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
-
-ROOT = Path(__file__).resolve().parents[1]
 
 from insurance_pricing import (
     build_submission,
@@ -23,13 +21,15 @@ from insurance_pricing.data.datasets import load_datasets, validate_data_contrac
 from insurance_pricing.data.io import ensure_dir
 from insurance_pricing.runtime.ds_reporting import save_table
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _make_exec_id() -> str:
-    return datetime.now(timezone.utc).strftime("e2e_%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("e2e_%Y%m%dT%H%M%SZ")
 
 
 def _to_jsonable(obj: Any) -> Any:
@@ -99,7 +99,9 @@ def _run_ds_exports(ds_mode: str, exec_id: str) -> dict[str, str]:
         fallback = pd.DataFrame(
             [{"exec_id": exec_id, "ds_mode": ds_mode, "generated_at_utc": _utc_now()}]
         )
-        table_path = save_table(fallback, name=f"run_end_to_end_{exec_id}", notebook="run_end_to_end")
+        table_path = save_table(
+            fallback, name=f"run_end_to_end_{exec_id}", notebook="run_end_to_end"
+        )
         exports = {"table::run_end_to_end_fallback": table_path}
     return {k: str(v) for k, v in exports.items()}
 
@@ -198,7 +200,9 @@ def _write_summary_md(report: dict[str, Any], summary_path: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="End-to-end runner: data check -> DS exports -> train -> evaluate -> submission."
+        description=(
+            "End-to-end runner: data check -> DS exports -> train -> evaluate -> submission."
+        )
     )
     parser.add_argument("--config", default="configs/train_robust.json")
     parser.add_argument("--ds-mode", default="quick", choices=["off", "quick", "full"])

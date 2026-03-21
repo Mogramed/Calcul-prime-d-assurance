@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import json
+import os
 import pickle
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict, Mapping
+from typing import Any
 
 import pandas as pd
 
 from insurance_pricing.data.io import ensure_dir
 
-
-MODEL_ROOT = Path("artifacts") / "models"
+MODEL_ROOT_ENV = "INSURANCE_PRICING_MODEL_ROOT"
+DEFAULT_MODEL_ROOT = Path("artifacts") / "models"
+BUNDLED_MODEL_ROOT = Path(".bundled_artifacts") / "models"
 
 
 @dataclass
@@ -57,7 +60,7 @@ def _pickle_load(path: Path) -> Any:
 
 
 def _build_run_id(prefix: str = "run") -> str:
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"{prefix}_{ts}"
 
 
@@ -72,6 +75,46 @@ def _sanitize_run_id(run_id: str) -> str:
     return out[:180] if len(out) > 180 else out
 
 
+def _write_model_root() -> Path:
+    configured_root = os.getenv(MODEL_ROOT_ENV)
+    if configured_root:
+        return Path(configured_root)
+    return DEFAULT_MODEL_ROOT
+
+
+def _candidate_model_roots() -> list[Path]:
+    roots: list[Path] = []
+    configured_root = os.getenv(MODEL_ROOT_ENV)
+    if configured_root:
+        roots.append(Path(configured_root))
+    roots.extend([DEFAULT_MODEL_ROOT, BUNDLED_MODEL_ROOT])
+
+    deduplicated_roots: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        normalized = str(root)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduplicated_roots.append(root)
+    return deduplicated_roots
+
+
+def _available_run_ids(model_root: Path) -> list[str]:
+    if not model_root.exists():
+        return []
+    return sorted(path.name for path in model_root.iterdir() if path.is_dir())
+
+
+def _resolve_run_dir(run_id: str) -> Path | None:
+    sanitized_run_id = _sanitize_run_id(str(run_id))
+    for model_root in _candidate_model_roots():
+        run_dir = model_root / sanitized_run_id
+        if run_dir.exists():
+            return run_dir
+    return None
+
+
 def save_model_bundle(
     *,
     freq_model: Any,
@@ -84,7 +127,7 @@ def save_model_bundle(
     notes: str | None = None,
 ) -> RunArtifacts:
     rid = _sanitize_run_id(str(run_id or _build_run_id("pricing")))
-    run_dir = ensure_dir(MODEL_ROOT / rid)
+    run_dir = ensure_dir(_write_model_root() / rid)
 
     model_freq_path = run_dir / "model_freq.pkl"
     model_sev_path = run_dir / "model_sev.pkl"
@@ -106,7 +149,7 @@ def save_model_bundle(
 
     manifest = {
         "run_id": rid,
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "created_at_utc": datetime.now(UTC).isoformat(),
         "model_files": {
             "freq": str(model_freq_path),
             "sev": str(model_sev_path),
@@ -145,10 +188,22 @@ def save_model_bundle(
     )
 
 
-def load_model_bundle(run_id: str) -> Dict[str, Any]:
-    run_dir = MODEL_ROOT / _sanitize_run_id(str(run_id))
-    if not run_dir.exists():
-        raise FileNotFoundError(f"Unknown run_id: {run_id}")
+def load_model_bundle(run_id: str) -> dict[str, Any]:
+    run_dir = _resolve_run_dir(run_id)
+    if run_dir is None:
+        searched_roots = ", ".join(str(root) for root in _candidate_model_roots())
+        available_run_ids = sorted(
+            {
+                run_name
+                for model_root in _candidate_model_roots()
+                for run_name in _available_run_ids(model_root)
+            }
+        )
+        available_runs_display = ", ".join(available_run_ids) if available_run_ids else "<none>"
+        raise FileNotFoundError(
+            f"Unknown run_id: {run_id}. Searched model roots: {searched_roots}. "
+            f"Available run_ids: {available_runs_display}"
+        )
     return {
         "freq_model": _pickle_load(run_dir / "model_freq.pkl"),
         "sev_model": _pickle_load(run_dir / "model_sev.pkl"),
@@ -161,8 +216,9 @@ def load_model_bundle(run_id: str) -> Dict[str, Any]:
 
 
 def _append_registry(row: Mapping[str, Any]) -> Path:
-    reg_path = MODEL_ROOT / "registry.csv"
-    MODEL_ROOT.mkdir(parents=True, exist_ok=True)
+    model_root = _write_model_root()
+    reg_path = model_root / "registry.csv"
+    model_root.mkdir(parents=True, exist_ok=True)
     new_row = pd.DataFrame([dict(row)])
     if reg_path.exists():
         old = pd.read_csv(reg_path)

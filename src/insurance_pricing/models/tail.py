@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
-import pandas as pd
-from sklearn.isotonic import IsotonicRegression
+
 
 def _safe_slope(dx: float, dy: float, fallback: float) -> float:
     if dx <= 0 or not np.isfinite(dx) or not np.isfinite(dy):
@@ -14,13 +14,14 @@ def _safe_slope(dx: float, dy: float, fallback: float) -> float:
         return max(float(fallback), 1e-6)
     return slope
 
+
 def fit_tail_mapper_safe(
     oof_pred_sev_pos: np.ndarray,
     y_pos: np.ndarray,
     *,
     min_samples: int = 150,
     n_knots: int = 64,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     x = np.asarray(oof_pred_sev_pos, dtype=float)
     y = np.asarray(y_pos, dtype=float)
     mask = np.isfinite(x) & np.isfinite(y) & (x >= 0) & (y >= 0)
@@ -55,6 +56,7 @@ def fit_tail_mapper_safe(
         "slope_low": float(slope_low),
         "slope_high": float(slope_high),
     }
+
 
 def apply_tail_mapper_safe(
     mapper: Mapping[str, Any],
@@ -110,6 +112,7 @@ def apply_tail_mapper_safe(
         return np.maximum(np.nan_to_num(mapped, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     raise ValueError(f"Unknown mapper kind: {kind}")
 
+
 def fit_tail_mapper(
     oof_pred_sev_pos: np.ndarray | None = None,
     y_pos: np.ndarray | None = None,
@@ -117,17 +120,19 @@ def fit_tail_mapper(
     pred_sev_pos: np.ndarray | None = None,
     y_true_pos: np.ndarray | None = None,
     min_samples: int = 150,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     pred_arr = pred_sev_pos if pred_sev_pos is not None else oof_pred_sev_pos
     y_arr = y_true_pos if y_true_pos is not None else y_pos
     if pred_arr is None or y_arr is None:
         raise TypeError("fit_tail_mapper expects pred_sev_pos and y_true_pos arrays.")
     return fit_tail_mapper_safe(pred_arr, y_arr, min_samples=min_samples)
 
+
 def apply_tail_mapper(mapper: Mapping[str, Any] | None, pred_sev: np.ndarray) -> np.ndarray:
     if mapper is None:
         return np.maximum(np.asarray(pred_sev, dtype=float), 0.0)
     return apply_tail_mapper_safe(mapper, pred_sev)
+
 
 def crossfit_tail_mapper_oof(
     *,
@@ -155,4 +160,3 @@ def crossfit_tail_mapper_oof(
     out[~valid] = p[~valid]
     out[np.isnan(out)] = p[np.isnan(out)]
     return out
-

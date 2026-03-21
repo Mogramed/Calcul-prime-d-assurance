@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import re
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
-from scipy.stats import chi2_contingency, ks_2samp
 from sklearn.metrics import mean_squared_error
 
 from insurance_pricing.data.schema import (
@@ -15,11 +13,14 @@ from insurance_pricing.data.schema import (
     TARGET_SEV_COL,
 )
 
+
 def _safe_series(s: pd.Series) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
 
+
 def _rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
 
 def _mad(x: pd.Series | np.ndarray) -> float:
     arr = np.asarray(pd.to_numeric(pd.Series(x), errors="coerce"), dtype=float)
@@ -28,6 +29,7 @@ def _mad(x: pd.Series | np.ndarray) -> float:
         return float("nan")
     med = float(np.median(arr))
     return float(np.median(np.abs(arr - med)))
+
 
 def _role_guess(col: str, dtype: str, train_present: bool, test_present: bool) -> str:
     c = col.lower()
@@ -46,6 +48,7 @@ def _role_guess(col: str, dtype: str, train_present: bool, test_present: bool) -
     if dtype.startswith(("int", "float")):
         return "numeric"
     return "unknown"
+
 
 def detect_leakage_risk_columns(
     df: pd.DataFrame,
@@ -84,7 +87,9 @@ def detect_leakage_risk_columns(
             action.append("manual_review")
             rules_matched.append("target_proximity_token")
         post_event_tokens = ["after", "post", "resolution", "indemn"]
-        if cl not in neutral_post_tokens and any(_matches_token(cl, token) for token in post_event_tokens):
+        if cl not in neutral_post_tokens and any(
+            _matches_token(cl, token) for token in post_event_tokens
+        ):
             risk.append("post_event_suspect")
             action.append("manual_review")
             rules_matched.append("post_event_token")
@@ -93,7 +98,9 @@ def detect_leakage_risk_columns(
                 {
                     "column": c,
                     "risk_types": ",".join(risk),
-                    "risk_level": "high" if ("target" in risk or "identifier" in risk) else "medium",
+                    "risk_level": "high"
+                    if ("target" in risk or "identifier" in risk)
+                    else "medium",
                     "recommended_action": ",".join(dict.fromkeys(action)),
                     "rule_matched": ",".join(dict.fromkeys(rules_matched)),
                 }
@@ -103,6 +110,7 @@ def detect_leakage_risk_columns(
             columns=["column", "risk_types", "risk_level", "recommended_action", "rule_matched"]
         )
     return pd.DataFrame(rows).sort_values(["risk_level", "column"]).reset_index(drop=True)
+
 
 def compute_missingness_report(
     train: pd.DataFrame,
@@ -132,8 +140,7 @@ def compute_missingness_report(
             "missing_rate_train_filled": float(np.nan_to_num(miss_train, nan=0.0)),
             "missing_rate_test_filled": float(np.nan_to_num(miss_test, nan=0.0)),
             "missing_gap_test_minus_train": (
-                (miss_test if present_test else np.nan)
-                - (miss_train if present_train else np.nan)
+                (miss_test if present_test else np.nan) - (miss_train if present_train else np.nan)
             ),
         }
         rows.append(row)
@@ -164,7 +171,9 @@ def compute_missingness_report(
                             "missing_rate_test": np.nan,
                             "missing_rate_train_effective": float(sub[c].isna().mean()),
                             "missing_rate_test_effective": np.nan,
-                            "missing_rate_train_filled": float(np.nan_to_num(float(sub[c].isna().mean()), nan=0.0)),
+                            "missing_rate_train_filled": float(
+                                np.nan_to_num(float(sub[c].isna().mean()), nan=0.0)
+                            ),
                             "missing_rate_test_filled": 0.0,
                             "missing_gap_test_minus_train": np.nan,
                         }
@@ -172,14 +181,17 @@ def compute_missingness_report(
     out = pd.DataFrame(rows)
     return out.sort_values(["scope", "column", "group_col", "group_value"]).reset_index(drop=True)
 
+
 def compute_rule_violations(train: pd.DataFrame) -> pd.DataFrame:
     checks: list[tuple[str, pd.Series, str]] = []
     if {"age_conducteur1", "anciennete_permis1"}.issubset(train.columns):
         checks.append(
             (
                 "permis_gt_age_conducteur1",
-                (pd.to_numeric(train["anciennete_permis1"], errors="coerce") >
-                 pd.to_numeric(train["age_conducteur1"], errors="coerce")),
+                (
+                    pd.to_numeric(train["anciennete_permis1"], errors="coerce")
+                    > pd.to_numeric(train["age_conducteur1"], errors="coerce")
+                ),
                 "anciennete_permis1 > age_conducteur1",
             )
         )
@@ -187,18 +199,38 @@ def compute_rule_violations(train: pd.DataFrame) -> pd.DataFrame:
         checks.append(
             (
                 "permis_gt_age_conducteur2",
-                (pd.to_numeric(train["anciennete_permis2"], errors="coerce") >
-                 pd.to_numeric(train["age_conducteur2"], errors="coerce")),
+                (
+                    pd.to_numeric(train["anciennete_permis2"], errors="coerce")
+                    > pd.to_numeric(train["age_conducteur2"], errors="coerce")
+                ),
                 "anciennete_permis2 > age_conducteur2",
             )
         )
     if "poids_vehicule" in train.columns:
-        checks.append(("poids_zero_or_neg", pd.to_numeric(train["poids_vehicule"], errors="coerce") <= 0, "poids_vehicule <= 0"))
+        checks.append(
+            (
+                "poids_zero_or_neg",
+                pd.to_numeric(train["poids_vehicule"], errors="coerce") <= 0,
+                "poids_vehicule <= 0",
+            )
+        )
     if "cylindre_vehicule" in train.columns:
-        checks.append(("cylindre_zero_or_neg", pd.to_numeric(train["cylindre_vehicule"], errors="coerce") <= 0, "cylindre_vehicule <= 0"))
+        checks.append(
+            (
+                "cylindre_zero_or_neg",
+                pd.to_numeric(train["cylindre_vehicule"], errors="coerce") <= 0,
+                "cylindre_vehicule <= 0",
+            )
+        )
     if "age_conducteur1" in train.columns:
         a1 = pd.to_numeric(train["age_conducteur1"], errors="coerce")
-        checks.append(("age_conducteur1_impossible", (a1 < 16) | (a1 > 100), "age_conducteur1 out of [16,100]"))
+        checks.append(
+            (
+                "age_conducteur1_impossible",
+                (a1 < 16) | (a1 > 100),
+                "age_conducteur1 out of [16,100]",
+            )
+        )
     if TARGET_SEV_COL in train.columns:
         sev = pd.to_numeric(train[TARGET_SEV_COL], errors="coerce")
         checks.append(("sinistre_negatif", sev < 0, "montant_sinistre < 0"))
@@ -218,7 +250,10 @@ def compute_rule_violations(train: pd.DataFrame) -> pd.DataFrame:
         )
     return pd.DataFrame(rows).sort_values("n_violations", ascending=False).reset_index(drop=True)
 
-def compute_outlier_report(df: pd.DataFrame, cols: list[str], method: str = "iqr_mad") -> pd.DataFrame:
+
+def compute_outlier_report(
+    df: pd.DataFrame, cols: list[str], method: str = "iqr_mad"
+) -> pd.DataFrame:
     rows = []
     for c in cols:
         if c not in df.columns:
@@ -234,7 +269,11 @@ def compute_outlier_report(df: pd.DataFrame, cols: list[str], method: str = "iqr
         lo_iqr = q1 - 1.5 * iqr
         hi_iqr = q3 + 1.5 * iqr
         mad_scale = max(1.4826 * mad, 1e-9) if np.isfinite(mad) else np.nan
-        mz = 0.6745 * (x - med) / mad_scale if np.isfinite(mad_scale) else pd.Series(np.nan, index=x.index)
+        mz = (
+            0.6745 * (x - med) / mad_scale
+            if np.isfinite(mad_scale)
+            else pd.Series(np.nan, index=x.index)
+        )
         rows.append(
             {
                 "column": c,
@@ -252,10 +291,13 @@ def compute_outlier_report(df: pd.DataFrame, cols: list[str], method: str = "iqr
                 "min": float(np.min(x)),
                 "n_out_iqr": int(((x < lo_iqr) | (x > hi_iqr)).sum()),
                 "ratio_out_iqr": float(((x < lo_iqr) | (x > hi_iqr)).mean()),
-                "n_out_mad_z35": int((np.abs(mz) > 3.5).sum()) if np.isfinite(mad_scale) else np.nan,
-                "ratio_out_mad_z35": float((np.abs(mz) > 3.5).mean()) if np.isfinite(mad_scale) else np.nan,
+                "n_out_mad_z35": int((np.abs(mz) > 3.5).sum())
+                if np.isfinite(mad_scale)
+                else np.nan,
+                "ratio_out_mad_z35": float((np.abs(mz) > 3.5).mean())
+                if np.isfinite(mad_scale)
+                else np.nan,
                 "method": method,
             }
         )
     return pd.DataFrame(rows).sort_values("ratio_out_iqr", ascending=False).reset_index(drop=True)
-

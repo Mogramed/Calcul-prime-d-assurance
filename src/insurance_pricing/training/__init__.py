@@ -1,10 +1,11 @@
+from insurance_pricing.cv.integrity import build_splits, validate_split_integrity
 from insurance_pricing.cv.splits import (
     build_split_registry,
     export_split_artifacts_v2,
     validate_folds_disjoint,
     validate_group_disjoint,
 )
-from insurance_pricing.cv.integrity import build_splits, validate_split_integrity
+from insurance_pricing.data.datasets import build_feature_sets, load_datasets, select_bundle
 from insurance_pricing.data.io import (
     build_targets,
     ensure_dir,
@@ -13,7 +14,6 @@ from insurance_pricing.data.io import (
     save_json,
     validate_data_contract,
 )
-from insurance_pricing.data.datasets import build_feature_sets, load_datasets, select_bundle
 from insurance_pricing.data.schema import (
     DEFAULT_V2_DIR,
     ID_COLS,
@@ -37,7 +37,21 @@ from insurance_pricing.features.engineering import (
     prepare_datasets,
     prepare_feature_sets,
 )
-from insurance_pricing.features.schema import build_feature_frame_for_inference, build_feature_schema
+from insurance_pricing.features.schema import (
+    build_feature_frame_for_inference,
+    build_feature_schema,
+)
+from insurance_pricing.inference.submission import build_submission
+
+# Temporary one-cycle compatibility for V1 notebook symbols.
+# Removal target: next cleanup release after confirming notebooks no longer import
+# COARSE_CONFIGS/run_cv_experiment/fit_full_two_part_predict/simulate_public_private_shakeup.
+from insurance_pricing.legacy.v1_pipeline import (
+    COARSE_CONFIGS,
+    fit_full_two_part_predict,
+    run_cv_experiment,
+    simulate_public_private_shakeup,
+)
 from insurance_pricing.models.calibration import apply_calibrator, fit_calibrator
 from insurance_pricing.models.frequency import FrequencyModel, fit_frequency_model
 from insurance_pricing.models.prime import PrimeModel
@@ -59,17 +73,6 @@ from insurance_pricing.training.selection import (
     optimize_non_negative_weights,
     pick_top_configs,
     select_final_models,
-)
-from insurance_pricing.inference.submission import build_submission
-
-# Temporary one-cycle compatibility for V1 notebook symbols.
-# Removal target: next cleanup release after confirming notebooks no longer import
-# COARSE_CONFIGS/run_cv_experiment/fit_full_two_part_predict/simulate_public_private_shakeup.
-from insurance_pricing.legacy.v1_pipeline import (
-    COARSE_CONFIGS,
-    fit_full_two_part_predict,
-    run_cv_experiment,
-    simulate_public_private_shakeup,
 )
 
 __all__ = [

@@ -1,3 +1,8 @@
+from insurance_pricing.data.datasets import (
+    build_feature_sets,
+    load_datasets,
+    select_bundle,
+)
 from insurance_pricing.data.io import (
     build_targets,
     ensure_dir,
@@ -5,11 +10,6 @@ from insurance_pricing.data.io import (
     load_train_test,
     save_json,
     validate_data_contract,
-)
-from insurance_pricing.data.datasets import (
-    build_feature_sets,
-    load_datasets,
-    select_bundle,
 )
 from insurance_pricing.data.schema import (
     DEFAULT_V2_DIR,

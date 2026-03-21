@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from insurance_pricing.data.schema import ID_COLS, INDEX_COL, TARGET_FREQ_COL, TARGET_SEV_COL
-from insurance_pricing.features.engineering import add_engineered_features_v2
+
 
 def build_feature_blocks(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
@@ -28,6 +28,7 @@ def build_feature_blocks(df: pd.DataFrame) -> pd.DataFrame:
             block = "other"
         rows.append({"feature": c, "feature_block": block})
     return pd.DataFrame(rows).sort_values(["feature_block", "feature"]).reset_index(drop=True)
+
 
 def compute_preprocessing_recommendations(
     meta_df: pd.DataFrame,
@@ -59,9 +60,8 @@ def compute_preprocessing_recommendations(
         if c in miss.columns
     ]
     miss = miss[miss_cols].drop_duplicates(subset=["column"])
-    merged = (
-        meta.merge(miss, on="column", how="left", suffixes=("", "_miss"))
-        .merge(card, on="column", how="left", suffixes=("_meta", "_card"))
+    merged = meta.merge(miss, on="column", how="left", suffixes=("", "_miss")).merge(
+        card, on="column", how="left", suffixes=("_meta", "_card")
     )
 
     rows = []
@@ -77,7 +77,9 @@ def compute_preprocessing_recommendations(
         nunique = float(nunique_raw) if pd.notna(nunique_raw) else np.nan
         miss_rate_raw = r.get("missing_rate_train_effective", r.get("missing_rate_train", np.nan))
         miss_rate = float(miss_rate_raw) if pd.notna(miss_rate_raw) else 0.0
-        present_train = bool(int(r.get("present_train", 1))) if pd.notna(r.get("present_train", 1)) else True
+        present_train = (
+            bool(int(r.get("present_train", 1))) if pd.notna(r.get("present_train", 1)) else True
+        )
 
         role_is_target = role in {"target_freq", "target_sev"}
         role_is_id = role.startswith("id_")
@@ -158,6 +160,7 @@ def compute_preprocessing_recommendations(
         )
     return pd.DataFrame(rows).sort_values(["action", "column"]).reset_index(drop=True)
 
+
 def build_cardinality_report(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
     rows = []
     cols = sorted(set(train.columns).union(set(test.columns)))
@@ -167,18 +170,24 @@ def build_cardinality_report(train: pd.DataFrame, test: pd.DataFrame) -> pd.Data
         if not tr_present and not te_present:
             continue
         tr = train[c].astype(str) if tr_present else pd.Series(dtype=str)
-        te = test[c].astype(str) if te_present else pd.Series(dtype=str)
         rows.append(
             {
                 "column": c,
                 "dtype_train": str(train[c].dtype) if tr_present else None,
                 "nunique_train": int(train[c].nunique(dropna=False)) if tr_present else np.nan,
                 "nunique_test": int(test[c].nunique(dropna=False)) if te_present else np.nan,
-                "top1_ratio_train": float(tr.value_counts(normalize=True, dropna=False).iloc[0]) if tr_present and len(tr) else np.nan,
-                "rare_ratio_train_lt10": float((tr.value_counts(dropna=False) < 10).sum() / max(tr.nunique(dropna=False), 1)) if tr_present else np.nan,
+                "top1_ratio_train": float(tr.value_counts(normalize=True, dropna=False).iloc[0])
+                if tr_present and len(tr)
+                else np.nan,
+                "rare_ratio_train_lt10": float(
+                    (tr.value_counts(dropna=False) < 10).sum() / max(tr.nunique(dropna=False), 1)
+                )
+                if tr_present
+                else np.nan,
             }
         )
     return pd.DataFrame(rows).sort_values("nunique_train", ascending=False).reset_index(drop=True)
+
 
 def build_feature_engineering_catalog(df: pd.DataFrame) -> pd.DataFrame:
     blocks = build_feature_blocks(df)
@@ -201,4 +210,3 @@ def build_feature_engineering_catalog(df: pd.DataFrame) -> pd.DataFrame:
             rationale = "feature brute utile au scoring"
         rows.append({"feature": feat, "feature_block": block, "rationale": rationale})
     return pd.DataFrame(rows).sort_values(["feature_block", "feature"]).reset_index(drop=True)
-

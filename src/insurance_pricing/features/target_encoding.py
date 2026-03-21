@@ -1,22 +1,24 @@
 from __future__ import annotations
 
-from typing import Dict, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
+
 
 def _smooth_target_encoding_map(
     x: pd.Series,
     y: pd.Series,
     *,
     smoothing: float,
-) -> Tuple[Dict[str, float], float]:
+) -> tuple[dict[str, float], float]:
     xx = x.astype(str)
     yy = y.astype(float)
     prior = float(np.nanmean(yy))
     grp = pd.DataFrame({"x": xx, "y": yy}).groupby("x")["y"].agg(["sum", "count"])
     val = (grp["sum"] + prior * smoothing) / (grp["count"] + smoothing)
     return {str(k): float(v) for k, v in val.items()}, prior
+
 
 def _add_fold_target_encoding(
     *,
@@ -27,7 +29,7 @@ def _add_fold_target_encoding(
     X_te: pd.DataFrame,
     cols: Sequence[str],
     smoothing: float = 20.0,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     xtr = X_tr.copy()
     xva = X_va.copy()
     xte = X_te.copy()
@@ -52,10 +54,12 @@ def _add_fold_target_encoding(
         xte[f"te_sev_{c}"] = _map(xte[c], m_sev, prior_sev)
     return xtr, xva, xte
 
+
 def _apply_winsor(y: np.ndarray, quantile: float) -> np.ndarray:
     yy = np.asarray(y, dtype=float)
     q = float(np.nanquantile(yy, quantile))
     return np.minimum(yy, q)
+
 
 def _smearing_inverse(
     y_pos: np.ndarray,
@@ -63,8 +67,8 @@ def _smearing_inverse(
     z_va: np.ndarray,
     z_te: np.ndarray,
     *,
-    sample_weight: Optional[np.ndarray] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    sample_weight: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     y_log = np.log1p(np.asarray(y_pos, dtype=float))
     resid = y_log - np.asarray(z_tr, dtype=float)
     if sample_weight is None:
@@ -76,4 +80,3 @@ def _smearing_inverse(
     m_va = np.maximum(smear * np.exp(np.asarray(z_va, dtype=float)) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(np.asarray(z_te, dtype=float)) - 1.0, 0.0)
     return m_va, m_te
-

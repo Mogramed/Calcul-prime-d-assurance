@@ -11,4 +11,3 @@ DEFAULT_DS_DIR = Path("artifacts") / "ds"
 
 def load_project_datasets(data_dir: str | Path = "data") -> tuple[pd.DataFrame, pd.DataFrame]:
     return load_train_test(data_dir)
-

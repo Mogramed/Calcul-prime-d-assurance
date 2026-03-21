@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from math import isfinite
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import pandas as pd
 
@@ -29,7 +30,7 @@ class PredictionService:
         self.metrics = dict(manifest.get("metrics", {}))
 
     @classmethod
-    def load(cls, run_id: str) -> "PredictionService":
+    def load(cls, run_id: str) -> PredictionService:
         bundle = load_model_bundle(run_id)
         return cls(
             run_id=run_id,
@@ -58,7 +59,9 @@ class PredictionService:
     def predict_frequency_record(self, record: Mapping[str, Any]) -> dict[str, Any]:
         return self.predict_frequency_records([record])[0]
 
-    def predict_frequency_records(self, records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    def predict_frequency_records(
+        self, records: Sequence[Mapping[str, Any]]
+    ) -> list[dict[str, Any]]:
         return [
             self._select_fields(prediction, {"index", "frequency_prediction"})
             for prediction in self._predict_components(records)
@@ -67,7 +70,9 @@ class PredictionService:
     def predict_severity_record(self, record: Mapping[str, Any]) -> dict[str, Any]:
         return self.predict_severity_records([record])[0]
 
-    def predict_severity_records(self, records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    def predict_severity_records(
+        self, records: Sequence[Mapping[str, Any]]
+    ) -> list[dict[str, Any]]:
         return [
             self._select_fields(prediction, {"index", "severity_prediction"})
             for prediction in self._predict_components(records)

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -48,6 +49,7 @@ def _fit_catboost_severity(
     params: Mapping[str, Any],
 ) -> SeverityModel:
     from catboost import CatBoostRegressor
+
     from insurance_pricing.evaluation.metrics import make_tail_weights
 
     pos = np.asarray(y_freq, dtype=int) == 1
@@ -57,10 +59,7 @@ def _fit_catboost_severity(
         raise ValueError("Not enough positive severity samples.")
 
     sev_mode = str(severity_mode).lower()
-    if sev_mode == "winsorized":
-        y_pos_fit = _apply_winsor(y_pos, quantile=0.995)
-    else:
-        y_pos_fit = y_pos
+    y_pos_fit = _apply_winsor(y_pos, quantile=0.995) if sev_mode == "winsorized" else y_pos
     sample_weight = make_tail_weights(y_pos_fit) if sev_mode == "weighted_tail" else None
 
     p = {

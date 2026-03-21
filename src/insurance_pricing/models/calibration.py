@@ -5,7 +5,9 @@ from typing import Any
 import numpy as np
 
 
-def _resolve_fit_inputs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, str]:
+def _resolve_fit_inputs(
+    args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> tuple[np.ndarray, np.ndarray, str]:
     method = kwargs.get("method")
     if "p_pred" in kwargs and "y_true" in kwargs:
         probs = kwargs["p_pred"]
@@ -18,7 +20,9 @@ def _resolve_fit_inputs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[
     elif len(args) >= 2:
         probs, y_true = args[0], args[1]
     else:
-        raise TypeError("fit_calibrator expects (probs, y_true, method) or keywords y_true=, p_pred=, method=.")
+        raise TypeError(
+            "fit_calibrator expects (probs, y_true, method) or keywords y_true=, p_pred=, method=."
+        )
     if method is None:
         raise TypeError("fit_calibrator requires `method`.")
     return np.asarray(probs, dtype=float), np.asarray(y_true, dtype=int), str(method)
@@ -44,7 +48,9 @@ def fit_calibrator(*args: Any, **kwargs: Any):
     raise ValueError(f"Unknown calibration method: {method}")
 
 
-def _resolve_apply_inputs(model: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[np.ndarray, str]:
+def _resolve_apply_inputs(
+    model: Any, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> tuple[np.ndarray, str]:
     method = kwargs.get("method")
     if "p_pred" in kwargs:
         probs = kwargs["p_pred"]
@@ -55,7 +61,9 @@ def _resolve_apply_inputs(model: Any, args: tuple[Any, ...], kwargs: dict[str, A
     elif len(args) == 1:
         probs = args[0]
     else:
-        raise TypeError("apply_calibrator expects (model, probs, method) or keywords p_pred=, method=.")
+        raise TypeError(
+            "apply_calibrator expects (model, probs, method) or keywords p_pred=, method=."
+        )
     if method is None:
         raise TypeError("apply_calibrator requires `method`.")
     return np.asarray(probs, dtype=float), str(method)
@@ -71,6 +79,7 @@ def apply_calibrator(model, *args: Any, **kwargs: Any) -> np.ndarray:
     if m == "platt":
         return model.predict_proba(probs.reshape(-1, 1))[:, 1]
     raise ValueError(f"Unknown calibration method: {method}")
+
 
 def crossfit_calibrate_oof(
     *,
@@ -101,4 +110,3 @@ def crossfit_calibrate_oof(
     missing = np.isnan(out) & valid
     out[missing] = p[missing]
     return out
-

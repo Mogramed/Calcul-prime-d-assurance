@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -17,8 +17,8 @@ class PrimeModel:
     freq_model: FrequencyModel
     sev_model: SeverityModel
     calibration_method: str = "none"
-    calibrator: Optional[Any] = None
-    tail_mapper: Optional[dict[str, Any]] = None
+    calibrator: Any | None = None
+    tail_mapper: dict[str, Any] | None = None
     non_negative: bool = True
 
     def predict_components(self, raw_df: pd.DataFrame) -> pd.DataFrame:
@@ -41,4 +41,3 @@ class PrimeModel:
 
     def predict_prime(self, raw_df: pd.DataFrame) -> np.ndarray:
         return self.predict_components(raw_df)["pred_prime"].to_numpy(dtype=float)
-

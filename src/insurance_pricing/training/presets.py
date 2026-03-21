@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
-V2_COARSE_CONFIGS: Dict[str, List[Dict[str, Any]]] = {
+V2_COARSE_CONFIGS: dict[str, list[dict[str, Any]]] = {
     "catboost": [
         {
             "config_id": "cb_v2_c1",
@@ -120,7 +120,7 @@ V2_COARSE_CONFIGS: Dict[str, List[Dict[str, Any]]] = {
 }
 
 
-V2_SCREENING_FAMILIES: List[Dict[str, Any]] = [
+V2_SCREENING_FAMILIES: list[dict[str, Any]] = [
     {"family": "two_part_classic", "severity_mode": "classic", "tweedie_power": 1.5},
     {"family": "two_part_classic", "severity_mode": "weighted_tail", "tweedie_power": 1.5},
     {"family": "two_part_classic", "severity_mode": "winsorized", "tweedie_power": 1.5},

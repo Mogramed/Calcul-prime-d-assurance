@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
 
 import pandas as pd
 
@@ -19,7 +18,7 @@ def build_feature_sets(
     test: pd.DataFrame,
     *,
     drop_identifiers: bool = True,
-) -> Dict[str, DatasetBundle]:
+) -> dict[str, DatasetBundle]:
     return prepare_feature_sets(
         train,
         test,
@@ -29,7 +28,7 @@ def build_feature_sets(
 
 
 def select_bundle(
-    feature_sets: Dict[str, DatasetBundle],
+    feature_sets: dict[str, DatasetBundle],
     feature_set_name: str,
 ) -> DatasetBundle:
     if feature_set_name not in feature_sets:
@@ -44,4 +43,3 @@ __all__ = [
     "select_bundle",
     "validate_data_contract",
 ]
-
