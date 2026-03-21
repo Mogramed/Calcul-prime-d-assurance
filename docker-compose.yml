@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # 1. Le service pour la base de données PostgreSQL
+  db:
+    image: postgres:15
+    container_name: insurance_db
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: insurance_logs
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Pour ne pas perdre les données si on coupe Docker
+
+  # 2. Le service pour ton API FastAPI
+  api:
+    build: .
+    container_name: insurance_api
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db # On dit à l'API d'attendre que la base de données soit prête
+    environment:
+      # L'URL de connexion à la base (User:Password@Host:Port/Database)
+      - DATABASE_URL=postgresql://admin:password123@db:5432/insurance_logs
+
+# Déclaration du volume pour la persistance des données
+volumes:
+  postgres_data:
