@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.3'
 
 services:
   # 1. Le service pour la base de données PostgreSQL
@@ -27,6 +27,8 @@ services:
     environment:
       # L'URL de connexion à la base (User:Password@Host:Port/Database)
       - DATABASE_URL=postgresql://admin:password123@db:5432/insurance_logs
+      # --- NOUVEAU : Identifiant du modèle à charger au démarrage ---
+      - INSURANCE_PRICING_RUN_ID=base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
 
 # Déclaration du volume pour la persistance des données
 volumes:

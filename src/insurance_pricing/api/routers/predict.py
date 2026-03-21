@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Body, Depends
+from sqlalchemy.orm import Session # <-- NOUVEL IMPORT
 
 from insurance_pricing.api.dependencies import get_prediction_service
 from insurance_pricing.api.schemas import (
@@ -16,6 +17,11 @@ from insurance_pricing.api.schemas import (
     SeverityPredictionResponse,
 )
 from insurance_pricing.api.service import PredictionService
+
+# --- NOUVEAUX IMPORTS POUR LA BASE DE DONNÉES ---
+from insurance_pricing.api.database import get_db
+from insurance_pricing.api.db_models import PredictionLog
+# ------------------------------------------------
 
 router = APIRouter(tags=["predict"])
 
@@ -254,9 +260,28 @@ def predict_prime(
         },
     ),
     service: PredictionService = Depends(get_prediction_service),
+    db: Session = Depends(get_db) # <-- INJECTION DE LA BASE DE DONNÉES
 ) -> PrimePredictionResponse:
-    prediction = service.predict_record(payload.model_dump(mode="python"))
-    return PrimePredictionResponse(**prediction)
+    
+    # 1. Le modèle fait la prédiction (renvoie un dictionnaire brut)
+    raw_prediction = service.predict_record(payload.model_dump(mode="python"))
+    
+    # 2. On transforme le dictionnaire brut en objet validé par Pydantic
+    response_obj = PrimePredictionResponse(**raw_prediction)
+    
+    # 3. Sauvegarde en Base de données
+    # En lisant directement depuis response_obj, on est sûr d'utiliser les bonnes clés !
+    db_log = PredictionLog(
+        input_data=payload.model_dump(mode="json"), 
+        prediction_freq=response_obj.frequency_prediction,
+        prediction_sev=response_obj.severity_prediction,
+        prediction_prime=response_obj.prime_prediction
+    )
+    db.add(db_log)
+    db.commit()
+
+    # 4. On renvoie l'objet Pydantic (FastAPI le convertira en JSON)
+    return response_obj
 
 
 @router.post(

@@ -4,6 +4,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+# --- Nos nouveaux imports pour la base de données ---
+from .database import engine
+from . import db_models
+# ----------------------------------------------------
+
 from insurance_pricing import __version__
 from insurance_pricing.api.dependencies import get_settings
 from insurance_pricing.api.middleware import install_observability_middleware
@@ -19,6 +24,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # --- CRÉATION DE LA TABLE POSTGRESQL AU DÉMARRAGE ---
+        db_models.Base.metadata.create_all(bind=engine)
+        # ----------------------------------------------------
+        
         try:
             app.state.prediction_service = PredictionService.load(resolved_settings.run_id)
         except Exception as exc:
