@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Récupération du code
+      - name:  Récupération du code
         uses: actions/checkout@v4
 
       - name: ⚡ Installation de UV
@@ -20,21 +20,21 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: 🐍 Configuration Python 3.13
+      - name:  Configuration Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
-      - name: 📦 Installation des dépendances
+      - name:  Installation des dépendances
         run: uv sync --all-groups
 
-      - name: 🧹 Vérification du style (Ruff)
+      - name:  Vérification du style (Ruff)
         run: uv run ruff check .
 
-      - name: 🏷️ Vérification du typage (MyPy)
+      - name:  Vérification du typage (MyPy)
         run: uv run mypy src/
 
-      - name: 🧪 Exécution des tests (Pytest)
+      - name:  Exécution des tests (Pytest)
         env:
           # On définit l'ID du modèle pour que les tests de l'API ne plantent pas
           INSURANCE_PRICING_RUN_ID: base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
