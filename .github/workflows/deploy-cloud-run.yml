@@ -1,0 +1,229 @@
+name: Deploy to Cloud Run
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI and Docker Publish"]
+    types: [completed]
+
+concurrency:
+  group: deploy-cloud-run-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  GCP_ARTIFACT_REGISTRY_LOCATION: ${{ vars.GCP_ARTIFACT_REGISTRY_LOCATION || vars.GCP_REGION }}
+  GCP_ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.GCP_ARTIFACT_REGISTRY_REPOSITORY }}
+  GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+  GCP_DEPLOYER_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+  CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+  CLOUD_RUN_MIGRATION_JOB: ${{ vars.CLOUD_RUN_MIGRATION_JOB }}
+  CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}
+  INSURANCE_PRICING_RUN_ID: ${{ vars.INSURANCE_PRICING_RUN_ID }}
+  CLOUD_RUN_IMAGE_NAME: ${{ vars.CLOUD_RUN_IMAGE_NAME || 'insurance-pricing-api' }}
+  CLOUD_RUN_CPU: ${{ vars.CLOUD_RUN_CPU || '1' }}
+  CLOUD_RUN_MEMORY: ${{ vars.CLOUD_RUN_MEMORY || '512Mi' }}
+  CLOUD_RUN_TIMEOUT: ${{ vars.CLOUD_RUN_TIMEOUT || '300' }}
+  CLOUD_RUN_CONCURRENCY: ${{ vars.CLOUD_RUN_CONCURRENCY || '10' }}
+  CLOUD_RUN_MIN_INSTANCES: ${{ vars.CLOUD_RUN_MIN_INSTANCES || '0' }}
+  CLOUD_RUN_MAX_INSTANCES: ${{ vars.CLOUD_RUN_MAX_INSTANCES || '1' }}
+  CLOUD_RUN_JOB_CPU: ${{ vars.CLOUD_RUN_JOB_CPU || '1' }}
+  CLOUD_RUN_JOB_MEMORY: ${{ vars.CLOUD_RUN_JOB_MEMORY || '512Mi' }}
+  CLOUD_RUN_JOB_TIMEOUT: ${{ vars.CLOUD_RUN_JOB_TIMEOUT || '600s' }}
+
+jobs:
+  deploy:
+    name: Build and Deploy Cloud Run
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        vars.ENABLE_CLOUD_RUN_DEPLOY == 'true'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          missing=()
+          required_vars=(
+            GCP_PROJECT_ID
+            GCP_REGION
+            GCP_ARTIFACT_REGISTRY_LOCATION
+            GCP_ARTIFACT_REGISTRY_REPOSITORY
+            GCP_WORKLOAD_IDENTITY_PROVIDER
+            GCP_DEPLOYER_SERVICE_ACCOUNT
+            CLOUD_RUN_SERVICE
+            CLOUD_RUN_MIGRATION_JOB
+            CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT
+            INSURANCE_PRICING_RUN_ID
+          )
+
+          for var_name in "${required_vars[@]}"; do
+            if [[ -z "${!var_name}" ]]; then
+              missing+=("${var_name}")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required GitHub repository variables:\n' >&2
+            printf ' - %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+
+      - name: Validate GitHub Actions secrets
+        shell: bash
+        env:
+          INSURANCE_PRICING_DATABASE_URL: ${{ secrets.INSURANCE_PRICING_DATABASE_URL }}
+        run: |
+          if [[ -z "${INSURANCE_PRICING_DATABASE_URL}" ]]; then
+            echo "Missing required GitHub Actions secret: INSURANCE_PRICING_DATABASE_URL" >&2
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          version: ">= 416.0.0"
+
+      - name: Verify Artifact Registry repository
+        run: >
+          gcloud artifacts repositories describe "${GCP_ARTIFACT_REGISTRY_REPOSITORY}"
+          --location "${GCP_ARTIFACT_REGISTRY_LOCATION}"
+          --project "${GCP_PROJECT_ID}"
+
+      - name: Configure Docker for Artifact Registry
+        run: >
+          gcloud auth configure-docker
+          "${GCP_ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev"
+          --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata
+        id: image
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          short_sha="${DEPLOY_SHA::12}"
+          registry_host="${GCP_ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev"
+          image_uri="${registry_host}/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REGISTRY_REPOSITORY}/${CLOUD_RUN_IMAGE_NAME}:sha-${short_sha}"
+          latest_uri="${registry_host}/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REGISTRY_REPOSITORY}/${CLOUD_RUN_IMAGE_NAME}:latest"
+
+          echo "deploy_sha=${DEPLOY_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "image_uri=${image_uri}" >> "${GITHUB_OUTPUT}"
+          echo "latest_uri=${latest_uri}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.image_uri }}
+            ${{ steps.image.outputs.latest_uri }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy Cloud Run migration job
+        shell: bash
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          SHORT_SHA: ${{ steps.image.outputs.short_sha }}
+          INSURANCE_PRICING_DATABASE_URL: ${{ secrets.INSURANCE_PRICING_DATABASE_URL }}
+        run: |
+          gcloud run jobs deploy "${CLOUD_RUN_MIGRATION_JOB}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${IMAGE_URI}" \
+            --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
+            --set-env-vars "INSURANCE_PRICING_RUN_ID=${INSURANCE_PRICING_RUN_ID},INSURANCE_PRICING_DATABASE_URL=${INSURANCE_PRICING_DATABASE_URL},INSURANCE_PRICING_LOG_LEVEL=INFO,INSURANCE_PRICING_LOG_JSON=true" \
+            --command uv \
+            --args run,--no-sync,alembic,upgrade,head \
+            --cpu "${CLOUD_RUN_JOB_CPU}" \
+            --memory "${CLOUD_RUN_JOB_MEMORY}" \
+            --max-retries 0 \
+            --tasks 1 \
+            --task-timeout "${CLOUD_RUN_JOB_TIMEOUT}" \
+            --labels "managed-by=github-actions,commit-sha=${SHORT_SHA}" \
+            --quiet
+
+      - name: Execute Alembic migration job
+        run: >
+          gcloud run jobs execute "${CLOUD_RUN_MIGRATION_JOB}"
+          --project "${GCP_PROJECT_ID}"
+          --region "${GCP_REGION}"
+          --wait
+          --quiet
+
+      - name: Deploy Cloud Run service
+        shell: bash
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          SHORT_SHA: ${{ steps.image.outputs.short_sha }}
+          INSURANCE_PRICING_DATABASE_URL: ${{ secrets.INSURANCE_PRICING_DATABASE_URL }}
+        run: |
+          gcloud run deploy "${CLOUD_RUN_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${IMAGE_URI}" \
+            --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
+            --set-env-vars "INSURANCE_PRICING_RUN_ID=${INSURANCE_PRICING_RUN_ID},INSURANCE_PRICING_DATABASE_URL=${INSURANCE_PRICING_DATABASE_URL},INSURANCE_PRICING_LOG_LEVEL=INFO,INSURANCE_PRICING_LOG_JSON=true" \
+            --cpu "${CLOUD_RUN_CPU}" \
+            --memory "${CLOUD_RUN_MEMORY}" \
+            --concurrency "${CLOUD_RUN_CONCURRENCY}" \
+            --min-instances "${CLOUD_RUN_MIN_INSTANCES}" \
+            --max-instances "${CLOUD_RUN_MAX_INSTANCES}" \
+            --timeout "${CLOUD_RUN_TIMEOUT}" \
+            --labels "managed-by=github-actions,commit-sha=${SHORT_SHA}" \
+            --quiet
+
+      - name: Summarize deployment
+        shell: bash
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          DEPLOY_SHA: ${{ steps.image.outputs.deploy_sha }}
+        run: |
+          service_url="$(
+            gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+              --project "${GCP_PROJECT_ID}" \
+              --region "${GCP_REGION}" \
+              --format='value(status.url)'
+          )"
+
+          {
+            echo "### Cloud Run Deployment"
+            echo
+            echo "- Service: \`${CLOUD_RUN_SERVICE}\`"
+            echo "- Region: \`${GCP_REGION}\`"
+            echo "- Image: \`${IMAGE_URI}\`"
+            echo "- Commit: \`${DEPLOY_SHA}\`"
+            echo "- URL: ${service_url}"
+            echo
+            echo "The service URL may still require authenticated invocation depending on the Cloud Run IAM policy."
+          } >> "${GITHUB_STEP_SUMMARY}"
