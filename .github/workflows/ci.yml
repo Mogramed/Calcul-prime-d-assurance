@@ -1,70 +1,195 @@
-name: CI/CD Pipeline
+name: CI and Docker Publish
 
 on:
   push:
-    branches: [ "main", "feature/ajout-cicd" ]
+    branches: ["main"]
+    tags: ["v*"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.13"
+  INSURANCE_PRICING_RUN_ID: base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
+  INSURANCE_PRICING_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@127.0.0.1:54329/insurance_pricing
+  INSURANCE_PRICING_TEST_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@127.0.0.1:54329/insurance_pricing
+  INSURANCE_PRICING_CONTAINER_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@host.docker.internal:54329/insurance_pricing
 
 jobs:
-  # 1er JOB : On vérifie que le code est propre et que les calculs mathématiques sont bons
   quality-and-tests:
+    name: Quality and Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: insurance_pricing
+          POSTGRES_USER: insurance_pricing
+          POSTGRES_PASSWORD: insurance_pricing
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U insurance_pricing -d insurance_pricing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install UV
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: uv sync --all-groups --frozen
 
-      - name: Ruff Check (API only)
-        run: uv run ruff check src/insurance_pricing/api/
+      - name: Run Ruff
+        run: uv run ruff check src tests scripts
 
-      - name: MyPy Check (Predict Router only)
-        run: uv run mypy src/insurance_pricing/api/routers/predict.py --ignore-missing-imports
+      - name: Run MyPy
+        run: uv run mypy
 
-      - name: Pytest
-        env:
-          INSURANCE_PRICING_RUN_ID: base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
-        run: uv run pytest
+      - name: Apply Alembic migrations
+        run: uv run alembic upgrade head
 
-  # 2ème JOB : On emballe le tout dans Docker (Seulement si le Job 1 a réussi)
-  build-and-publish-docker:
-    needs: quality-and-tests # <-- C'est ça qui bloque la publication si les tests échouent !
+      - name: Run unit tests
+        run: uv run pytest -m "not integration"
+
+      - name: Run integration tests
+        run: uv run pytest -m integration
+
+  docker-smoke:
+    name: Docker Smoke Test
+    needs: quality-and-tests
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: insurance_pricing
+          POSTGRES_USER: insurance_pricing
+          POSTGRES_PASSWORD: insurance_pricing
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U insurance_pricing -d insurance_pricing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Login to GitHub Container Registry (GHCR)
+      - name: Build Docker image for validation
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: insurance-pricing:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Apply Alembic migrations with the container image
+        run: >
+          docker run --rm
+          --add-host=host.docker.internal:host-gateway
+          -e INSURANCE_PRICING_DATABASE_URL=${{ env.INSURANCE_PRICING_CONTAINER_DATABASE_URL }}
+          insurance-pricing:ci
+          uv run --no-sync alembic upgrade head
+
+      - name: Start API container
+        run: >
+          docker run -d --name insurance-pricing-api
+          --add-host=host.docker.internal:host-gateway
+          -p 8000:8000
+          -e INSURANCE_PRICING_RUN_ID=${{ env.INSURANCE_PRICING_RUN_ID }}
+          -e INSURANCE_PRICING_DATABASE_URL=${{ env.INSURANCE_PRICING_CONTAINER_DATABASE_URL }}
+          insurance-pricing:ci
+
+      - name: Smoke test API readiness
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/ready >ready.json; then
+              cat ready.json
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs insurance-pricing-api
+          exit 1
+
+      - name: Stop API container
+        if: always()
+        run: |
+          docker logs insurance-pricing-api || true
+          docker rm -f insurance-pricing-api || true
+
+  publish-docker:
+    name: Publish Docker image
+    if: github.event_name == 'push'
+    needs:
+      - quality-and-tests
+      - docker-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} # GitHub fournit ce mot de passe automatiquement
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Convertir le nom du repo en minuscules (Requis par Docker)
-        run: echo "REPO=${GITHUB_REPOSITORY,,}" >>${GITHUB_ENV}
+      - name: Compute image tags
+        id: image-tags
+        shell: bash
+        run: |
+          repo="${GITHUB_REPOSITORY,,}"
+          short_sha="${GITHUB_SHA::12}"
+
+          {
+            echo "tags<<EOF"
+            echo "ghcr.io/$repo:sha-$short_sha"
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              echo "ghcr.io/$repo:${GITHUB_REF#refs/tags/}"
+            else
+              echo "ghcr.io/$repo:latest"
+            fi
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ env.REPO }}:latest
+          tags: ${{ steps.image-tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
