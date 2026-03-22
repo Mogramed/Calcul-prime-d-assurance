@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from insurance_pricing._typing import FloatArray, IntArray
+from insurance_pricing._typing import FloatArray, IntArray, ModelKwargs
 from insurance_pricing.data.schema import OrdinalFrameEncoder
 from insurance_pricing.evaluation.metrics import make_tail_weights
 from insurance_pricing.features.target_encoding import (
@@ -39,7 +39,7 @@ def _fit_xgb(
     Xva = enc.transform(X_va)
     Xte = enc.transform(X_te)
 
-    f_params = {
+    f_params: ModelKwargs = {
         "objective": "binary:logistic",
         "eval_metric": "logloss",
         "n_estimators": 1800,
@@ -53,7 +53,7 @@ def _fit_xgb(
     }
     f_params.update(freq_params)
 
-    s_params = {
+    s_params: ModelKwargs = {
         "objective": "reg:squarederror",
         "eval_metric": "rmse",
         "n_estimators": 2200,
@@ -129,7 +129,7 @@ def _fit_xgb_fold_v2(
     Xva = enc.transform(X_va)
     Xte = enc.transform(X_te)
 
-    f_params = {
+    f_params: ModelKwargs = {
         "objective": "binary:logistic",
         "eval_metric": "logloss",
         "n_estimators": 6000,
@@ -154,7 +154,7 @@ def _fit_xgb_fold_v2(
         y_target = np.clip(y_sev_tr.astype(float), 0.0, None)
         if sev_mode == "winsorized":
             y_target = _apply_winsor(y_target, quantile=0.995)
-        d_params = {
+        d_params: ModelKwargs = {
             "objective": "reg:tweedie",
             "eval_metric": "rmse",
             "tweedie_variance_power": float(tweedie_power),
@@ -191,7 +191,7 @@ def _fit_xgb_fold_v2(
     w = make_tail_weights(y_pos_fit) if sev_mode == "weighted_tail" else None
 
     if fam == "two_part_tweedie":
-        s_params = {
+        s_params: ModelKwargs = {
             "objective": "reg:tweedie",
             "eval_metric": "rmse",
             "tweedie_variance_power": float(tweedie_power),
@@ -217,7 +217,7 @@ def _fit_xgb_fold_v2(
         m_va = np.maximum(reg.predict(Xva), 0.0)
         m_te = np.maximum(reg.predict(Xte), 0.0)
     else:
-        s_params = {
+        s_params: ModelKwargs = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
             "n_estimators": 7000,
@@ -272,7 +272,7 @@ def _fit_xgb_fulltrain_v2(
     Xtr = enc.transform(X_train)
     Xte = enc.transform(X_test)
 
-    fp = {
+    fp: ModelKwargs = {
         "objective": "binary:logistic",
         "eval_metric": "logloss",
         "n_estimators": 3000,
@@ -297,7 +297,7 @@ def _fit_xgb_fulltrain_v2(
         y_target = np.clip(y_sev_train.astype(float), 0.0, None)
         if sev_mode == "winsorized":
             y_target = _apply_winsor(y_target, quantile=0.995)
-        dp = {
+        dp: ModelKwargs = {
             "objective": "reg:tweedie",
             "eval_metric": "rmse",
             "tweedie_variance_power": float(tweedie_power),
@@ -329,7 +329,7 @@ def _fit_xgb_fulltrain_v2(
     w = make_tail_weights(y_pos_fit) if sev_mode == "weighted_tail" else None
 
     if fam == "two_part_tweedie":
-        sp = {
+        sp: ModelKwargs = {
             "objective": "reg:tweedie",
             "eval_metric": "rmse",
             "tweedie_variance_power": float(tweedie_power),
@@ -348,7 +348,7 @@ def _fit_xgb_fulltrain_v2(
         reg.fit(Xtr.loc[pos], y_pos_fit, sample_weight=w, verbose=False)
         m_te = np.maximum(reg.predict(Xte), 0.0)
     else:
-        sp = {
+        sp: ModelKwargs = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
             "n_estimators": 4000,

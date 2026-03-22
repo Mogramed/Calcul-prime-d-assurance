@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from insurance_pricing._typing import FloatArray, IntArray
+from insurance_pricing._typing import FloatArray, IntArray, ModelKwargs
 from insurance_pricing.data.schema import INDEX_COL, DatasetBundle, OrdinalFrameEncoder
 from insurance_pricing.evaluation.metrics import make_tail_weights
 from insurance_pricing.features.target_encoding import _add_fold_target_encoding
@@ -39,7 +39,7 @@ def fit_full_two_part_predict(
         from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
         cat_idx = [X_train.columns.get_loc(c) for c in cat_cols]
-        fp = {
+        fp: ModelKwargs = {
             "loss_function": "Logloss",
             "eval_metric": "Logloss",
             "iterations": 1200,
@@ -50,7 +50,7 @@ def fit_full_two_part_predict(
             "verbose": False,
         }
         fp.update(freq_params)
-        sp = {
+        sp: ModelKwargs = {
             "loss_function": "RMSE",
             "eval_metric": "RMSE",
             "iterations": 1800,
@@ -102,7 +102,7 @@ def fit_full_two_part_predict(
         Xte = enc.transform(X_test)
 
         if e == "lightgbm":
-            fp = {
+            fp: ModelKwargs = {
                 "objective": "binary",
                 "n_estimators": 2000,
                 "learning_rate": 0.03,
@@ -112,7 +112,7 @@ def fit_full_two_part_predict(
                 "random_state": seed,
                 "n_jobs": -1,
             }
-            sp = {
+            sp: ModelKwargs = {
                 "objective": "rmse",
                 "n_estimators": 2500,
                 "learning_rate": 0.03,
@@ -127,7 +127,7 @@ def fit_full_two_part_predict(
             clf = LGBMClassifier(**fp)
             reg = LGBMRegressor(**sp)
         else:
-            fp = {
+            fp: ModelKwargs = {
                 "objective": "binary:logistic",
                 "eval_metric": "logloss",
                 "n_estimators": 1800,
@@ -139,7 +139,7 @@ def fit_full_two_part_predict(
                 "n_jobs": -1,
                 "tree_method": "hist",
             }
-            sp = {
+            sp: ModelKwargs = {
                 "objective": "reg:squarederror",
                 "eval_metric": "rmse",
                 "n_estimators": 2200,
