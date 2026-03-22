@@ -7,6 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
+  # 1er JOB : On vérifie que le code est propre et que les calculs mathématiques sont bons
   quality-and-tests:
     runs-on: ubuntu-latest
 
@@ -38,3 +39,32 @@ jobs:
         env:
           INSURANCE_PRICING_RUN_ID: base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
         run: uv run pytest
+
+  # 2ème JOB : On emballe le tout dans Docker (Seulement si le Job 1 a réussi)
+  build-and-publish-docker:
+    needs: quality-and-tests # <-- C'est ça qui bloque la publication si les tests échouent !
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} # GitHub fournit ce mot de passe automatiquement
+
+      - name: Convertir le nom du repo en minuscules (Requis par Docker)
+        run: echo "REPO=${GITHUB_REPOSITORY,,}" >>${GITHUB_ENV}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ env.REPO }}:latest
