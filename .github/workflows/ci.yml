@@ -1,0 +1,40 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "feature/ajout-cicd" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  quality-and-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Ruff Check (API only)
+        run: uv run ruff check src/insurance_pricing/api/
+
+      - name: MyPy Check (API only)
+        run: uv run mypy src/insurance_pricing/api/ --ignore-missing-imports --disable-error-code list-item,call-arg,import-untyped
+
+      - name: Pytest
+        env:
+          INSURANCE_PRICING_RUN_ID: base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
+        run: uv run pytest
