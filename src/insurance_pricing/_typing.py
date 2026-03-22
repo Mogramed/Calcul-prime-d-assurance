@@ -12,6 +12,7 @@ type IntArray = NDArray[np.int64]
 type BoolArray = NDArray[np.bool_]
 type SplitIndices = tuple[IntArray, IntArray]
 type SplitMapping = Mapping[int, SplitIndices]
+type ModelKwargs = dict[str, Any]
 
 
 def as_any_array(value: Any, *, dtype: Any | None = None) -> AnyArray:

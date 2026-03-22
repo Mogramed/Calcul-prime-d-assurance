@@ -15,7 +15,13 @@ from sklearn.metrics import brier_score_loss, mean_squared_error, roc_auc_score
 from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import OrdinalEncoder
 
-from insurance_pricing._typing import FloatArray, IntArray, SplitIndices, as_float_array
+from insurance_pricing._typing import (
+    FloatArray,
+    IntArray,
+    ModelKwargs,
+    SplitIndices,
+    as_float_array,
+)
 
 TARGET_FREQ_COL = "nombre_sinistres"
 TARGET_SEV_COL = "montant_sinistre"
@@ -412,7 +418,7 @@ def _fit_catboost(
     from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
     cat_idx = [X_tr.columns.get_loc(c) for c in cat_cols]
-    f_params = {
+    f_params: ModelKwargs = {
         "loss_function": "Logloss",
         "eval_metric": "Logloss",
         "iterations": 1200,
@@ -424,7 +430,7 @@ def _fit_catboost(
     }
     f_params.update(freq_params)
 
-    s_params = {
+    s_params: ModelKwargs = {
         "loss_function": "RMSE",
         "eval_metric": "RMSE",
         "iterations": 1800,
@@ -502,7 +508,7 @@ def _fit_lgbm(
     Xva = enc.transform(X_va)
     Xte = enc.transform(X_te)
 
-    f_params = {
+    f_params: ModelKwargs = {
         "objective": "binary",
         "n_estimators": 2000,
         "learning_rate": 0.03,
@@ -514,7 +520,7 @@ def _fit_lgbm(
     }
     f_params.update(freq_params)
 
-    s_params = {
+    s_params: ModelKwargs = {
         "objective": "rmse",
         "n_estimators": 2500,
         "learning_rate": 0.03,
@@ -585,7 +591,7 @@ def _fit_xgb(
     Xva = enc.transform(X_va)
     Xte = enc.transform(X_te)
 
-    f_params = {
+    f_params: ModelKwargs = {
         "objective": "binary:logistic",
         "eval_metric": "logloss",
         "n_estimators": 1800,
@@ -599,7 +605,7 @@ def _fit_xgb(
     }
     f_params.update(freq_params)
 
-    s_params = {
+    s_params: ModelKwargs = {
         "objective": "reg:squarederror",
         "eval_metric": "rmse",
         "n_estimators": 2200,
@@ -735,7 +741,7 @@ def fit_full_two_part_predict(
         from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
         cat_idx = [X_train.columns.get_loc(c) for c in cat_cols]
-        fp = {
+        fp: ModelKwargs = {
             "loss_function": "Logloss",
             "eval_metric": "Logloss",
             "iterations": 1200,
@@ -746,7 +752,7 @@ def fit_full_two_part_predict(
             "verbose": False,
         }
         fp.update(freq_params)
-        sp = {
+        sp: ModelKwargs = {
             "loss_function": "RMSE",
             "eval_metric": "RMSE",
             "iterations": 1800,
@@ -798,7 +804,7 @@ def fit_full_two_part_predict(
         Xte = enc.transform(X_test)
 
         if e == "lightgbm":
-            fp = {
+            fp: ModelKwargs = {
                 "objective": "binary",
                 "n_estimators": 2000,
                 "learning_rate": 0.03,
@@ -808,7 +814,7 @@ def fit_full_two_part_predict(
                 "random_state": seed,
                 "n_jobs": -1,
             }
-            sp = {
+            sp: ModelKwargs = {
                 "objective": "rmse",
                 "n_estimators": 2500,
                 "learning_rate": 0.03,
@@ -823,7 +829,7 @@ def fit_full_two_part_predict(
             clf = LGBMClassifier(**fp)
             reg = LGBMRegressor(**sp)
         else:
-            fp = {
+            fp: ModelKwargs = {
                 "objective": "binary:logistic",
                 "eval_metric": "logloss",
                 "n_estimators": 1800,
@@ -835,7 +841,7 @@ def fit_full_two_part_predict(
                 "n_jobs": -1,
                 "tree_method": "hist",
             }
-            sp = {
+            sp: ModelKwargs = {
                 "objective": "reg:squarederror",
                 "eval_metric": "rmse",
                 "n_estimators": 2200,
