@@ -63,9 +63,9 @@ Archive historique:
 
 ## Typage statique
 
-1. Le gate mypy strict couvre la surface industrialisee de l'API FastAPI.
-2. Le package historique hors API reste exploitable, mais n'est pas encore entierement amene au niveau de typage strict.
-3. La commande `uv run mypy` applique donc le niveau strict sur le package cible configure dans `pyproject.toml`.
+1. Le gate mypy strict couvre tout `src/insurance_pricing`.
+2. Les seules tolerances restantes dans `pyproject.toml` concernent des dependances externes non typees.
+3. La commande `uv run mypy` est donc un vrai gate repo-wide sur le package applicatif.
 
 ## Logging et PostgreSQL API
 
@@ -89,6 +89,11 @@ Archive historique:
 5. Lancer l'API via compose:
 `docker compose up api`
 6. Si Docker Desktop monte un dossier `artifacts/` vide sur Windows, definir `INSURANCE_PRICING_ARTIFACTS_DIR` dans `.env` vers un chemin partage par Docker.
+
+## Deploiement Cloud Run
+
+1. Le repo contient un workflow GitHub Actions dedie au deploiement Cloud Run: `.github/workflows/deploy-cloud-run.yml`.
+2. Le detail du bootstrap GCP, de Workload Identity Federation, des variables GitHub et du branchement Neon est documente dans `docs/deploy_cloud_run.md`.
 
 ## Correction encoding notebook
 
