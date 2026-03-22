@@ -191,7 +191,7 @@ def _fit_xgb_fold_v2(
     w = make_tail_weights(y_pos_fit) if sev_mode == "weighted_tail" else None
 
     if fam == "two_part_tweedie":
-        s_params: ModelKwargs = {
+        tweedie_params: ModelKwargs = {
             "objective": "reg:tweedie",
             "eval_metric": "rmse",
             "tweedie_variance_power": float(tweedie_power),
@@ -205,8 +205,8 @@ def _fit_xgb_fold_v2(
             "tree_method": "hist",
             "early_stopping_rounds": 120,
         }
-        s_params.update(sev_params)
-        reg = XGBRegressor(**s_params)
+        tweedie_params.update(sev_params)
+        reg = XGBRegressor(**tweedie_params)
         reg.fit(
             Xtr.loc[pos],
             y_pos_fit,
@@ -217,7 +217,7 @@ def _fit_xgb_fold_v2(
         m_va = np.maximum(reg.predict(Xva), 0.0)
         m_te = np.maximum(reg.predict(Xte), 0.0)
     else:
-        s_params: ModelKwargs = {
+        rmse_params: ModelKwargs = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
             "n_estimators": 7000,
@@ -230,8 +230,8 @@ def _fit_xgb_fold_v2(
             "tree_method": "hist",
             "early_stopping_rounds": 120,
         }
-        s_params.update(sev_params)
-        reg = XGBRegressor(**s_params)
+        rmse_params.update(sev_params)
+        reg = XGBRegressor(**rmse_params)
         y_log = np.log1p(y_pos_fit)
         y_va_log = np.log1p(np.clip(y_sev_va.astype(float), 0.0, None))
         reg.fit(
@@ -329,7 +329,7 @@ def _fit_xgb_fulltrain_v2(
     w = make_tail_weights(y_pos_fit) if sev_mode == "weighted_tail" else None
 
     if fam == "two_part_tweedie":
-        sp: ModelKwargs = {
+        tweedie_params: ModelKwargs = {
             "objective": "reg:tweedie",
             "eval_metric": "rmse",
             "tweedie_variance_power": float(tweedie_power),
@@ -342,13 +342,13 @@ def _fit_xgb_fulltrain_v2(
             "n_jobs": -1,
             "tree_method": "hist",
         }
-        sp.update(sev_params)
-        sp.pop("early_stopping_rounds", None)
-        reg = XGBRegressor(**sp)
+        tweedie_params.update(sev_params)
+        tweedie_params.pop("early_stopping_rounds", None)
+        reg = XGBRegressor(**tweedie_params)
         reg.fit(Xtr.loc[pos], y_pos_fit, sample_weight=w, verbose=False)
         m_te = np.maximum(reg.predict(Xte), 0.0)
     else:
-        sp: ModelKwargs = {
+        rmse_params: ModelKwargs = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
             "n_estimators": 4000,
@@ -360,9 +360,9 @@ def _fit_xgb_fulltrain_v2(
             "n_jobs": -1,
             "tree_method": "hist",
         }
-        sp.update(sev_params)
-        sp.pop("early_stopping_rounds", None)
-        reg = XGBRegressor(**sp)
+        rmse_params.update(sev_params)
+        rmse_params.pop("early_stopping_rounds", None)
+        reg = XGBRegressor(**rmse_params)
         y_log = np.log1p(y_pos_fit)
         reg.fit(Xtr.loc[pos], y_log, sample_weight=w, verbose=False)
         z_te = reg.predict(Xte)

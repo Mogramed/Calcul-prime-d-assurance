@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -124,7 +124,7 @@ def _fit_lgbm_fold_v2(
     Xtr = enc.transform(X_tr)
     Xva = enc.transform(X_va)
     Xte = enc.transform(X_te)
-    callbacks = [early_stopping(stopping_rounds=100, verbose=False)]
+    callbacks: list[Callable[..., Any]] = [early_stopping(stopping_rounds=100, verbose=False)]
 
     f_params: ModelKwargs = {
         "objective": "binary",
@@ -191,7 +191,7 @@ def _fit_lgbm_fold_v2(
     w = make_tail_weights(y_pos_fit) if sev_mode == "weighted_tail" else None
 
     if fam == "two_part_tweedie":
-        s_params: ModelKwargs = {
+        tweedie_params: ModelKwargs = {
             "objective": "tweedie",
             "tweedie_variance_power": float(tweedie_power),
             "n_estimators": 7000,
@@ -203,8 +203,8 @@ def _fit_lgbm_fold_v2(
             "n_jobs": -1,
             "verbosity": -1,
         }
-        s_params.update(sev_params)
-        reg = LGBMRegressor(**s_params)
+        tweedie_params.update(sev_params)
+        reg = LGBMRegressor(**tweedie_params)
         reg.fit(
             Xtr.loc[pos],
             y_pos_fit,
@@ -216,7 +216,7 @@ def _fit_lgbm_fold_v2(
         m_va = np.maximum(reg.predict(Xva), 0.0)
         m_te = np.maximum(reg.predict(Xte), 0.0)
     else:
-        s_params: ModelKwargs = {
+        rmse_params: ModelKwargs = {
             "objective": "rmse",
             "n_estimators": 7000,
             "learning_rate": 0.03,
@@ -227,8 +227,8 @@ def _fit_lgbm_fold_v2(
             "n_jobs": -1,
             "verbosity": -1,
         }
-        s_params.update(sev_params)
-        reg = LGBMRegressor(**s_params)
+        rmse_params.update(sev_params)
+        reg = LGBMRegressor(**rmse_params)
         y_log = np.log1p(y_pos_fit)
         y_va_log = np.log1p(np.clip(y_sev_va.astype(float), 0.0, None))
         reg.fit(
@@ -323,7 +323,7 @@ def _fit_lgbm_fulltrain_v2(
     w = make_tail_weights(y_pos_fit) if sev_mode == "weighted_tail" else None
 
     if fam == "two_part_tweedie":
-        sp: ModelKwargs = {
+        tweedie_params: ModelKwargs = {
             "objective": "tweedie",
             "tweedie_variance_power": float(tweedie_power),
             "n_estimators": 4000,
@@ -335,12 +335,12 @@ def _fit_lgbm_fulltrain_v2(
             "n_jobs": -1,
             "verbosity": -1,
         }
-        sp.update(sev_params)
-        reg = LGBMRegressor(**sp)
+        tweedie_params.update(sev_params)
+        reg = LGBMRegressor(**tweedie_params)
         reg.fit(Xtr.loc[pos], y_pos_fit, sample_weight=w)
         m_te = np.maximum(reg.predict(Xte), 0.0)
     else:
-        sp: ModelKwargs = {
+        rmse_params: ModelKwargs = {
             "objective": "rmse",
             "n_estimators": 4000,
             "learning_rate": 0.03,
@@ -351,8 +351,8 @@ def _fit_lgbm_fulltrain_v2(
             "n_jobs": -1,
             "verbosity": -1,
         }
-        sp.update(sev_params)
-        reg = LGBMRegressor(**sp)
+        rmse_params.update(sev_params)
+        reg = LGBMRegressor(**rmse_params)
         y_log = np.log1p(y_pos_fit)
         reg.fit(Xtr.loc[pos], y_log, sample_weight=w)
         z_te = reg.predict(Xte)
