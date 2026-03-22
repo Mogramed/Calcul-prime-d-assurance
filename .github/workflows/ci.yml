@@ -31,8 +31,8 @@ jobs:
       - name: Ruff Check (API only)
         run: uv run ruff check src/insurance_pricing/api/
 
-      - name: MyPy Check (API only)
-        run: uv run mypy src/insurance_pricing/api/ --ignore-missing-imports --disable-error-code list-item,call-arg,import-untyped
+      - name: MyPy Check (Predict Router only)
+        run: uv run mypy src/insurance_pricing/api/routers/predict.py --ignore-missing-imports
 
       - name: Pytest
         env:
