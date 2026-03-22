@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
+from insurance_pricing._typing import IntArray, SplitIndices
 from insurance_pricing.data.io import ensure_dir
 from insurance_pricing.data.schema import DEFAULT_V2_DIR, INDEX_COL
 
@@ -17,10 +18,10 @@ def build_primary_time_folds(
     *,
     n_blocks: int = 5,
     index_col: str = INDEX_COL,
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, SplitIndices]:
     order = np.argsort(train[index_col].to_numpy())
     blocks = np.array_split(order, n_blocks)
-    folds: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    folds: dict[int, SplitIndices] = {}
     for fold in range(1, n_blocks):
         tr = np.concatenate(blocks[:fold]).astype(int)
         va = blocks[fold].astype(int)
@@ -33,17 +34,17 @@ def build_secondary_group_folds(
     *,
     n_splits: int = 5,
     group_col: str = "id_client",
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, SplitIndices]:
     gkf = GroupKFold(n_splits=n_splits)
     groups = train[group_col].to_numpy()
-    out: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    out: dict[int, SplitIndices] = {}
     for i, (tr, va) in enumerate(gkf.split(train, groups=groups), start=1):
         out[i] = (tr.astype(int), va.astype(int))
     return out
 
 
 def validate_folds_disjoint(
-    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     *,
     check_full_coverage: bool = False,
     n_rows: int | None = None,
@@ -64,7 +65,7 @@ def validate_folds_disjoint(
 
 
 def folds_to_frame(
-    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     *,
     split_name: str,
     n_rows: int,
@@ -87,8 +88,8 @@ def folds_to_frame(
 def export_fold_artifacts(
     *,
     train: pd.DataFrame,
-    primary_folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
-    secondary_folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    primary_folds: Mapping[int, SplitIndices],
+    secondary_folds: Mapping[int, SplitIndices],
     output_dir: str | Path = "artifacts",
 ) -> None:
     out = ensure_dir(output_dir)
@@ -102,10 +103,10 @@ def export_fold_artifacts(
 
 def build_aux_blocked_folds(
     train: pd.DataFrame, *, n_blocks: int = 5, index_col: str = INDEX_COL
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, SplitIndices]:
     order = np.argsort(train[index_col].to_numpy())
     blocks = np.array_split(order, n_blocks)
-    out: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    out: dict[int, SplitIndices] = {}
     for i, va in enumerate(blocks, start=1):
         tr = np.concatenate([b for j, b in enumerate(blocks) if j != (i - 1)]).astype(int)
         out[i] = (tr, va.astype(int))
@@ -118,7 +119,7 @@ def build_split_registry(
     n_blocks_time: int = 5,
     n_splits_group: int = 5,
     group_col: str = "id_client",
-) -> dict[str, dict[int, tuple[np.ndarray, np.ndarray]]]:
+) -> dict[str, dict[int, SplitIndices]]:
     return {
         "primary_time": build_primary_time_folds(train, n_blocks=n_blocks_time),
         "secondary_group": build_secondary_group_folds(
@@ -129,8 +130,8 @@ def build_split_registry(
 
 
 def validate_group_disjoint(
-    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
-    groups: pd.Series | np.ndarray,
+    folds: Mapping[int, SplitIndices],
+    groups: pd.Series | IntArray,
 ) -> None:
     g = pd.Series(groups).astype(str).to_numpy()
     for fold_id, (tr, va) in folds.items():
@@ -141,7 +142,7 @@ def validate_group_disjoint(
 def export_split_artifacts_v2(
     *,
     train: pd.DataFrame,
-    splits: Mapping[str, Mapping[int, tuple[np.ndarray, np.ndarray]]],
+    splits: Mapping[str, Mapping[int, SplitIndices]],
     output_dir: str | Path = DEFAULT_V2_DIR,
 ) -> None:
     out = ensure_dir(output_dir)

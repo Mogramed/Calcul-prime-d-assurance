@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from insurance_pricing.training.config import TrainingConfig
 
 
-def _build_benchmark_spec(cfg: TrainingConfig) -> dict:
+def _build_benchmark_spec(cfg: TrainingConfig) -> dict[str, Any]:
     return {
         "feature_set": cfg.feature_set,
         "feature_sets": [cfg.feature_set],
@@ -32,7 +32,7 @@ def _build_benchmark_spec(cfg: TrainingConfig) -> dict:
     }
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing.cv.integrity import build_splits, validate_split_integrity
     from insurance_pricing.data.datasets import build_feature_sets, load_datasets, select_bundle
     from insurance_pricing.data.schema import TARGET_SEV_COL
@@ -120,7 +120,7 @@ def train_run(config_path: str) -> dict:
 
     # Metrics on train with final prime model
     pred_train = prime_model.predict_components(train)
-    metrics = summarize_prime_metrics(
+    metrics: dict[str, Any] = summarize_prime_metrics(
         train[TARGET_SEV_COL].to_numpy(dtype=float),
         pred_train["pred_prime"].to_numpy(dtype=float),
     )
@@ -157,7 +157,7 @@ def train_run(config_path: str) -> dict:
     }
 
 
-def evaluate_run(run_id: str) -> dict:
+def evaluate_run(run_id: str) -> dict[str, Any]:
     from insurance_pricing.data.datasets import load_datasets
     from insurance_pricing.data.schema import TARGET_SEV_COL
     from insurance_pricing.evaluation.metrics import summarize_prime_metrics
@@ -173,14 +173,16 @@ def evaluate_run(run_id: str) -> dict:
     pred_test = prime_model.predict_components(test)
 
     y_train = train[TARGET_SEV_COL].to_numpy(dtype=float)
-    m = summarize_prime_metrics(y_train, pred_train["pred_prime"].to_numpy(dtype=float))
+    m: dict[str, Any] = summarize_prime_metrics(
+        y_train, pred_train["pred_prime"].to_numpy(dtype=float)
+    )
     m["pred_test_mean"] = float(np.mean(pred_test["pred_prime"].to_numpy(dtype=float)))
     m["pred_test_q99"] = float(np.quantile(pred_test["pred_prime"].to_numpy(dtype=float), 0.99))
     m["run_id"] = str(run_id)
 
     run_dir = Path(loaded["run_dir"])
     (run_dir / "evaluation.json").write_text(pd.Series(m).to_json(indent=2), encoding="utf-8")
-    return m
+    return dict(m)
 
 
 def predict_from_run(run_id: str, input_df: pd.DataFrame) -> pd.DataFrame:

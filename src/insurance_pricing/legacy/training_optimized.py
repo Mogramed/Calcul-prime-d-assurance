@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from insurance_pricing._typing import SplitIndices
 from insurance_pricing.cv.splits import build_split_registry
 from insurance_pricing.evaluation.diagnostics import (
     build_model_cards,
@@ -35,7 +36,7 @@ from insurance_pricing.training.selection import (
 def run_benchmark_optimized(
     spec: Mapping[str, Any],
     bundle: Any,
-    splits: Mapping[str, Mapping[int, tuple]],
+    splits: Mapping[str, Mapping[int, SplitIndices]],
     seed: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Drop-in helper used by old optimized experiments."""

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from insurance_pricing import training as v2
+from insurance_pricing._typing import FloatArray
 
 from . import gap_diagnosis_impl as w22
 from . import tail_recovery_impl as tr
@@ -23,7 +24,7 @@ ARTIFACT_V241_DIR = Path("artifacts") / "v2_4_1_tail_recovery"
 
 
 def ensure_v241_dir(root: str | Path = ".") -> Path:
-    return v2.ensure_dir(Path(root) / ARTIFACT_V241_DIR)
+    return Path(v2.ensure_dir(Path(root) / ARTIFACT_V241_DIR))
 
 
 def _coerce_num(df: pd.DataFrame, col: str, fill: float = np.nan) -> pd.Series:
@@ -72,7 +73,7 @@ def load_v24_outputs(root: str | Path = ".") -> dict[str, Any]:
             "base_v24": base,
         }
     )
-    return ctx
+    return dict(ctx)
 
 
 def mark_identity_and_duplicate_candidates(
@@ -161,7 +162,7 @@ def mark_identity_and_duplicate_candidates(
 
     # Duplicate detection by metric signature, then optional pred-store arrays
     seen_signatures: dict[tuple[Any, ...], str] = {}
-    seen_arrays: dict[str, np.ndarray] = {}
+    seen_arrays: dict[str, FloatArray] = {}
     order = d.sort_values(
         ["is_identity_candidate", "rmse_prime"], na_position="last"
     ).index.tolist()
@@ -508,7 +509,7 @@ def run_phase_b_if_needed(
         return pd.DataFrame()
 
     # Two variants max, as requested.
-    variants = [
+    variants: list[dict[str, float | str]] = [
         {"beta": 0.5, "w_max": 10.0, "threshold_q": 0.90, "feature_set": "base_v2"},
         {"beta": 1.0, "w_max": 10.0, "threshold_q": 0.90, "feature_set": "robust_v2"},
     ]
@@ -543,7 +544,7 @@ def materialize_submissions_v241(
     out_dir: str | Path = ARTIFACT_V241_DIR,
     base_run_row: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    out = v2.ensure_dir(out_dir)
+    out = Path(v2.ensure_dir(out_dir))
     if selected_df is None or selected_df.empty:
         return {
             "submission_paths": {},
@@ -639,7 +640,7 @@ def write_decision_report_v241(
     selected_df: pd.DataFrame,
     out_dir: str | Path = ARTIFACT_V241_DIR,
 ) -> Path:
-    out = v2.ensure_dir(out_dir)
+    out = Path(v2.ensure_dir(out_dir))
     lines: list[str] = []
     lines.append("# Submission decision V2.4.1 Tail Selection Fix")
     lines.append("")
@@ -855,7 +856,7 @@ __all__ = [
 ]
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return dict(_train_run(config_path))

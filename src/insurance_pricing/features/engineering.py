@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from insurance_pricing._typing import FloatArray, as_float_array
 from insurance_pricing.data.io import build_targets
 from insurance_pricing.data.schema import (
     ID_COLS,
@@ -121,8 +122,8 @@ def _normalize_object_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 def _build_rare_maps(
     train_df: pd.DataFrame, *, cat_cols: Sequence[str], min_count: int = 30
-) -> dict[str, set]:
-    maps: dict[str, set] = {}
+) -> dict[str, set[str]]:
+    maps: dict[str, set[str]] = {}
     for c in cat_cols:
         if c not in train_df.columns:
             continue
@@ -131,7 +132,7 @@ def _build_rare_maps(
     return maps
 
 
-def _apply_rare_maps(df: pd.DataFrame, rare_maps: Mapping[str, set]) -> pd.DataFrame:
+def _apply_rare_maps(df: pd.DataFrame, rare_maps: Mapping[str, set[str]]) -> pd.DataFrame:
     out = df.copy()
     for c, rare in rare_maps.items():
         if c not in out.columns:
@@ -141,11 +142,11 @@ def _apply_rare_maps(df: pd.DataFrame, rare_maps: Mapping[str, set]) -> pd.DataF
     return out
 
 
-def _safe_div(a: pd.Series | np.ndarray, b: pd.Series | np.ndarray) -> np.ndarray:
-    aa = np.asarray(a, dtype=float)
-    bb = np.asarray(b, dtype=float)
+def _safe_div(a: pd.Series | FloatArray, b: pd.Series | FloatArray) -> FloatArray:
+    aa = as_float_array(a)
+    bb = as_float_array(b)
     out = np.divide(aa, bb, out=np.full_like(aa, np.nan), where=np.isfinite(bb) & (bb != 0))
-    return out
+    return as_float_array(out)
 
 
 def _add_engineered_features_core_v2(df: pd.DataFrame) -> pd.DataFrame:

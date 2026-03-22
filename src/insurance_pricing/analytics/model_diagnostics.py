@@ -11,14 +11,15 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from insurance_pricing._typing import FloatArray
 from insurance_pricing.evaluation import diagnostics as v2diag
 
 from .quality import _rmse
 
 
 def compute_error_by_deciles(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
+    y_true: FloatArray,
+    y_pred: FloatArray,
     n_bins: int = 10,
     mode: str = "qcut_all",
     zero_aware: bool | None = None,
@@ -120,7 +121,7 @@ def compute_error_by_deciles(
 
 
 def compute_calibration_table(
-    y_true: np.ndarray, p_pred: np.ndarray, n_bins: int = 10
+    y_true: FloatArray, p_pred: FloatArray, n_bins: int = 10
 ) -> pd.DataFrame:
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(p_pred, dtype=float)

@@ -57,7 +57,7 @@ def save_table(df: pd.DataFrame, name: str, notebook: str) -> Path:
     return path
 
 
-def save_figure(fig, name: str, notebook: str, dpi: int = 150) -> Path:
+def save_figure(fig: Any, name: str, notebook: str, dpi: int = 150) -> Path:
     DS_FIGURES.mkdir(parents=True, exist_ok=True)
     nb = notebook.replace(".ipynb", "")
     out_dir = DS_FIGURES / nb

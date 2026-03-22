@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from insurance_pricing._typing import FloatArray, IntArray, as_float_array, as_int_array
 from insurance_pricing.features.schema import build_feature_frame_for_inference
 from insurance_pricing.features.target_encoding import _apply_winsor
 
@@ -21,7 +22,7 @@ class SeverityModel:
     tweedie_power: float = 1.3
     smear_factor: float = 1.0
 
-    def predict(self, raw_df: pd.DataFrame) -> np.ndarray:
+    def predict(self, raw_df: pd.DataFrame) -> FloatArray:
         X = build_feature_frame_for_inference(
             raw_df,
             feature_cols=self.feature_cols,
@@ -30,16 +31,16 @@ class SeverityModel:
         fam = self.family.lower()
         if fam == "two_part_tweedie":
             pred = self.model.predict(X)
-            return np.maximum(np.asarray(pred, dtype=float), 0.0)
+            return as_float_array(np.maximum(as_float_array(pred), 0.0))
         z = self.model.predict(X)
-        pred = np.maximum(self.smear_factor * np.exp(np.asarray(z, dtype=float)) - 1.0, 0.0)
-        return np.maximum(np.asarray(pred, dtype=float), 0.0)
+        pred = np.maximum(self.smear_factor * np.exp(as_float_array(z)) - 1.0, 0.0)
+        return as_float_array(np.maximum(as_float_array(pred), 0.0))
 
 
 def _fit_catboost_severity(
     X_train: pd.DataFrame,
-    y_sev: np.ndarray,
-    y_freq: np.ndarray,
+    y_sev: FloatArray,
+    y_freq: IntArray,
     *,
     cat_cols: Sequence[str],
     family: str,
@@ -52,9 +53,9 @@ def _fit_catboost_severity(
 
     from insurance_pricing.evaluation.metrics import make_tail_weights
 
-    pos = np.asarray(y_freq, dtype=int) == 1
+    pos = as_int_array(y_freq) == 1
     X_pos = X_train.loc[pos].copy()
-    y_pos = np.clip(np.asarray(y_sev, dtype=float)[pos], 0.0, None)
+    y_pos = as_float_array(np.clip(as_float_array(y_sev)[pos], 0.0, None))
     if int(len(y_pos)) < 20:
         raise ValueError("Not enough positive severity samples.")
 
@@ -62,7 +63,7 @@ def _fit_catboost_severity(
     y_pos_fit = _apply_winsor(y_pos, quantile=0.995) if sev_mode == "winsorized" else y_pos
     sample_weight = make_tail_weights(y_pos_fit) if sev_mode == "weighted_tail" else None
 
-    p = {
+    p: dict[str, Any] = {
         "iterations": 3500,
         "learning_rate": 0.03,
         "depth": 8,
@@ -105,9 +106,9 @@ def _fit_catboost_severity(
         sample_weight=sample_weight,
     )
     z_tr = reg.predict(X_pos)
-    resid = y_log - np.asarray(z_tr, dtype=float)
+    resid = y_log - as_float_array(z_tr)
     if sample_weight is not None:
-        smear = float(np.average(np.exp(resid), weights=np.asarray(sample_weight, dtype=float)))
+        smear = float(np.average(np.exp(resid), weights=as_float_array(sample_weight)))
     else:
         smear = float(np.mean(np.exp(resid)))
     if not np.isfinite(smear) or smear <= 0:
@@ -125,8 +126,8 @@ def _fit_catboost_severity(
 
 def fit_severity_model(
     X_train: pd.DataFrame,
-    y_sev: np.ndarray,
-    y_freq: np.ndarray,
+    y_sev: FloatArray,
+    y_freq: IntArray,
     *,
     cat_cols: Sequence[str],
     engine: str = "catboost",

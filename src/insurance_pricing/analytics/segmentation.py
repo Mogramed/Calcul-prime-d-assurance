@@ -13,6 +13,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from insurance_pricing._typing import FloatArray, as_float_array
 from insurance_pricing.data.schema import TARGET_SEV_COL
 
 
@@ -92,7 +93,7 @@ def _prepare_mixed_matrix(
     df: pd.DataFrame,
     num_cols: Sequence[str],
     cat_cols: Sequence[str],
-) -> tuple[np.ndarray, list[str]]:
+) -> tuple[FloatArray, list[str]]:
     num = [c for c in num_cols if c in df.columns]
     cat = [c for c in cat_cols if c in df.columns]
     transformers = []
@@ -123,7 +124,7 @@ def _prepare_mixed_matrix(
             )
         )
     if not transformers:
-        return np.empty((len(df), 0)), []
+        return as_float_array(np.empty((len(df), 0))), []
     ct = ColumnTransformer(transformers=transformers, remainder="drop")
     X = ct.fit_transform(df)
     feat_names = []
@@ -131,19 +132,19 @@ def _prepare_mixed_matrix(
         feat_names = list(ct.get_feature_names_out())
     except Exception:
         feat_names = [f"x{i}" for i in range(X.shape[1])]
-    return np.asarray(X, dtype=float), feat_names
+    return as_float_array(X), feat_names
 
 
 def compute_gower_like_distance_sample(
     df: pd.DataFrame,
     num_cols: list[str],
     cat_cols: list[str],
-) -> np.ndarray:
+) -> FloatArray:
     num = [c for c in num_cols if c in df.columns]
     cat = [c for c in cat_cols if c in df.columns]
     n = len(df)
     if n == 0:
-        return np.zeros((0, 0), dtype=float)
+        return as_float_array(np.zeros((0, 0), dtype=float))
 
     parts = []
     if num:
@@ -170,8 +171,8 @@ def compute_gower_like_distance_sample(
         parts.append(cat_dist)
 
     if not parts:
-        return np.zeros((n, n), dtype=float)
-    D = np.mean(parts, axis=0)
+        return as_float_array(np.zeros((n, n), dtype=float))
+    D = as_float_array(np.mean(parts, axis=0))
     np.fill_diagonal(D, 0.0)
     return D
 
@@ -218,9 +219,9 @@ def fit_kmeans_exploration(
 
 
 def compute_linkage_from_distance(
-    distance_matrix: np.ndarray, method: str = "average"
-) -> np.ndarray:
+    distance_matrix: FloatArray, method: str = "average"
+) -> FloatArray:
     if distance_matrix.shape[0] < 2:
-        return np.zeros((0, 4))
+        return as_float_array(np.zeros((0, 4), dtype=float))
     condensed = squareform(distance_matrix, checks=False)
-    return linkage(condensed, method=method)
+    return as_float_array(linkage(condensed, method=method))
