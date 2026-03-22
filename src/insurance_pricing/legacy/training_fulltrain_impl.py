@@ -39,7 +39,7 @@ def fit_full_two_part_predict(
         from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
         cat_idx = [X_train.columns.get_loc(c) for c in cat_cols]
-        fp: ModelKwargs = {
+        cat_freq_params: ModelKwargs = {
             "loss_function": "Logloss",
             "eval_metric": "Logloss",
             "iterations": 1200,
@@ -49,8 +49,8 @@ def fit_full_two_part_predict(
             "random_seed": seed,
             "verbose": False,
         }
-        fp.update(freq_params)
-        sp: ModelKwargs = {
+        cat_freq_params.update(freq_params)
+        cat_sev_params: ModelKwargs = {
             "loss_function": "RMSE",
             "eval_metric": "RMSE",
             "iterations": 1800,
@@ -60,9 +60,9 @@ def fit_full_two_part_predict(
             "random_seed": seed,
             "verbose": False,
         }
-        sp.update(sev_params)
+        cat_sev_params.update(sev_params)
 
-        clf = CatBoostClassifier(**fp)
+        clf = CatBoostClassifier(**cat_freq_params)
         clf.fit(Pool(X_train, y_freq_train, cat_features=cat_idx))
         p_te = clf.predict_proba(Pool(X_test, cat_features=cat_idx))[:, 1]
 
@@ -73,7 +73,7 @@ def fit_full_two_part_predict(
         y_pos = y_sev_train[pos]
         y_log = np.log1p(y_pos)
         w = make_tail_weights(y_pos) if severity_mode == "weighted_tail" else None
-        reg = CatBoostRegressor(**sp)
+        reg = CatBoostRegressor(**cat_sev_params)
         reg.fit(Pool(X_train.loc[pos], y_log, cat_features=cat_idx, weight=w))
         z_te = reg.predict(Pool(X_test, cat_features=cat_idx))
         z_tr = reg.predict(Pool(X_train.loc[pos], cat_features=cat_idx))
@@ -102,7 +102,7 @@ def fit_full_two_part_predict(
         Xte = enc.transform(X_test)
 
         if e == "lightgbm":
-            fp: ModelKwargs = {
+            lgb_freq_params: ModelKwargs = {
                 "objective": "binary",
                 "n_estimators": 2000,
                 "learning_rate": 0.03,
@@ -112,7 +112,7 @@ def fit_full_two_part_predict(
                 "random_state": seed,
                 "n_jobs": -1,
             }
-            sp: ModelKwargs = {
+            lgb_sev_params: ModelKwargs = {
                 "objective": "rmse",
                 "n_estimators": 2500,
                 "learning_rate": 0.03,
@@ -122,12 +122,12 @@ def fit_full_two_part_predict(
                 "random_state": seed,
                 "n_jobs": -1,
             }
-            fp.update(freq_params)
-            sp.update(sev_params)
-            clf = LGBMClassifier(**fp)
-            reg = LGBMRegressor(**sp)
+            lgb_freq_params.update(freq_params)
+            lgb_sev_params.update(sev_params)
+            clf = LGBMClassifier(**lgb_freq_params)
+            reg = LGBMRegressor(**lgb_sev_params)
         else:
-            fp: ModelKwargs = {
+            xgb_freq_params: ModelKwargs = {
                 "objective": "binary:logistic",
                 "eval_metric": "logloss",
                 "n_estimators": 1800,
@@ -139,7 +139,7 @@ def fit_full_two_part_predict(
                 "n_jobs": -1,
                 "tree_method": "hist",
             }
-            sp: ModelKwargs = {
+            xgb_sev_params: ModelKwargs = {
                 "objective": "reg:squarederror",
                 "eval_metric": "rmse",
                 "n_estimators": 2200,
@@ -151,10 +151,10 @@ def fit_full_two_part_predict(
                 "n_jobs": -1,
                 "tree_method": "hist",
             }
-            fp.update(freq_params)
-            sp.update(sev_params)
-            clf = XGBClassifier(**fp)
-            reg = XGBRegressor(**sp)
+            xgb_freq_params.update(freq_params)
+            xgb_sev_params.update(sev_params)
+            clf = XGBClassifier(**xgb_freq_params)
+            reg = XGBRegressor(**xgb_sev_params)
 
         if e == "xgboost":
             clf.fit(Xtr, y_freq_train, verbose=False)
