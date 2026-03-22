@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from insurance_pricing._typing import FloatArray, IntArray, SplitIndices, as_float_array
 from insurance_pricing.data.schema import DatasetBundle
 from insurance_pricing.evaluation.diagnostics import (
     build_prediction_distribution_table,
@@ -191,18 +192,18 @@ def fit_predict_two_part(
     *,
     engine: str,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     e = engine.lower()
     if e == "catboost":
         return _fit_catboost(
@@ -260,7 +261,7 @@ def run_cv_experiment(
     X: pd.DataFrame,
     y_freq: pd.Series,
     y_sev: pd.Series,
-    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -270,14 +271,14 @@ def run_cv_experiment(
     sev_params: Mapping[str, Any],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     n = len(X)
-    fold_assign = np.full(n, np.nan)
-    oof_freq = np.full(n, np.nan)
-    oof_sev = np.full(n, np.nan)
+    fold_assign = as_float_array(np.full(n, np.nan))
+    oof_freq = as_float_array(np.full(n, np.nan))
+    oof_sev = as_float_array(np.full(n, np.nan))
     y_freq_np = y_freq.to_numpy(dtype=int)
     y_sev_np = y_sev.to_numpy(dtype=float)
 
-    test_freq_parts: list[np.ndarray] = []
-    test_sev_parts: list[np.ndarray] = []
+    test_freq_parts: list[FloatArray] = []
+    test_sev_parts: list[FloatArray] = []
     fold_rows: list[dict[str, Any]] = []
 
     for fold_id, (tr, va) in folds.items():
@@ -418,11 +419,11 @@ def _fit_predict_fold_v2(
     engine: str,
     family: str,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -431,7 +432,7 @@ def _fit_predict_fold_v2(
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
     direct_params: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
     e = engine.lower()
     if e == "catboost":
         return _fit_catboost_fold_v2(
@@ -493,7 +494,7 @@ def _fit_predict_fold_v2(
 def _run_benchmark_single(
     spec: Mapping[str, Any],
     bundle: DatasetBundle,
-    splits: Mapping[str, Mapping[int, tuple[np.ndarray, np.ndarray]]],
+    splits: Mapping[str, Mapping[int, SplitIndices]],
     seed: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     feature_set = str(spec.get("feature_set", "base_v2"))
@@ -528,13 +529,13 @@ def _run_benchmark_single(
 
     for split_name in split_names:
         folds = splits[split_name]
-        fold_assign = np.full(n, np.nan)
-        oof_freq = np.full(n, np.nan)
-        oof_sev = np.full(n, np.nan)
-        oof_prime = np.full(n, np.nan)
-        test_freq_parts: list[np.ndarray] = []
-        test_sev_parts: list[np.ndarray] = []
-        test_prime_parts: list[np.ndarray] = []
+        fold_assign = as_float_array(np.full(n, np.nan))
+        oof_freq = as_float_array(np.full(n, np.nan))
+        oof_sev = as_float_array(np.full(n, np.nan))
+        oof_prime = as_float_array(np.full(n, np.nan))
+        test_freq_parts: list[FloatArray] = []
+        test_sev_parts: list[FloatArray] = []
+        test_prime_parts: list[FloatArray] = []
         fold_records: list[dict[str, Any]] = []
 
         for fold_id, (tr_idx, va_idx) in folds.items():
@@ -756,7 +757,7 @@ def _run_benchmark_single(
 def run_benchmark(
     spec: Mapping[str, Any],
     bundle: DatasetBundle | Mapping[str, DatasetBundle],
-    splits: Mapping[str, Mapping[int, tuple[np.ndarray, np.ndarray]]],
+    splits: Mapping[str, Mapping[int, SplitIndices]],
     seed: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if isinstance(bundle, Mapping):

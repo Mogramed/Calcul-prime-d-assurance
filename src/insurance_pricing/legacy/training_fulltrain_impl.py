@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from insurance_pricing._typing import FloatArray, IntArray
 from insurance_pricing.data.schema import INDEX_COL, DatasetBundle, OrdinalFrameEncoder
 from insurance_pricing.evaluation.metrics import make_tail_weights
 from insurance_pricing.features.target_encoding import _add_fold_target_encoding
@@ -22,15 +23,15 @@ def fit_full_two_part_predict(
     *,
     engine: str,
     X_train: pd.DataFrame,
-    y_freq_train: np.ndarray,
-    y_sev_train: np.ndarray,
+    y_freq_train: IntArray,
+    y_sev_train: FloatArray,
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray]:
     """Train on full train and return (test_freq_raw, test_sev)."""
     e = engine.lower()
 
@@ -197,7 +198,7 @@ def fit_full_predict(
     bundle: DatasetBundle,
     seed: int,
     valid_ratio: float = 0.1,
-) -> dict[str, np.ndarray]:
+) -> dict[str, FloatArray]:
     n = len(bundle.X_train)
     n_val = max(int(n * valid_ratio), 1000)
     order = np.argsort(bundle.train_raw[INDEX_COL].to_numpy())
@@ -296,7 +297,7 @@ def fit_full_predict_fulltrain(
     bundle: DatasetBundle,
     seed: int,
     complexity: Mapping[str, Any] | None = None,
-) -> dict[str, np.ndarray]:
+) -> dict[str, FloatArray]:
     engine = str(spec.get("engine", "catboost")).lower()
     family = str(spec.get("family", "two_part_classic")).lower()
     severity_mode = str(spec.get("severity_mode", "classic")).lower()

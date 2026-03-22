@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 
 from insurance_pricing import analytics as ds
 from insurance_pricing import training as v2
+from insurance_pricing._typing import BoolArray, FloatArray, SplitIndices, as_float_array
 
 from . import dualtrack_impl as w23
 from . import gap_diagnosis_impl as w22
@@ -35,7 +36,7 @@ def ensure_v24_dir(root: str | Path = ".") -> Path:
     return v2.ensure_dir(Path(root) / ARTIFACT_V24_DIR)
 
 
-def _rmse_subset(y_true: np.ndarray, y_pred: np.ndarray, mask: np.ndarray) -> float:
+def _rmse_subset(y_true: FloatArray, y_pred: FloatArray, mask: BoolArray) -> float:
     m = np.asarray(mask, dtype=bool)
     if not np.any(m):
         return float("nan")
@@ -196,7 +197,7 @@ def fit_tail_rank_scaler(
     lambda_: float,
     gamma_: float,
     on: str = "pred_sev",
-) -> dict:
+) -> dict[str, Any]:
     d = oof_df.copy()
     col = str(on)
     if col not in d.columns or "y_sev" not in d.columns:
@@ -224,19 +225,19 @@ def fit_tail_rank_scaler(
 
 
 def apply_tail_rank_scaler(
-    pred: np.ndarray,
+    pred: FloatArray,
     *,
-    rank_ref: np.ndarray,
+    rank_ref: FloatArray,
     params: Mapping[str, Any],
-) -> np.ndarray:
+) -> FloatArray:
     p = np.asarray(pred, dtype=float)
     p = np.maximum(np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     if str(params.get("kind", "identity")) != "tail_rank_scaler":
-        return p
+        return as_float_array(p)
     ref = np.sort(np.asarray(rank_ref, dtype=float))
     ref = ref[np.isfinite(ref) & (ref >= 0)]
     if len(ref) == 0:
-        return p
+        return as_float_array(p)
     thr_q = float(params.get("threshold_q", 0.95))
     lam = float(params.get("lambda", 0.0))
     gam = float(params.get("gamma", 1.0))
@@ -244,17 +245,17 @@ def apply_tail_rank_scaler(
     z = np.clip((rank - thr_q) / max(1.0 - thr_q, 1e-9), 0.0, 1.0)
     mult = 1.0 + lam * np.power(z, gam)
     out = np.maximum(p * mult, 0.0)
-    return out
+    return as_float_array(out)
 
 
 def fit_tail_mapper_thresholded(
-    oof_pred_pos: np.ndarray,
-    y_pos: np.ndarray,
+    oof_pred_pos: FloatArray,
+    y_pos: FloatArray,
     *,
     threshold_q: float,
     mode: str = "piecewise_monotone",
     min_samples_tail: int = 150,
-) -> dict:
+) -> dict[str, Any]:
     x = np.asarray(oof_pred_pos, dtype=float)
     y = np.asarray(y_pos, dtype=float)
     mask = np.isfinite(x) & np.isfinite(y) & (x >= 0) & (y >= 0)
@@ -294,23 +295,23 @@ def fit_tail_mapper_thresholded(
     }
 
 
-def apply_tail_mapper_thresholded(pred_pos: np.ndarray, mapper: Mapping[str, Any]) -> np.ndarray:
+def apply_tail_mapper_thresholded(pred_pos: FloatArray, mapper: Mapping[str, Any]) -> FloatArray:
     p = np.asarray(pred_pos, dtype=float)
     p = np.maximum(np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     if str(mapper.get("kind", "identity")) != "tail_mapper_thresholded":
-        return p
+        return as_float_array(p)
     x_thr = float(mapper.get("x_threshold", 0.0))
     mapped_thr = float(mapper.get("mapped_threshold", x_thr))
     base_mapper = mapper.get("base_mapper", {"kind": "identity"})
     out = p.copy()
     hi = p > x_thr
     if not np.any(hi):
-        return out
+        return as_float_array(out)
     raw_hi = v2.apply_tail_mapper_safe(base_mapper, p[hi])
     # Anchor continuity at threshold and enforce no reduction above threshold.
     adj_hi = x_thr + np.maximum(raw_hi - mapped_thr, 0.0)
     out[hi] = np.maximum(adj_hi, p[hi])
-    return np.maximum(out, 0.0)
+    return as_float_array(np.maximum(out, 0.0))
 
 
 def _apply_tail_transform_to_pred_df(
@@ -560,7 +561,7 @@ def _load_train_test_and_feature_sets(
     pd.DataFrame,
     pd.DataFrame,
     dict[str, v2.DatasetBundle],
-    dict[str, dict[int, tuple[np.ndarray, np.ndarray]]],
+    dict[str, dict[int, SplitIndices]],
 ]:
     train_raw, test_raw = v2.load_train_test(Path(ctx.get("data_dir", Path(".") / "data")))
     feature_sets = v2.prepare_feature_sets(
@@ -783,7 +784,10 @@ def _fit_base_fulltrain_components(
     tail_mapper_name = str(r.get("tail_mapper", "none"))
     spec = w22.build_spec_from_row(r, cfg_lookup=cfg_lookup, te_cols=te_cols)
     bundle = feature_sets[fs_name]
-    out = v2.fit_full_predict_fulltrain(spec=spec, bundle=bundle, seed=seed, complexity={})
+    out = cast(
+        dict[str, FloatArray],
+        v2.fit_full_predict_fulltrain(spec=spec, bundle=bundle, seed=seed, complexity={}),
+    )
     test_freq = out["test_freq"].copy()
     test_sev = out["test_sev"].copy()
 
@@ -812,7 +816,9 @@ def _fit_base_fulltrain_components(
             )
             sev_before = test_sev.copy()
             test_sev = v2.apply_tail_mapper_safe(mapper, test_sev)
-            std_ratio = float(np.std(test_sev) / max(np.std(sev_before), 1e-9))
+            std_test = float(np.asarray(test_sev, dtype=float).std())
+            std_before = float(np.asarray(sev_before, dtype=float).std())
+            std_ratio = std_test / max(std_before, 1e-9)
             q99_oof = float(np.nanquantile(oo.loc[pos, "pred_sev"].to_numpy(), 0.99))
             q99_test = float(np.nanquantile(test_sev, 0.99))
             if (std_ratio < 0.70) or (q99_test < 0.60 * q99_oof):
@@ -836,12 +842,12 @@ def _fit_base_fulltrain_components(
 
 
 def _apply_candidate_transform_to_test_components(
-    test_freq: np.ndarray,
-    test_sev: np.ndarray,
+    test_freq: FloatArray,
+    test_sev: FloatArray,
     *,
     candidate_row: Mapping[str, Any],
     transform_store: Mapping[str, Mapping[str, Any]],
-) -> np.ndarray:
+) -> FloatArray:
     cid = str(candidate_row.get("candidate_id"))
     payload = transform_store.get(cid, {})
     kind = str(payload.get("transform_kind", "identity"))
@@ -853,11 +859,11 @@ def _apply_candidate_transform_to_test_components(
     elif kind == "tail_mapper_thresholded":
         sev = apply_tail_mapper_thresholded(sev, params)
     pred = np.maximum(np.asarray(test_freq, dtype=float) * sev, 0.0)
-    return pred
+    return as_float_array(pred)
 
 
 def _save_submission_from_pred(
-    index_values: pd.Series | np.ndarray, pred: np.ndarray, path: str | Path
+    index_values: pd.Series | FloatArray, pred: FloatArray, path: str | Path
 ) -> Path:
     sub = v2.build_submission(
         pd.Series(index_values), np.maximum(np.asarray(pred, dtype=float), 0.0)
@@ -1056,7 +1062,7 @@ def materialize_tail_recovery_submissions(
     }
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return dict(_train_run(config_path))

@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
+from insurance_pricing._typing import SplitIndices
 from insurance_pricing.cv.splits import build_split_registry, validate_folds_disjoint
 
-SplitRegistry = dict[str, dict[int, tuple[np.ndarray, np.ndarray]]]
+SplitRegistry = dict[str, dict[int, SplitIndices]]
 
 
 def build_splits(train: pd.DataFrame, config: Any) -> SplitRegistry:
@@ -21,12 +21,12 @@ def build_splits(train: pd.DataFrame, config: Any) -> SplitRegistry:
 
 
 def validate_split_integrity(
-    splits: Mapping[str, Mapping[int, tuple[np.ndarray, np.ndarray]]],
+    splits: Mapping[str, Mapping[int, SplitIndices]],
     *,
     train: pd.DataFrame,
     group_col: str = "id_client",
-) -> dict:
-    report = {}
+) -> dict[str, dict[str, Any]]:
+    report: dict[str, dict[str, Any]] = {}
     for split_name, folds in splits.items():
         try:
             validate_folds_disjoint(

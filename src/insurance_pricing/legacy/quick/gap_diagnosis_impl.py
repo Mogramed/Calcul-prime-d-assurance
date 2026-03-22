@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 
 from insurance_pricing import analytics as ds
 from insurance_pricing import training as v2
+from insurance_pricing._typing import FloatArray
 
 from .common import (
     safe_read_csv as _safe_read_csv,
@@ -25,7 +26,7 @@ ARTIFACT_QUICK_DIR = Path("artifacts") / "v2_2_quick"
 
 
 def ensure_quick_dir(root: str | Path = ".") -> Path:
-    return v2.ensure_dir(Path(root) / ARTIFACT_QUICK_DIR)
+    return Path(v2.ensure_dir(Path(root) / ARTIFACT_QUICK_DIR))
 
 
 def load_existing_artifacts(root: str | Path = ".") -> dict[str, Any]:
@@ -149,7 +150,7 @@ def extract_row_from_run_table(run_df: pd.DataFrame, run_id: str) -> dict[str, A
     if len(d) == 0:
         return None
     p = d[d["split"].astype(str) == "primary_time"] if "split" in d.columns else d
-    return (p.iloc[0] if len(p) else d.iloc[0]).to_dict()
+    return dict((p.iloc[0] if len(p) else d.iloc[0]).to_dict())
 
 
 def select_quick_candidates(
@@ -528,7 +529,7 @@ def save_gap_diagnosis_artifacts(
     *,
     out_dir: str | Path,
 ) -> None:
-    out = v2.ensure_dir(out_dir)
+    out = Path(v2.ensure_dir(out_dir))
     report_df.to_csv(out / "gap_diagnosis_report.csv", index=False)
     (out / "gap_diagnosis_summary.json").write_text(json.dumps(dict(summary), indent=2), encoding="utf-8")
 
@@ -601,7 +602,7 @@ def run_quick_benchmark(
     )
 
     if out_dir is not None:
-        out = v2.ensure_dir(out_dir)
+        out = Path(v2.ensure_dir(out_dir))
         if len(fold_df):
             fold_df.to_parquet(out / "quick_fold_metrics.parquet", index=False)
         if len(pred_df):
@@ -786,7 +787,10 @@ def build_submission_with_refit(
     tail_mapper_name = str(r.get("tail_mapper", "none"))
     spec = build_spec_from_row(r, cfg_lookup=cfg_lookup, te_cols=te_cols)
     bundle = feature_sets[fs_name]
-    out = v2.fit_full_predict_fulltrain(spec=spec, bundle=bundle, seed=seed, complexity={})
+    out = cast(
+        dict[str, FloatArray],
+        v2.fit_full_predict_fulltrain(spec=spec, bundle=bundle, seed=seed, complexity={}),
+    )
     test_freq = out["test_freq"].copy()
     test_sev = out["test_sev"].copy()
 
@@ -820,7 +824,9 @@ def build_submission_with_refit(
             )
             sev_before = test_sev.copy()
             test_sev = v2.apply_tail_mapper_safe(mapper, test_sev)
-            std_ratio = float(np.std(test_sev) / max(np.std(sev_before), 1e-9))
+            std_test = float(np.asarray(test_sev, dtype=float).std())
+            std_before = float(np.asarray(sev_before, dtype=float).std())
+            std_ratio = std_test / max(std_before, 1e-9)
             q99_oof = float(np.nanquantile(oo.loc[pos, "pred_sev"].to_numpy(), 0.99))
             q99_test = float(np.nanquantile(test_sev, 0.99))
             if (std_ratio < 0.70) or (q99_test < 0.60 * q99_oof):
@@ -843,7 +849,7 @@ def _find_scored_row(scored_df: pd.DataFrame, run_id: str | None) -> dict[str, A
     d = scored_df[scored_df["run_id"].astype(str) == str(run_id)]
     if len(d) == 0:
         return None
-    return d.iloc[0].to_dict()
+    return dict(d.iloc[0].to_dict())
 
 
 def build_quick_submissions(
@@ -857,7 +863,7 @@ def build_quick_submissions(
     seed: int = 42,
     out_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    out_dir = v2.ensure_dir(out_dir or ctx["artifact_quick"])
+    out_dir = Path(v2.ensure_dir(out_dir or ctx["artifact_quick"]))
     train_raw = quick_result.get("train_raw", pd.DataFrame())
     test_raw = quick_result.get("test_raw", pd.DataFrame())
     feature_sets = quick_result.get("feature_sets", {})
@@ -967,10 +973,10 @@ def build_quick_checks(
     n_sim_shakeup: int = 300,
     out_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    out_dir = v2.ensure_dir(out_dir or ARTIFACT_QUICK_DIR)
+    out_dir = Path(v2.ensure_dir(out_dir or ARTIFACT_QUICK_DIR))
     checks_rows: list[dict[str, Any]] = []
 
-    def _append_check(name: str, run_id: str | None):
+    def _append_check(name: str, run_id: str | None) -> None:
         row = _find_scored_row(scored_df, run_id)
         out: dict[str, Any] = {"submission": name, "run_id": run_id}
         if row is None:
@@ -1085,7 +1091,7 @@ def build_oof_compare_artifact(
     challenger_run_id: str | None,
     out_dir: str | Path | None = None,
 ) -> pd.DataFrame:
-    out_dir = v2.ensure_dir(out_dir or ctx["artifact_quick"])
+    out_dir = Path(v2.ensure_dir(out_dir or ctx["artifact_quick"]))
     v1_run_df = ctx.get("v1_run_registry", pd.DataFrame())
     v1_oof_df = ctx.get("v1_oof", pd.DataFrame())
     v2_selected_df = ctx.get("v2_selected", pd.DataFrame())
@@ -1167,7 +1173,7 @@ def write_submission_decision_report(
     baseline_v2_row: Mapping[str, Any] | None,
     out_dir: str | Path | None = None,
 ) -> Path:
-    out_dir = v2.ensure_dir(out_dir or ctx["artifact_quick"])
+    out_dir = Path(v2.ensure_dir(out_dir or ctx["artifact_quick"]))
     lines: list[str] = []
     lines.append("# Submission decision V2.2 Quick")
     lines.append("")
@@ -1259,7 +1265,7 @@ def write_submission_decision_report(
     return path
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return cast(dict[str, Any], _train_run(config_path))

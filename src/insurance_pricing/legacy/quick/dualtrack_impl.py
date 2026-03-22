@@ -12,6 +12,7 @@ from sklearn.model_selection import KFold
 
 from insurance_pricing import analytics as ds
 from insurance_pricing import training as v2
+from insurance_pricing._typing import BoolArray, FloatArray, SplitIndices
 
 from . import gap_diagnosis_impl as w22
 from .common import (
@@ -50,10 +51,10 @@ DIRECT_TWEEDIE_CAT_COLS = [
 
 
 def ensure_v23_dir(root: str | Path = ".") -> Path:
-    return v2.ensure_dir(Path(root) / ARTIFACT_V23_DIR)
+    return Path(v2.ensure_dir(Path(root) / ARTIFACT_V23_DIR))
 
 
-def _ls_alpha(y_true: np.ndarray, pred: np.ndarray) -> float:
+def _ls_alpha(y_true: FloatArray, pred: FloatArray) -> float:
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(pred, dtype=float)
     mask = np.isfinite(y) & np.isfinite(p)
@@ -129,7 +130,7 @@ def _best_row_by_rmse(rr: pd.DataFrame, *, split: str = "primary_time") -> dict[
     d = _extract_run_rows(rr, split=split)
     if d.empty or "rmse_prime" not in d.columns:
         return None
-    return d.sort_values("rmse_prime").iloc[0].to_dict()
+    return dict(d.sort_values("rmse_prime").iloc[0].to_dict())
 
 
 def _submission_stats(df: pd.DataFrame, name: str) -> dict[str, Any]:
@@ -274,7 +275,7 @@ def build_direct_tweedie_features(
     train: pd.DataFrame,
     test: pd.DataFrame,
     id_col: str,
-) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, list[int]]:
+) -> tuple[pd.DataFrame, pd.DataFrame, FloatArray, list[int]]:
     y = train[v2.TARGET_SEV_COL].to_numpy(dtype=float)
     drop_cols = [v2.TARGET_SEV_COL, v2.TARGET_FREQ_COL, *v2.ID_COLS]
     if id_col in train.columns:
@@ -299,9 +300,9 @@ def build_direct_tweedie_features(
 
 def _catboost_tweedie_fit_predict(
     X_tr: pd.DataFrame,
-    y_tr: np.ndarray,
+    y_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_va: np.ndarray,
+    y_va: FloatArray,
     X_te: pd.DataFrame | None,
     cat_idx: Sequence[int],
     *,
@@ -312,7 +313,7 @@ def _catboost_tweedie_fit_predict(
     depth: int,
     od_wait: int,
     verbose: int | bool = False,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray]:
     from catboost import CatBoostRegressor
 
     model = CatBoostRegressor(
@@ -342,9 +343,9 @@ def _catboost_tweedie_fit_predict(
 
 @dataclass
 class DirectTweedieFoldPayload:
-    oof: np.ndarray
-    test_pred: np.ndarray
-    valid_mask: np.ndarray
+    oof: FloatArray
+    test_pred: FloatArray
+    valid_mask: BoolArray
     alpha_ls: float
     variance_power: float
     cv_scheme: str
@@ -354,10 +355,10 @@ def _build_direct_pred_df(
     *,
     run_id: str,
     split: str,
-    y_true_train: np.ndarray,
-    oof: np.ndarray,
-    valid_mask: np.ndarray,
-    test_pred: np.ndarray,
+    y_true_train: FloatArray,
+    oof: FloatArray,
+    valid_mask: BoolArray,
+    test_pred: FloatArray,
     n_test: int,
 ) -> pd.DataFrame:
     rows: list[pd.DataFrame] = []
@@ -645,10 +646,10 @@ def run_direct_tweedie_random_kfold(
 
 def _run_direct_tweedie_on_folds(
     X_train: pd.DataFrame,
-    y: np.ndarray,
+    y: FloatArray,
     X_test: pd.DataFrame,
     cat_idx: Sequence[int],
-    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     *,
     variance_power: float,
     seed: int,
@@ -891,15 +892,17 @@ def run_direct_tweedie_v2_splits(
             agg["rmse_split_std"] = (
                 float(np.nanstd(rmses, ddof=0)) if np.sum(np.isfinite(rmses)) >= 2 else np.nan
             )
+            rmse_primary = _safe_float(agg.get("rmse_primary_time"))
+            rmse_secondary = _safe_float(agg.get("rmse_secondary_group"))
+            rmse_aux = _safe_float(agg.get("rmse_aux_blocked5"))
             agg["rmse_gap_secondary"] = (
-                agg["rmse_secondary_group"] - agg["rmse_primary_time"]
-                if np.isfinite(agg["rmse_secondary_group"])
-                and np.isfinite(agg["rmse_primary_time"])
+                rmse_secondary - rmse_primary
+                if np.isfinite(rmse_secondary) and np.isfinite(rmse_primary)
                 else np.nan
             )
             agg["rmse_gap_aux"] = (
-                agg["rmse_aux_blocked5"] - agg["rmse_primary_time"]
-                if np.isfinite(agg["rmse_aux_blocked5"]) and np.isfinite(agg["rmse_primary_time"])
+                rmse_aux - rmse_primary
+                if np.isfinite(rmse_aux) and np.isfinite(rmse_primary)
                 else np.nan
             )
             summary_rows.extend(split_metric_rows)
@@ -915,7 +918,7 @@ def compute_scale_sweep(
     *,
     random_result: Mapping[str, Any],
     scale_sweep: Sequence[float] = (1.0, 1.1, 1.2, 1.3),
-    v2_split_payloads: Mapping[str, Any] | None = None,
+    v2_split_payloads: Mapping[object, Any] | None = None,
 ) -> pd.DataFrame:
     best_payload = random_result.get("best_payload")
     best_row = random_result.get("best_row")
@@ -1008,7 +1011,7 @@ def compute_scale_sweep(
         if primary_payload:
             pr = primary_payload["fold_payload"]
             valid_mask = np.asarray(pr["valid_mask"], dtype=bool)
-            y_primary = v2_split_payloads.get("train_y", random_result.get("y"))
+            y_primary = (v2_split_payloads or {}).get("train_y") or random_result.get("y")
             if y_primary is not None:
                 y_primary_arr = np.asarray(y_primary, dtype=float)
                 p_primary = np.maximum(np.asarray(pr["oof"], dtype=float) * m, 0.0)
@@ -1019,7 +1022,7 @@ def compute_scale_sweep(
 
 def _find_baseline_submission_for_blend(
     ctx: Mapping[str, object],
-) -> tuple[np.ndarray | None, str | None, pd.DataFrame | None]:
+) -> tuple[FloatArray | None, str | None, pd.DataFrame | None]:
     for key, label in [
         ("v1_submission", "submission_v1.csv"),
         ("v2_submission_robust", "artifacts/v2/submission_v2_robust.csv"),
@@ -1043,7 +1046,7 @@ def _find_baseline_submission_for_blend(
 
 def _extract_v2_selected_primary_oof(
     ctx: Mapping[str, object],
-) -> tuple[np.ndarray | None, np.ndarray | None, str | None]:
+) -> tuple[FloatArray | None, FloatArray | None, str | None]:
     v2_sel = pd.DataFrame(ctx.get("v2_selected", pd.DataFrame()))
     v2_oof = pd.DataFrame(ctx.get("v2_oof", pd.DataFrame()))
     if v2_sel.empty or v2_oof.empty or "run_id" not in v2_sel.columns:
@@ -1069,7 +1072,7 @@ def compute_blend_sweep(
     ctx: Mapping[str, object],
     scale_df: pd.DataFrame,
     random_result: Mapping[str, Any],
-    v2_splits_payloads: Mapping[str, Any] | None = None,
+    v2_splits_payloads: Mapping[object, Any] | None = None,
     blend_weights: Sequence[float] = (0.2, 0.4, 0.6, 0.8),
 ) -> pd.DataFrame:
     if scale_df.empty:
@@ -1195,7 +1198,7 @@ def classify_gap_cause_dualtrack(
     ctx: Mapping[str, object],
     v23_candidates_df: pd.DataFrame,
     kaggle_public_rmse_user: float,
-) -> tuple[pd.DataFrame, dict]:
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
     v22_gap = pd.DataFrame(ctx.get("v22_quick_gap_report", pd.DataFrame()))
@@ -1466,7 +1469,7 @@ def save_submission(
     *,
     id_col: str,
     target_col: str,
-    preds: np.ndarray,
+    preds: FloatArray,
     out_path: str | Path,
     sample_submission_df: pd.DataFrame | None = None,
 ) -> Path:
@@ -1526,7 +1529,7 @@ def build_oof_compare_bridge(
     *,
     ctx: Mapping[str, object],
     direct_random_result: Mapping[str, Any] | None,
-    direct_v2_payloads: Mapping[str, Any] | None,
+    direct_v2_payloads: Mapping[object, Any] | None,
     out_dir: str | Path,
 ) -> pd.DataFrame:
     out_frames: list[pd.DataFrame] = []
@@ -1543,7 +1546,7 @@ def build_oof_compare_bridge(
                 & (v1_oof["split"].astype(str) == "primary_time")
                 & (v1_oof["engine"].astype(str) == str(best.get("engine")))
                 & (v1_oof["config_id"].astype(str) == str(best.get("config_id")))
-                & (v1_oof["seed"].astype(float).astype(int) == int(float(best.get("seed"))))
+                & (v1_oof["seed"].astype(float).astype(int) == int(_safe_float(best.get("seed"))))
                 & (v1_oof["severity_mode"].astype(str) == str(best.get("severity_mode")))
                 & (v1_oof["calibration"].astype(str) == str(best.get("calibration")))
             ][["row_idx", "y_sev", "pred_prime"]].drop_duplicates(subset=["row_idx"])
@@ -1605,7 +1608,7 @@ def _maybe_run_shakeup_from_candidate(
     *,
     candidate_row: Mapping[str, Any],
     direct_random_result: Mapping[str, Any] | None,
-    direct_v2_payloads: Mapping[str, Any] | None,
+    direct_v2_payloads: Mapping[object, Any] | None,
     n_sim: int = 300,
     seed: int = 42,
 ) -> pd.DataFrame:
@@ -1646,7 +1649,7 @@ def materialize_dualtrack_outputs(
     sample_submission_df: pd.DataFrame | None,
     selected_df: pd.DataFrame,
     direct_random_result: Mapping[str, Any] | None = None,
-    direct_v2_payloads: Mapping[str, Any] | None = None,
+    direct_v2_payloads: Mapping[object, Any] | None = None,
     run_shakeup_quick: bool = True,
     n_sim_shakeup: int = 300,
     seed: int = 42,
@@ -1824,7 +1827,7 @@ def write_submission_decision_report(
     return path
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return dict(_train_run(config_path))

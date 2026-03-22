@@ -13,7 +13,7 @@ warnings.warn(
 )
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     return _impl.train_run(config_path)
 
 

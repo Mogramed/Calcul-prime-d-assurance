@@ -23,7 +23,7 @@ def save_json(data: Mapping[str, Any], path: str | Path) -> None:
 
 
 def load_json(path: str | Path) -> dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
 def load_train_test(data_dir: str | Path = "data") -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -39,7 +39,7 @@ def build_targets(train: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     return y_freq, y_sev
 
 
-def validate_data_contract(train: pd.DataFrame, test: pd.DataFrame) -> dict:
+def validate_data_contract(train: pd.DataFrame, test: pd.DataFrame) -> dict[str, Any]:
     required_train = {TARGET_FREQ_COL, TARGET_SEV_COL, INDEX_COL}
     required_test = {INDEX_COL}
     missing_train = sorted(required_train - set(train.columns))

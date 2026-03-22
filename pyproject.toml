@@ -67,7 +67,7 @@ ignore = ["B008", "E501"]
 [tool.mypy]
 python_version = "3.13"
 mypy_path = "src"
-files = ["src/insurance_pricing/api"]
+files = ["src/insurance_pricing"]
 strict = true
 plugins = ["pydantic.mypy"]
 disallow_untyped_decorators = false
@@ -82,20 +82,3 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["pandas.*", "scipy.*", "sklearn.*", "alembic.*"]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = [
-  "insurance_pricing.analytics.*",
-  "insurance_pricing.cv.*",
-  "insurance_pricing.data.*",
-  "insurance_pricing.evaluation.*",
-  "insurance_pricing.experiments.*",
-  "insurance_pricing.features.*",
-  "insurance_pricing.inference.*",
-  "insurance_pricing.legacy.*",
-  "insurance_pricing.models.*",
-  "insurance_pricing.runtime.*",
-  "insurance_pricing.training.*",
-  "insurance_pricing.workflows",
-]
-follow_imports = "skip"

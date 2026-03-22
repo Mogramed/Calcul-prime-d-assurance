@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error
 
+from insurance_pricing._typing import FloatArray, as_float_array
 from insurance_pricing.data.schema import (
     ID_COLS,
     INDEX_COL,
@@ -18,12 +19,12 @@ def _safe_series(s: pd.Series) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
 
 
-def _rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+def _rmse(y_true: FloatArray, y_pred: FloatArray) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 
-def _mad(x: pd.Series | np.ndarray) -> float:
-    arr = np.asarray(pd.to_numeric(pd.Series(x), errors="coerce"), dtype=float)
+def _mad(x: pd.Series | FloatArray) -> float:
+    arr = as_float_array(pd.to_numeric(pd.Series(x), errors="coerce"))
     arr = arr[np.isfinite(arr)]
     if len(arr) == 0:
         return float("nan")

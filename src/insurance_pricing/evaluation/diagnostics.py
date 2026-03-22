@@ -6,21 +6,23 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from insurance_pricing._typing import FloatArray, as_float_array
+
 from .metrics import rmse
 from .run_id import make_run_id_from_df
 
 
 def compute_prediction_distribution_audit(
-    pred: np.ndarray,
+    pred: FloatArray,
     *,
-    y_true: np.ndarray | None = None,
+    y_true: FloatArray | None = None,
     run_id: str | None = None,
     split: str | None = None,
     sample: str | None = None,
     collapse_q99_q90_ratio: float = 1.03,
     collapse_identical_ratio: float = 0.15,
 ) -> dict[str, Any]:
-    p = np.asarray(pred, dtype=float)
+    p = as_float_array(pred)
     p = np.maximum(np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     n = int(len(p))
     if n == 0:
@@ -107,7 +109,7 @@ def compute_prediction_distribution_audit(
     }
 
     if y_true is not None:
-        y = np.asarray(y_true, dtype=float)
+        y = as_float_array(y_true)
         y = np.maximum(np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
         q99_true = float(np.nanquantile(y, 0.99))
         out["rmse_pred"] = rmse(y, p)
@@ -256,15 +258,15 @@ def build_model_cards(run_registry: pd.DataFrame, selected: pd.DataFrame) -> pd.
     return card[cols].sort_values(["run_id", "split"]).reset_index(drop=True)
 
 def simulate_public_private_shakeup(
-    y_true: np.ndarray,
-    pred: np.ndarray,
+    y_true: FloatArray,
+    pred: FloatArray,
     *,
     n_sim: int = 2000,
     public_ratio: float = 1.0 / 3.0,
     seed: int = 42,
 ) -> pd.DataFrame:
-    y = np.asarray(y_true, dtype=float)
-    p = np.asarray(pred, dtype=float)
+    y = as_float_array(y_true)
+    p = as_float_array(pred)
     rng = np.random.default_rng(seed)
     n = len(y)
     n_pub = int(round(n * public_ratio))
@@ -287,8 +289,8 @@ def simulate_public_private_shakeup(
     return pd.DataFrame(rows)
 
 def simulate_public_private_shakeup_v2(
-    y_true: np.ndarray,
-    pred: np.ndarray,
+    y_true: FloatArray,
+    pred: FloatArray,
     *,
     n_sim: int = 2000,
     public_ratio: float = 1.0 / 3.0,
@@ -297,8 +299,8 @@ def simulate_public_private_shakeup_v2(
     tail_quantile: float = 0.9,
     tail_public_share: float = 0.5,
 ) -> pd.DataFrame:
-    y = np.asarray(y_true, dtype=float)
-    p = np.asarray(pred, dtype=float)
+    y = as_float_array(y_true)
+    p = as_float_array(pred)
     rng = np.random.default_rng(seed)
     n = len(y)
     n_pub = int(round(n * public_ratio))

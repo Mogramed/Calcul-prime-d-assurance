@@ -15,6 +15,8 @@ from sklearn.metrics import brier_score_loss, mean_squared_error, roc_auc_score
 from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import OrdinalEncoder
 
+from insurance_pricing._typing import FloatArray, IntArray, SplitIndices, as_float_array
+
 TARGET_FREQ_COL = "nombre_sinistres"
 TARGET_SEV_COL = "montant_sinistre"
 INDEX_COL = "index"
@@ -73,7 +75,7 @@ def save_json(data: Mapping[str, Any], path: str | Path) -> None:
 
 
 def load_json(path: str | Path) -> dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
 def load_train_test(data_dir: str | Path = "data") -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -190,10 +192,10 @@ def build_primary_time_folds(
     *,
     n_blocks: int = 5,
     index_col: str = INDEX_COL,
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, SplitIndices]:
     order = np.argsort(train[index_col].to_numpy())
     blocks = np.array_split(order, n_blocks)
-    folds: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    folds: dict[int, SplitIndices] = {}
     for fold in range(1, n_blocks):
         tr = np.concatenate(blocks[:fold]).astype(int)
         va = blocks[fold].astype(int)
@@ -206,17 +208,17 @@ def build_secondary_group_folds(
     *,
     n_splits: int = 5,
     group_col: str = "id_client",
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, SplitIndices]:
     gkf = GroupKFold(n_splits=n_splits)
     groups = train[group_col].to_numpy()
-    out: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    out: dict[int, SplitIndices] = {}
     for i, (tr, va) in enumerate(gkf.split(train, groups=groups), start=1):
         out[i] = (tr.astype(int), va.astype(int))
     return out
 
 
 def validate_folds_disjoint(
-    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     *,
     check_full_coverage: bool = False,
     n_rows: int | None = None,
@@ -237,7 +239,7 @@ def validate_folds_disjoint(
 
 
 def folds_to_frame(
-    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     *,
     split_name: str,
     n_rows: int,
@@ -260,8 +262,8 @@ def folds_to_frame(
 def export_fold_artifacts(
     *,
     train: pd.DataFrame,
-    primary_folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
-    secondary_folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    primary_folds: Mapping[int, SplitIndices],
+    secondary_folds: Mapping[int, SplitIndices],
     output_dir: str | Path = "artifacts",
 ) -> None:
     out = ensure_dir(output_dir)
@@ -273,31 +275,31 @@ def export_fold_artifacts(
     )
 
 
-def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+def rmse(y_true: FloatArray, y_pred: FloatArray) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 
-def _safe_auc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+def _safe_auc(y_true: IntArray, y_prob: FloatArray) -> float:
     if len(np.unique(y_true)) < 2:
         return float("nan")
     return float(roc_auc_score(y_true, y_prob))
 
 
-def make_tail_weights(y_pos: np.ndarray) -> np.ndarray:
+def make_tail_weights(y_pos: FloatArray) -> FloatArray:
     y = np.asarray(y_pos, dtype=float)
     ref = max(float(np.nanpercentile(y, 50)), 1.0)
     w = np.sqrt((y + 1.0) / (ref + 1.0))
     q90 = float(np.nanpercentile(y, 90))
     w[y >= q90] *= 1.5
-    return np.clip(w, 1.0, 8.0)
+    return as_float_array(np.clip(w, 1.0, 8.0))
 
 
 def compute_metric_row(
     *,
-    y_freq_true: np.ndarray,
-    y_sev_true: np.ndarray,
-    pred_freq: np.ndarray,
-    pred_sev: np.ndarray,
+    y_freq_true: IntArray,
+    y_sev_true: FloatArray,
+    pred_freq: FloatArray,
+    pred_sev: FloatArray,
 ) -> dict[str, float]:
     pred_freq = np.nan_to_num(np.asarray(pred_freq, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
     pred_sev = np.nan_to_num(np.asarray(pred_sev, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
@@ -317,14 +319,18 @@ def compute_metric_row(
     }
 
 
-def _severity_fallback(y_sev_tr: np.ndarray, n_va: int, n_te: int) -> tuple[np.ndarray, np.ndarray]:
+def _severity_fallback(y_sev_tr: FloatArray, n_va: int, n_te: int) -> tuple[FloatArray, FloatArray]:
     pos = np.asarray(y_sev_tr, dtype=float)
     pos = pos[pos > 0]
     base = float(np.nanmean(pos)) if len(pos) else 0.0
     return np.full(n_va, base, dtype=float), np.full(n_te, base, dtype=float)
 
 
-def fit_calibrator(probs: np.ndarray, y_true: np.ndarray, method: str):
+def fit_calibrator(
+    probs: FloatArray,
+    y_true: IntArray,
+    method: str,
+) -> IsotonicRegression | LogisticRegression | None:
     m = method.lower()
     p = np.asarray(probs, dtype=float)
     y = np.asarray(y_true, dtype=int)
@@ -341,25 +347,29 @@ def fit_calibrator(probs: np.ndarray, y_true: np.ndarray, method: str):
     raise ValueError(f"Unknown calibration method: {method}")
 
 
-def apply_calibrator(model, probs: np.ndarray, method: str) -> np.ndarray:
+def apply_calibrator(
+    model: IsotonicRegression | LogisticRegression | None,
+    probs: FloatArray,
+    method: str,
+) -> FloatArray:
     m = method.lower()
     p = np.asarray(probs, dtype=float)
     if m == "none" or model is None:
         return p
     if m == "isotonic":
-        return model.transform(p)
+        return as_float_array(model.transform(p))
     if m == "platt":
-        return model.predict_proba(p.reshape(-1, 1))[:, 1]
+        return as_float_array(model.predict_proba(p.reshape(-1, 1))[:, 1])
     raise ValueError(f"Unknown calibration method: {method}")
 
 
 def crossfit_calibrate_oof(
     *,
-    probs: np.ndarray,
-    y_true: np.ndarray,
-    fold_assign: np.ndarray,
+    probs: FloatArray,
+    y_true: FloatArray,
+    fold_assign: FloatArray,
     method: str,
-) -> np.ndarray:
+) -> FloatArray:
     m = method.lower()
     p = np.asarray(probs, dtype=float)
     y = np.asarray(y_true, dtype=int)
@@ -367,7 +377,7 @@ def crossfit_calibrate_oof(
     if m == "none":
         return p.copy()
 
-    out = np.full_like(p, np.nan, dtype=float)
+    out = as_float_array(np.full_like(p, np.nan, dtype=float))
     valid = ~np.isnan(folds)
     unique_folds = sorted(set(int(f) for f in folds[valid]))
     for f in unique_folds:
@@ -381,24 +391,24 @@ def crossfit_calibrate_oof(
     out[~valid] = p[~valid]
     missing = np.isnan(out) & valid
     out[missing] = p[missing]
-    return out
+    return as_float_array(out)
 
 
 def _fit_catboost(
     *,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
     cat_idx = [X_tr.columns.get_loc(c) for c in cat_cols]
@@ -473,18 +483,18 @@ def _fit_catboost(
 def _fit_lgbm(
     *,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     from lightgbm import LGBMClassifier, LGBMRegressor
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_tr)
@@ -556,18 +566,18 @@ def _fit_lgbm(
 def _fit_xgb(
     *,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     from xgboost import XGBClassifier, XGBRegressor
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_tr)
@@ -644,18 +654,18 @@ def fit_predict_two_part(
     *,
     engine: str,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     e = engine.lower()
     if e == "catboost":
         return _fit_catboost(
@@ -709,15 +719,15 @@ def fit_full_two_part_predict(
     *,
     engine: str,
     X_train: pd.DataFrame,
-    y_freq_train: np.ndarray,
-    y_sev_train: np.ndarray,
+    y_freq_train: IntArray,
+    y_sev_train: FloatArray,
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray]:
     """Train on full train and return (test_freq_raw, test_sev)."""
     e = engine.lower()
 
@@ -886,7 +896,7 @@ def run_cv_experiment(
     X: pd.DataFrame,
     y_freq: pd.Series,
     y_sev: pd.Series,
-    folds: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -902,8 +912,8 @@ def run_cv_experiment(
     y_freq_np = y_freq.to_numpy(dtype=int)
     y_sev_np = y_sev.to_numpy(dtype=float)
 
-    test_freq_parts: list[np.ndarray] = []
-    test_sev_parts: list[np.ndarray] = []
+    test_freq_parts: list[FloatArray] = []
+    test_sev_parts: list[FloatArray] = []
     fold_rows: list[dict[str, Any]] = []
 
     for fold_id, (tr, va) in folds.items():
@@ -955,6 +965,8 @@ def run_cv_experiment(
 
     for calib in calibration_methods:
         c = calib.lower()
+        oof_freq_cal: FloatArray
+        test_freq_cal: FloatArray
         if c == "none":
             oof_freq_cal = oof_freq.copy()
             test_freq_cal = test_freq_mean.copy()
@@ -1039,7 +1051,7 @@ def run_cv_experiment(
     )
 
 
-def optimize_non_negative_weights(pred_matrix: np.ndarray, y_true: np.ndarray) -> np.ndarray:
+def optimize_non_negative_weights(pred_matrix: FloatArray, y_true: FloatArray) -> FloatArray:
     p = np.asarray(pred_matrix, dtype=float)
     y = np.asarray(y_true, dtype=float)
     n_models = p.shape[1]
@@ -1047,20 +1059,20 @@ def optimize_non_negative_weights(pred_matrix: np.ndarray, y_true: np.ndarray) -
     bounds = [(0.0, 1.0)] * n_models
     constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
 
-    def objective(w: np.ndarray) -> float:
+    def objective(w: FloatArray) -> float:
         return rmse(y, p @ w)
 
     r = minimize(objective, x0=x0, bounds=bounds, constraints=constraints)
     if not r.success:
-        return x0
+        return as_float_array(x0)
     w = np.clip(r.x, 0.0, 1.0)
     s = w.sum()
-    return x0 if s <= 0 else w / s
+    return as_float_array(x0 if s <= 0 else w / s)
 
 
 def simulate_public_private_shakeup(
-    y_true: np.ndarray,
-    pred: np.ndarray,
+    y_true: FloatArray,
+    pred: FloatArray,
     *,
     n_sim: int = 2000,
     public_ratio: float = 1.0 / 3.0,
@@ -1090,7 +1102,7 @@ def simulate_public_private_shakeup(
     return pd.DataFrame(rows)
 
 
-def build_submission(index_series: pd.Series, pred: np.ndarray) -> pd.DataFrame:
+def build_submission(index_series: pd.Series, pred: FloatArray) -> pd.DataFrame:
     sub = pd.DataFrame(
         {"index": index_series.astype(int).to_numpy(), "pred": np.asarray(pred, dtype=float)}
     )
@@ -1168,7 +1180,7 @@ def pick_top_configs(
     return out
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return dict(_train_run(config_path))
