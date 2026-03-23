@@ -70,13 +70,13 @@ export default function Home() {
         <Card>
           <CardHeader className="pb-4">
             <Badge className="w-fit">Parcours client</Badge>
-            <h2 className="font-display text-3xl text-[var(--foreground)]">3 etapes pour aller a l'essentiel</h2>
+            <h2 className="font-display text-3xl text-[var(--foreground)]">3 etapes pour aller a l&rsquo;essentiel</h2>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-[var(--muted)]">
             <div className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3">
               <strong className="text-[var(--foreground)]">1. Profil et formule</strong>
               <br />
-              Choisissez votre formule, votre rythme de paiement et l'usage du vehicule.
+              Choisissez votre formule, votre rythme de paiement et l&rsquo;usage du vehicule.
             </div>
             <div className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-3">
               <strong className="text-[var(--foreground)]">2. Conducteurs</strong>
@@ -119,7 +119,7 @@ export default function Home() {
             <ShieldCheck className="h-6 w-6 text-[var(--accent)]" />
             <h2 className="mt-4 font-display text-2xl text-[var(--foreground)]">Rassurant et lisible</h2>
             <p className="mt-3 text-sm leading-7 text-[var(--muted)]">
-              Le resultat va droit au but, sans exposer d'informations techniques inutiles.
+              Le resultat va droit au but, sans exposer d&rsquo;informations techniques inutiles.
             </p>
           </CardContent>
         </Card>

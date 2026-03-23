@@ -1,5 +1,7 @@
 /** @type {import('@hey-api/openapi-ts').UserConfig} */
-export default {
+const config = {
   input: "./openapi.json",
   output: "./generated/client",
 };
+
+export default config;

@@ -50,7 +50,7 @@ export function AdminScreen() {
               <h1 className="font-display text-4xl tracking-tight sm:text-5xl">Pilotage des comptes et des devis</h1>
               <p className="max-w-3xl text-sm leading-7 text-white/78 sm:text-base">
                 Cette zone est reservee aux comptes administrateurs. Les suppressions sont appliquees
-                cote serveur et n'apparaissent jamais comme de simples restrictions d'interface.
+                cote serveur et n&rsquo;apparaissent jamais comme de simples restrictions d&rsquo;interface.
               </p>
             </div>
           </div>
