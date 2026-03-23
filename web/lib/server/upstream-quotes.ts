@@ -1,11 +1,11 @@
 import "server-only";
 
 import type {
-  ApiErrorResponse,
   PredictionInput,
   QuoteListResponse,
   QuoteResponse,
 } from "@/generated/client/types.gen";
+import type { ApiErrorBody } from "@/lib/api-types";
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 const METADATA_IDENTITY_TOKEN_URL =
@@ -13,9 +13,9 @@ const METADATA_IDENTITY_TOKEN_URL =
 
 export class UpstreamApiError extends Error {
   status: number;
-  body: ApiErrorResponse | unknown;
+  body: ApiErrorBody | unknown;
 
-  constructor(message: string, status: number, body: ApiErrorResponse | unknown) {
+  constructor(message: string, status: number, body: ApiErrorBody | unknown) {
     super(message);
     this.name = "UpstreamApiError";
     this.status = status;
@@ -78,7 +78,7 @@ async function upstreamRequest<T>(path: string, options: RequestOptions): Promis
   });
 
   const text = await response.text();
-  const parsedBody = text ? (JSON.parse(text) as ApiErrorResponse | T) : null;
+  const parsedBody = text ? (JSON.parse(text) as ApiErrorBody | T) : null;
 
   if (!response.ok) {
     const detail =
@@ -109,7 +109,7 @@ async function upstreamBinaryRequest(path: string, options: Omit<RequestOptions,
 
   if (!response.ok) {
     const text = await response.text();
-    const parsedBody = text ? (JSON.parse(text) as ApiErrorResponse) : null;
+    const parsedBody = text ? (JSON.parse(text) as ApiErrorBody) : null;
     const detail =
       parsedBody && typeof parsedBody === "object" && "detail" in parsedBody
         ? String(parsedBody.detail)

@@ -1,5 +1,10 @@
 export type UserRole = "customer" | "admin";
 
+export type ApiErrorBody = {
+  detail?: string | Array<Record<string, unknown>>;
+  request_id?: string;
+};
+
 export type SessionUser = {
   id: string;
   created_at_utc: string;

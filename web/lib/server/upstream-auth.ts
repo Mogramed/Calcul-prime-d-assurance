@@ -1,7 +1,7 @@
 import "server-only";
 
-import type { ApiErrorResponse } from "@/generated/client/types.gen";
 import type {
+  ApiErrorBody,
   AdminQuoteListResponse,
   AdminUserListResponse,
   AuthCredentialsInput,
@@ -38,7 +38,7 @@ async function upstreamRequest<T>(path: string, options: RequestOptions): Promis
   }
 
   const text = await response.text();
-  const parsedBody = text ? (JSON.parse(text) as ApiErrorResponse | T) : null;
+  const parsedBody = text ? (JSON.parse(text) as ApiErrorBody | T) : null;
 
   if (!response.ok) {
     const detail =
