@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StrictFloat, StrictInt, StrictStr
 
 type NumericValue = StrictInt | StrictFloat
 type PostalCodeValue = StrictInt | StrictStr
@@ -128,6 +129,7 @@ API_INDEX_EXAMPLE: dict[str, JsonValue] = {
     "version_url": "http://127.0.0.1:8000/version",
     "current_model_url": "http://127.0.0.1:8000/models/current",
     "prediction_schema_url": "http://127.0.0.1:8000/predict/schema",
+    "quotes_url": "http://127.0.0.1:8000/quotes",
 }
 
 VERSION_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
@@ -196,6 +198,71 @@ PREDICTION_SCHEMA_EXAMPLE: dict[str, JsonValue] = {
     ],
 }
 
+QUOTE_RESULT_EXAMPLE: dict[str, JsonValue] = PRIME_PREDICTION_EXAMPLE
+
+QUOTE_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
+    "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
+    "created_at_utc": "2026-03-23T10:15:00+00:00",
+    "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
+    "input_payload": SINGLE_PREDICTION_EXAMPLE,
+    "result": QUOTE_RESULT_EXAMPLE,
+}
+
+QUOTE_SUMMARY_EXAMPLE: dict[str, JsonValue] = {
+    "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
+    "created_at_utc": "2026-03-23T10:15:00+00:00",
+    "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
+    "index": 50000,
+    "type_contrat": "Maxi",
+    "marque_vehicule": "RENAULT",
+    "modele_vehicule": "CLIO",
+    "prime_prediction": 201.25504,
+}
+
+QUOTE_LIST_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
+    "count": 1,
+    "quotes": [QUOTE_SUMMARY_EXAMPLE],
+}
+
+USER_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
+    "id": "7416b54b-26a0-4e79-9c27-aea0101f8d55",
+    "created_at_utc": "2026-03-23T13:00:00+00:00",
+    "email": "client@nova-assurances.fr",
+    "role": "customer",
+    "is_active": True,
+}
+
+AUTH_SESSION_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
+    "authenticated": True,
+    "user": USER_RESPONSE_EXAMPLE,
+    "session_token": "opaque-session-token",
+    "expires_at_utc": "2026-04-22T13:00:00+00:00",
+}
+
+ADMIN_USER_SUMMARY_EXAMPLE: dict[str, JsonValue] = USER_RESPONSE_EXAMPLE
+
+ADMIN_USER_LIST_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
+    "count": 1,
+    "users": [ADMIN_USER_SUMMARY_EXAMPLE],
+}
+
+ADMIN_QUOTE_SUMMARY_EXAMPLE: dict[str, JsonValue] = {
+    "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
+    "created_at_utc": "2026-03-23T10:15:00+00:00",
+    "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
+    "type_contrat": "Maxi",
+    "marque_vehicule": "RENAULT",
+    "modele_vehicule": "CLIO",
+    "prime_prediction": 201.25504,
+    "user_id": "7416b54b-26a0-4e79-9c27-aea0101f8d55",
+    "owner_email": "client@nova-assurances.fr",
+    "deleted_at_utc": None,
+}
+
+ADMIN_QUOTE_LIST_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
+    "count": 1,
+    "quotes": [ADMIN_QUOTE_SUMMARY_EXAMPLE],
+}
 
 class PredictionInput(BaseModel):
     model_config = ConfigDict(
@@ -476,6 +543,7 @@ class ApiIndexResponse(BaseModel):
     prediction_schema_url: str = Field(
         description="Absolute URL of the prediction input contract endpoint."
     )
+    quotes_url: str = Field(description="Absolute URL of the public quote history endpoint.")
 
 
 class PredictionFieldDescriptor(BaseModel):
@@ -502,4 +570,181 @@ class PredictionSchemaResponse(BaseModel):
     optional_fields: list[str] = Field(description="Names of the optional raw input fields.")
     fields: list[PredictionFieldDescriptor] = Field(
         description="Ordered description of every raw field accepted by the prediction contract.",
+    )
+
+
+class QuoteResultResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "QuoteResultResponse",
+            "examples": [QUOTE_RESULT_EXAMPLE],
+        }
+    )
+
+    index: StrictInt | None = Field(
+        default=None,
+        description="Input correlation identifier, returned when it was provided by the caller.",
+    )
+    frequency_prediction: float = Field(description="Predicted claim frequency component.")
+    severity_prediction: float = Field(description="Predicted claim severity component.")
+    prime_prediction: float = Field(description="Final premium prediction for the quote.")
+
+
+class QuoteResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "QuoteResponse",
+            "examples": [QUOTE_RESPONSE_EXAMPLE],
+        }
+    )
+
+    id: str = Field(description="Identifier of the persisted quote.")
+    created_at_utc: datetime = Field(description="UTC timestamp at which the quote was created.")
+    run_id: str = Field(description="Model bundle identifier used to compute the quote.")
+    input_payload: PredictionInput = Field(description="Original input payload used for the quote.")
+    result: QuoteResultResponse = Field(description="Prediction outputs returned for the quote.")
+
+
+class QuoteSummaryResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "QuoteSummaryResponse",
+            "examples": [QUOTE_SUMMARY_EXAMPLE],
+        }
+    )
+
+    id: str = Field(description="Identifier of the persisted quote.")
+    created_at_utc: datetime = Field(description="UTC timestamp at which the quote was created.")
+    run_id: str = Field(description="Model bundle identifier used to compute the quote.")
+    index: StrictInt | None = Field(
+        default=None,
+        description="Input correlation identifier when it was provided by the caller.",
+    )
+    type_contrat: StrictStr = Field(description="Insurance contract type.")
+    marque_vehicule: StrictStr = Field(description="Vehicle brand.")
+    modele_vehicule: StrictStr = Field(description="Vehicle model.")
+    prime_prediction: float = Field(description="Final premium prediction for the quote.")
+
+
+class QuoteListResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "QuoteListResponse",
+            "examples": [QUOTE_LIST_RESPONSE_EXAMPLE],
+        }
+    )
+
+    count: int = Field(description="Number of quotes returned for the current client.")
+    quotes: list[QuoteSummaryResponse] = Field(
+        description="Quote history ordered from the most recent to the oldest quote.",
+    )
+
+
+class AuthCredentialsInput(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "AuthCredentialsInput",
+            "examples": [{"email": "client@nova-assurances.fr", "password": "mon-mot-de-passe"}],
+        }
+    )
+
+    email: EmailStr = Field(description="Email used to create or access the account.")
+    password: str = Field(min_length=8, description="Plain-text password submitted by the user.")
+
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "UserResponse",
+            "examples": [USER_RESPONSE_EXAMPLE],
+        }
+    )
+
+    id: str = Field(description="Identifier of the user account.")
+    created_at_utc: datetime = Field(description="UTC timestamp at which the user was created.")
+    email: EmailStr = Field(description="Email address attached to the account.")
+    role: Literal["customer", "admin"] = Field(description="Authorization role for the account.")
+    is_active: bool = Field(description="Whether the account is still active.")
+
+
+class AuthSessionResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "AuthSessionResponse",
+            "examples": [AUTH_SESSION_RESPONSE_EXAMPLE],
+        }
+    )
+
+    authenticated: bool = Field(description="Whether a valid session is currently active.")
+    user: UserResponse | None = Field(
+        default=None, description="Authenticated user summary when a session exists."
+    )
+    session_token: str | None = Field(
+        default=None,
+        description="Opaque session token returned to the trusted frontend BFF.",
+    )
+    expires_at_utc: datetime | None = Field(
+        default=None,
+        description="UTC timestamp at which the returned session expires.",
+    )
+
+
+class AdminUserSummaryResponse(UserResponse):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "AdminUserSummaryResponse",
+            "examples": [ADMIN_USER_SUMMARY_EXAMPLE],
+        }
+    )
+
+
+class AdminUserListResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "AdminUserListResponse",
+            "examples": [ADMIN_USER_LIST_RESPONSE_EXAMPLE],
+        }
+    )
+
+    count: int = Field(description="Number of users returned to the admin.")
+    users: list[AdminUserSummaryResponse] = Field(description="User accounts visible to the admin.")
+
+
+class AdminQuoteSummaryResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "AdminQuoteSummaryResponse",
+            "examples": [ADMIN_QUOTE_SUMMARY_EXAMPLE],
+        }
+    )
+
+    id: str = Field(description="Identifier of the persisted quote.")
+    created_at_utc: datetime = Field(description="UTC timestamp at which the quote was created.")
+    run_id: str = Field(description="Model bundle identifier used to compute the quote.")
+    type_contrat: str = Field(description="Insurance contract type.")
+    marque_vehicule: str = Field(description="Vehicle brand.")
+    modele_vehicule: str = Field(description="Vehicle model.")
+    prime_prediction: float = Field(description="Final premium prediction for the quote.")
+    user_id: str | None = Field(default=None, description="Owner user identifier when attached.")
+    owner_email: EmailStr | None = Field(
+        default=None,
+        description="Owner email when the quote is attached to an account.",
+    )
+    deleted_at_utc: datetime | None = Field(
+        default=None,
+        description="Deletion timestamp when the quote has been removed by an admin.",
+    )
+
+
+class AdminQuoteListResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "AdminQuoteListResponse",
+            "examples": [ADMIN_QUOTE_LIST_RESPONSE_EXAMPLE],
+        }
+    )
+
+    count: int = Field(description="Number of quotes returned to the admin.")
+    quotes: list[AdminQuoteSummaryResponse] = Field(
+        description="Recent quotes available to the admin console.",
     )

@@ -13,3 +13,7 @@ artifacts/*
 !artifacts/models/
 !artifacts/models/**
 .env
+web/node_modules
+web/node_modules*
+web/.next
+web/.next*

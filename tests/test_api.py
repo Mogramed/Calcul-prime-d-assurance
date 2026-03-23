@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -52,6 +53,7 @@ def test_api_index_endpoint(
     assert body["version_url"].endswith("/version")
     assert body["current_model_url"].endswith("/models/current")
     assert body["prediction_schema_url"].endswith("/predict/schema")
+    assert body["quotes_url"].endswith("/quotes")
 
 
 def test_health_endpoint(
@@ -289,6 +291,111 @@ def test_prediction_persistence_failure_returns_503(
     assert response.json()["detail"] == "Prediction persistence is unavailable."
 
 
+def test_create_quote_persists_payload_and_returns_prediction(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    client_id = str(uuid4())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={"X-Client-ID": client_id},
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["run_id"] == api_settings.run_id
+    assert body["input_payload"]["index"] == sample_prediction_records[0]["index"]
+    assert body["result"]["prime_prediction"] is not None
+    assert len(in_memory_audit_store.quotes) == 1
+
+
+def test_create_quote_requires_valid_client_id_header(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(api_settings, audit_store=in_memory_audit_store)
+
+    with TestClient(app) as client:
+        missing_response = client.post("/quotes", json=sample_prediction_records[0])
+        invalid_response = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={"X-Client-ID": "not-a-uuid"},
+        )
+
+    assert missing_response.status_code == 400
+    assert missing_response.json()["detail"] == "X-Client-ID header is required."
+    assert invalid_response.status_code == 400
+    assert invalid_response.json()["detail"] == "X-Client-ID must be a valid UUID."
+
+
+def test_quote_history_is_scoped_to_current_client(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    client_a = str(uuid4())
+    client_b = str(uuid4())
+
+    with TestClient(app) as client:
+        first_quote = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={"X-Client-ID": client_a},
+        ).json()
+        client.post(
+            "/quotes",
+            json=sample_prediction_records[1],
+            headers={"X-Client-ID": client_b},
+        )
+        history_response = client.get("/quotes", headers={"X-Client-ID": client_a})
+        own_quote_response = client.get(
+            f"/quotes/{first_quote['id']}",
+            headers={"X-Client-ID": client_a},
+        )
+        foreign_quote_response = client.get(
+            f"/quotes/{first_quote['id']}",
+            headers={"X-Client-ID": client_b},
+        )
+
+    history_body = history_response.json()
+    assert history_response.status_code == 200
+    assert history_body["count"] == 1
+    assert history_body["quotes"][0]["id"] == first_quote["id"]
+    assert own_quote_response.status_code == 200
+    assert own_quote_response.json()["id"] == first_quote["id"]
+    assert foreign_quote_response.status_code == 404
+    assert foreign_quote_response.json()["detail"] == "Quote not found."
+
+
+def test_quote_persistence_failure_returns_503(
+    api_settings: AppSettings,
+    sample_prediction_records: list[dict],
+    audit_store_factory,
+):
+    app = create_app(
+        api_settings,
+        audit_store=audit_store_factory(fail_quote_persistence=True),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={"X-Client-ID": str(uuid4())},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Quote persistence is unavailable."
+
+
 def test_runtime_error_persists_api_error(
     api_settings: AppSettings,
     in_memory_audit_store,
@@ -326,9 +433,24 @@ def test_openapi_exposes_product_endpoints(
     assert "/predict/severity" in schema["paths"]
     assert "/predict/prime" in schema["paths"]
     assert "/predict/schema" in schema["paths"]
+    assert "/auth/register" in schema["paths"]
+    assert "/auth/login" in schema["paths"]
+    assert "/auth/session" in schema["paths"]
+    assert "/quotes" in schema["paths"]
+    assert "/quotes/{quote_id}" in schema["paths"]
+    assert "/quotes/{quote_id}/report.pdf" in schema["paths"]
+    assert "/admin/users" in schema["paths"]
+    assert "/admin/quotes" in schema["paths"]
     assert "/models/current" in schema["paths"]
     assert "/ready" in schema["paths"]
-    assert {tag["name"] for tag in schema["tags"]} == {"metadata", "health", "predict"}
+    assert {tag["name"] for tag in schema["tags"]} == {
+        "metadata",
+        "health",
+        "predict",
+        "quotes",
+        "auth",
+        "admin",
+    }
     assert schema["paths"]["/predict/prime"]["post"]["requestBody"]["content"]["application/json"][
         "schema"
     ]["description"]
@@ -344,3 +466,148 @@ def test_swagger_ui_keeps_models_visible(
     assert app.swagger_ui_parameters["defaultModelsExpandDepth"] == 2
     assert app.swagger_ui_parameters["defaultModelExpandDepth"] == 2
     assert app.swagger_ui_parameters["defaultModelRendering"] == "model"
+
+
+def test_register_claims_anonymous_quotes_and_exposes_session(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    client_id = str(uuid4())
+
+    with TestClient(app) as client:
+        anonymous_quote = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={"X-Client-ID": client_id},
+        )
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": client_id},
+        )
+        session_token = register_response.json()["session_token"]
+        session_response = client.get(
+            "/auth/session",
+            headers={"X-Session-Token": session_token},
+        )
+        history_response = client.get(
+            "/quotes",
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
+        )
+        logout_response = client.post("/auth/logout", headers={"X-Session-Token": session_token})
+        after_logout_response = client.get(
+            "/auth/session",
+            headers={"X-Session-Token": session_token},
+        )
+
+    assert anonymous_quote.status_code == 200
+    assert register_response.status_code == 201
+    assert register_response.json()["user"]["role"] == "customer"
+    assert session_response.status_code == 200
+    assert session_response.json()["authenticated"] is True
+    assert history_response.status_code == 200
+    assert history_response.json()["count"] == 1
+    assert history_response.json()["quotes"][0]["id"] == anonymous_quote.json()["id"]
+    assert logout_response.status_code == 204
+    assert after_logout_response.status_code == 200
+    assert after_logout_response.json()["authenticated"] is False
+
+
+def test_authenticated_user_can_download_quote_report(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    client_id = str(uuid4())
+
+    with TestClient(app) as client:
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": client_id},
+        )
+        session_token = register_response.json()["session_token"]
+        quote_response = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
+        )
+        pdf_response = client.get(
+            f"/quotes/{quote_response.json()['id']}/report.pdf",
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
+        )
+
+    assert quote_response.status_code == 200
+    assert pdf_response.status_code == 200
+    assert pdf_response.headers["content-type"] == "application/pdf"
+    assert pdf_response.content.startswith(b"%PDF")
+
+def test_admin_can_list_and_moderate_users_and_quotes(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    admin_client_id = str(uuid4())
+    customer_client_id = str(uuid4())
+
+    with TestClient(app) as client:
+        customer_register = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": customer_client_id},
+        )
+        admin_register = client.post(
+            "/auth/register",
+            json={"email": "admin@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": admin_client_id},
+        )
+        customer_token = customer_register.json()["session_token"]
+        admin_token = admin_register.json()["session_token"]
+        customer_quote = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={
+                "X-Client-ID": customer_client_id,
+                "X-Session-Token": customer_token,
+            },
+        )
+        users_response = client.get("/admin/users", headers={"X-Session-Token": admin_token})
+        quotes_response = client.get("/admin/quotes", headers={"X-Session-Token": admin_token})
+        delete_quote_response = client.delete(
+            f"/admin/quotes/{customer_quote.json()['id']}",
+            headers={"X-Session-Token": admin_token},
+        )
+        deleted_quote_response = client.get(
+            f"/quotes/{customer_quote.json()['id']}",
+            headers={
+                "X-Client-ID": customer_client_id,
+                "X-Session-Token": customer_token,
+            },
+        )
+        delete_user_response = client.delete(
+            f"/admin/users/{customer_register.json()['user']['id']}",
+            headers={"X-Session-Token": admin_token},
+        )
+
+    assert admin_register.status_code == 201
+    assert admin_register.json()["user"]["role"] == "admin"
+    assert users_response.status_code == 200
+    assert users_response.json()["count"] == 2
+    assert quotes_response.status_code == 200
+    assert quotes_response.json()["quotes"][0]["owner_email"] == "client@nova-assurances.fr"
+    assert delete_quote_response.status_code == 204
+    assert deleted_quote_response.status_code == 404
+    assert delete_user_response.status_code == 204

@@ -1,0 +1,3324 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Insurance Pricing API",
+    "summary": "HTTP inference API for the insurance premium pricing model.",
+    "description": "Production-style FastAPI surface for serving insurance pricing predictions.\n\n## Scope\n- score raw insurance business records\n- expose frequency, severity, and final premium predictions\n- keep the served model bundle pinned at startup through `INSURANCE_PRICING_RUN_ID`\n\n## Request Contract\nSend the raw columns from the historical scoring dataset, such as the ones present in `data/test.csv`. Feature engineering stays inside the service layer, so clients only need to send business-facing fields.\n\n## Response Headers\nEvery response includes `X-Request-ID` and `X-Process-Time-Ms` headers to help trace calls across clients, logs, and deployment environments.\n\n## Batch Behavior\nBatch endpoints preserve input order and return the optional `index` field when it is provided by the caller.\n\n## Product Quote Endpoints\nThe public `/quotes` endpoints persist end-user quote history scoped to an anonymous `X-Client-ID` header so the Next.js frontend can retrieve prior simulations.",
+    "contact": {
+      "name": "Insurance Pricing Team"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "API entrypoint",
+        "description": "Quick navigation endpoint exposing the main operational and documentation URLs of the current API instance.",
+        "operationId": "api_index",
+        "responses": {
+          "200": {
+            "description": "Top-level navigation links for the current API instance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiIndexResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "API and model version",
+        "description": "Returns the installed package version together with the model run identifier configured at application startup.",
+        "operationId": "get_version",
+        "responses": {
+          "200": {
+            "description": "Package version and currently served model run identifier.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models/current": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Current served model metadata",
+        "description": "Returns the metadata of the model bundle currently loaded in memory, including artifacts, metrics, feature schema, and training configuration summary.",
+        "operationId": "get_current_model",
+        "responses": {
+          "200": {
+            "description": "Metadata describing the model bundle currently served by this API instance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelMetadataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness probe",
+        "description": "Confirms that the API process is running and that the configured model bundle was loaded during startup.",
+        "operationId": "health_check",
+        "responses": {
+          "200": {
+            "description": "Operational status of the API process and the loaded model bundle.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Readiness probe",
+        "description": "Confirms that the API has completed startup and is ready to accept inference traffic from clients, reverse proxies, or orchestrators.",
+        "operationId": "readiness_check",
+        "responses": {
+          "200": {
+            "description": "Readiness status of the API instance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predict/schema": {
+      "get": {
+        "tags": [
+          "predict"
+        ],
+        "summary": "Prediction input contract",
+        "description": "Returns a client-friendly summary of the raw fields expected by the prediction endpoints, including required vs optional fields. Use this endpoint before integrating a client, a frontend form, or a batch scoring job.",
+        "operationId": "get_prediction_schema",
+        "responses": {
+          "200": {
+            "description": "Summary of the single-record and batch input contract for prediction endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionSchemaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predict/frequency": {
+      "post": {
+        "tags": [
+          "predict"
+        ],
+        "summary": "Predict claim frequency",
+        "description": "Scores one insurance record and returns only the calibrated frequency component.\n\nThis endpoint is useful when you want to inspect the claim occurrence probability without combining it with the severity model.",
+        "operationId": "predict_frequency",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionInput",
+                "description": "Raw business-facing fields for one insurance contract. The optional `index` field is echoed back in the response when provided."
+              },
+              "examples": {
+                "single_record": {
+                  "summary": "Single contract scoring example",
+                  "value": {
+                    "index": 50000,
+                    "bonus": 0.58,
+                    "type_contrat": "Maxi",
+                    "duree_contrat": 1,
+                    "anciennete_info": 1,
+                    "freq_paiement": "Yearly",
+                    "paiement": "No",
+                    "utilisation": "Retired",
+                    "code_postal": 28388,
+                    "conducteur2": "No",
+                    "age_conducteur1": 66,
+                    "age_conducteur2": 0,
+                    "sex_conducteur1": "F",
+                    "sex_conducteur2": "",
+                    "anciennete_permis1": 34,
+                    "anciennete_permis2": 0,
+                    "anciennete_vehicule": 16.0,
+                    "cylindre_vehicule": 1239,
+                    "din_vehicule": 55,
+                    "essence_vehicule": "Gasoline",
+                    "marque_vehicule": "RENAULT",
+                    "modele_vehicule": "CLIO",
+                    "debut_vente_vehicule": 16,
+                    "fin_vente_vehicule": 15,
+                    "vitesse_vehicule": 150,
+                    "type_vehicule": "Tourism",
+                    "prix_vehicule": 10321,
+                    "poids_vehicule": 830
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Frequency prediction for a single insurance record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrequencyPredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Payload validation failed. The request must match the raw business fields expected by the model input contract."
+          },
+          "500": {
+            "description": "The model bundle could not score the request. Check the payload semantics and the loaded artifact integrity."
+          },
+          "503": {
+            "description": "Prediction persistence is unavailable because PostgreSQL is not ready."
+          }
+        }
+      }
+    },
+    "/predict/frequency/batch": {
+      "post": {
+        "tags": [
+          "predict"
+        ],
+        "summary": "Predict claim frequency in batch",
+        "description": "Scores multiple insurance records and returns frequency predictions in the same order as the request payload.",
+        "operationId": "predict_frequency_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionBatchInput",
+                "description": "Batch scoring payload for frequency inference. Input order is preserved in the response, which makes the endpoint suitable for bulk scoring pipelines."
+              },
+              "examples": {
+                "batch_records": {
+                  "summary": "Batch contract scoring example",
+                  "value": {
+                    "records": [
+                      {
+                        "index": 50000,
+                        "bonus": 0.58,
+                        "type_contrat": "Maxi",
+                        "duree_contrat": 1,
+                        "anciennete_info": 1,
+                        "freq_paiement": "Yearly",
+                        "paiement": "No",
+                        "utilisation": "Retired",
+                        "code_postal": 28388,
+                        "conducteur2": "No",
+                        "age_conducteur1": 66,
+                        "age_conducteur2": 0,
+                        "sex_conducteur1": "F",
+                        "sex_conducteur2": "",
+                        "anciennete_permis1": 34,
+                        "anciennete_permis2": 0,
+                        "anciennete_vehicule": 16.0,
+                        "cylindre_vehicule": 1239,
+                        "din_vehicule": 55,
+                        "essence_vehicule": "Gasoline",
+                        "marque_vehicule": "RENAULT",
+                        "modele_vehicule": "CLIO",
+                        "debut_vente_vehicule": 16,
+                        "fin_vente_vehicule": 15,
+                        "vitesse_vehicule": 150,
+                        "type_vehicule": "Tourism",
+                        "prix_vehicule": 10321,
+                        "poids_vehicule": 830
+                      },
+                      {
+                        "index": 50001,
+                        "bonus": 0.63,
+                        "type_contrat": "Maxi",
+                        "duree_contrat": 1,
+                        "anciennete_info": 1,
+                        "freq_paiement": "Yearly",
+                        "paiement": "No",
+                        "utilisation": "Retired",
+                        "code_postal": 75015,
+                        "conducteur2": "No",
+                        "age_conducteur1": 66,
+                        "age_conducteur2": 0,
+                        "sex_conducteur1": "F",
+                        "sex_conducteur2": "",
+                        "anciennete_permis1": 34,
+                        "anciennete_permis2": 0,
+                        "anciennete_vehicule": 16.0,
+                        "cylindre_vehicule": 1239,
+                        "din_vehicule": 55,
+                        "essence_vehicule": "Gasoline",
+                        "marque_vehicule": "PEUGEOT",
+                        "modele_vehicule": "208",
+                        "debut_vente_vehicule": 16,
+                        "fin_vente_vehicule": 15,
+                        "vitesse_vehicule": 150,
+                        "type_vehicule": "Tourism",
+                        "prix_vehicule": 14500,
+                        "poids_vehicule": 980
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Frequency predictions for multiple insurance records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrequencyPredictionBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Payload validation failed. The request must match the raw business fields expected by the model input contract."
+          },
+          "500": {
+            "description": "The model bundle could not score the request. Check the payload semantics and the loaded artifact integrity."
+          },
+          "503": {
+            "description": "Prediction persistence is unavailable because PostgreSQL is not ready."
+          }
+        }
+      }
+    },
+    "/predict/severity": {
+      "post": {
+        "tags": [
+          "predict"
+        ],
+        "summary": "Predict claim severity",
+        "description": "Scores one insurance record and returns only the severity component.\n\nUse this endpoint when you want to inspect the conditional expected claim cost without the frequency layer.",
+        "operationId": "predict_severity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionInput",
+                "description": "Raw business-facing fields for one insurance contract. The payload structure is the same as for the other prediction endpoints."
+              },
+              "examples": {
+                "single_record": {
+                  "summary": "Single contract scoring example",
+                  "value": {
+                    "index": 50000,
+                    "bonus": 0.58,
+                    "type_contrat": "Maxi",
+                    "duree_contrat": 1,
+                    "anciennete_info": 1,
+                    "freq_paiement": "Yearly",
+                    "paiement": "No",
+                    "utilisation": "Retired",
+                    "code_postal": 28388,
+                    "conducteur2": "No",
+                    "age_conducteur1": 66,
+                    "age_conducteur2": 0,
+                    "sex_conducteur1": "F",
+                    "sex_conducteur2": "",
+                    "anciennete_permis1": 34,
+                    "anciennete_permis2": 0,
+                    "anciennete_vehicule": 16.0,
+                    "cylindre_vehicule": 1239,
+                    "din_vehicule": 55,
+                    "essence_vehicule": "Gasoline",
+                    "marque_vehicule": "RENAULT",
+                    "modele_vehicule": "CLIO",
+                    "debut_vente_vehicule": 16,
+                    "fin_vente_vehicule": 15,
+                    "vitesse_vehicule": 150,
+                    "type_vehicule": "Tourism",
+                    "prix_vehicule": 10321,
+                    "poids_vehicule": 830
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Severity prediction for a single insurance record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeverityPredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Payload validation failed. The request must match the raw business fields expected by the model input contract."
+          },
+          "500": {
+            "description": "The model bundle could not score the request. Check the payload semantics and the loaded artifact integrity."
+          },
+          "503": {
+            "description": "Prediction persistence is unavailable because PostgreSQL is not ready."
+          }
+        }
+      }
+    },
+    "/predict/severity/batch": {
+      "post": {
+        "tags": [
+          "predict"
+        ],
+        "summary": "Predict claim severity in batch",
+        "description": "Scores multiple insurance records and returns severity predictions in the same order as the request payload.",
+        "operationId": "predict_severity_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionBatchInput",
+                "description": "Batch scoring payload for severity inference. Each input record produces exactly one output prediction in the returned `predictions` list."
+              },
+              "examples": {
+                "batch_records": {
+                  "summary": "Batch contract scoring example",
+                  "value": {
+                    "records": [
+                      {
+                        "index": 50000,
+                        "bonus": 0.58,
+                        "type_contrat": "Maxi",
+                        "duree_contrat": 1,
+                        "anciennete_info": 1,
+                        "freq_paiement": "Yearly",
+                        "paiement": "No",
+                        "utilisation": "Retired",
+                        "code_postal": 28388,
+                        "conducteur2": "No",
+                        "age_conducteur1": 66,
+                        "age_conducteur2": 0,
+                        "sex_conducteur1": "F",
+                        "sex_conducteur2": "",
+                        "anciennete_permis1": 34,
+                        "anciennete_permis2": 0,
+                        "anciennete_vehicule": 16.0,
+                        "cylindre_vehicule": 1239,
+                        "din_vehicule": 55,
+                        "essence_vehicule": "Gasoline",
+                        "marque_vehicule": "RENAULT",
+                        "modele_vehicule": "CLIO",
+                        "debut_vente_vehicule": 16,
+                        "fin_vente_vehicule": 15,
+                        "vitesse_vehicule": 150,
+                        "type_vehicule": "Tourism",
+                        "prix_vehicule": 10321,
+                        "poids_vehicule": 830
+                      },
+                      {
+                        "index": 50001,
+                        "bonus": 0.63,
+                        "type_contrat": "Maxi",
+                        "duree_contrat": 1,
+                        "anciennete_info": 1,
+                        "freq_paiement": "Yearly",
+                        "paiement": "No",
+                        "utilisation": "Retired",
+                        "code_postal": 75015,
+                        "conducteur2": "No",
+                        "age_conducteur1": 66,
+                        "age_conducteur2": 0,
+                        "sex_conducteur1": "F",
+                        "sex_conducteur2": "",
+                        "anciennete_permis1": 34,
+                        "anciennete_permis2": 0,
+                        "anciennete_vehicule": 16.0,
+                        "cylindre_vehicule": 1239,
+                        "din_vehicule": 55,
+                        "essence_vehicule": "Gasoline",
+                        "marque_vehicule": "PEUGEOT",
+                        "modele_vehicule": "208",
+                        "debut_vente_vehicule": 16,
+                        "fin_vente_vehicule": 15,
+                        "vitesse_vehicule": 150,
+                        "type_vehicule": "Tourism",
+                        "prix_vehicule": 14500,
+                        "poids_vehicule": 980
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Severity predictions for multiple insurance records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeverityPredictionBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Payload validation failed. The request must match the raw business fields expected by the model input contract."
+          },
+          "500": {
+            "description": "The model bundle could not score the request. Check the payload semantics and the loaded artifact integrity."
+          },
+          "503": {
+            "description": "Prediction persistence is unavailable because PostgreSQL is not ready."
+          }
+        }
+      }
+    },
+    "/predict/prime": {
+      "post": {
+        "tags": [
+          "predict"
+        ],
+        "summary": "Predict final premium",
+        "description": "Scores one insurance record and returns the full pricing decomposition: frequency, severity, and final premium.\n\nThis is the main endpoint to call when you want the final commercial premium output.",
+        "operationId": "predict_prime",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionInput",
+                "description": "Raw business-facing fields for one insurance contract. The server computes engineered features internally before running the model bundle."
+              },
+              "examples": {
+                "single_record": {
+                  "summary": "Single contract scoring example",
+                  "value": {
+                    "index": 50000,
+                    "bonus": 0.58,
+                    "type_contrat": "Maxi",
+                    "duree_contrat": 1,
+                    "anciennete_info": 1,
+                    "freq_paiement": "Yearly",
+                    "paiement": "No",
+                    "utilisation": "Retired",
+                    "code_postal": 28388,
+                    "conducteur2": "No",
+                    "age_conducteur1": 66,
+                    "age_conducteur2": 0,
+                    "sex_conducteur1": "F",
+                    "sex_conducteur2": "",
+                    "anciennete_permis1": 34,
+                    "anciennete_permis2": 0,
+                    "anciennete_vehicule": 16.0,
+                    "cylindre_vehicule": 1239,
+                    "din_vehicule": 55,
+                    "essence_vehicule": "Gasoline",
+                    "marque_vehicule": "RENAULT",
+                    "modele_vehicule": "CLIO",
+                    "debut_vente_vehicule": 16,
+                    "fin_vente_vehicule": 15,
+                    "vitesse_vehicule": 150,
+                    "type_vehicule": "Tourism",
+                    "prix_vehicule": 10321,
+                    "poids_vehicule": 830
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Frequency, severity, and premium predictions for a single insurance record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrimePredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Payload validation failed. The request must match the raw business fields expected by the model input contract."
+          },
+          "500": {
+            "description": "The model bundle could not score the request. Check the payload semantics and the loaded artifact integrity."
+          },
+          "503": {
+            "description": "Prediction persistence is unavailable because PostgreSQL is not ready."
+          }
+        }
+      }
+    },
+    "/predict/prime/batch": {
+      "post": {
+        "tags": [
+          "predict"
+        ],
+        "summary": "Predict final premium in batch",
+        "description": "Scores multiple insurance records and returns the full pricing decomposition for each one in the same order as the input payload.",
+        "operationId": "predict_prime_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionBatchInput",
+                "description": "Batch scoring payload for full premium inference. This endpoint is designed for bulk scoring while preserving the original order of the submitted contracts."
+              },
+              "examples": {
+                "batch_records": {
+                  "summary": "Batch contract scoring example",
+                  "value": {
+                    "records": [
+                      {
+                        "index": 50000,
+                        "bonus": 0.58,
+                        "type_contrat": "Maxi",
+                        "duree_contrat": 1,
+                        "anciennete_info": 1,
+                        "freq_paiement": "Yearly",
+                        "paiement": "No",
+                        "utilisation": "Retired",
+                        "code_postal": 28388,
+                        "conducteur2": "No",
+                        "age_conducteur1": 66,
+                        "age_conducteur2": 0,
+                        "sex_conducteur1": "F",
+                        "sex_conducteur2": "",
+                        "anciennete_permis1": 34,
+                        "anciennete_permis2": 0,
+                        "anciennete_vehicule": 16.0,
+                        "cylindre_vehicule": 1239,
+                        "din_vehicule": 55,
+                        "essence_vehicule": "Gasoline",
+                        "marque_vehicule": "RENAULT",
+                        "modele_vehicule": "CLIO",
+                        "debut_vente_vehicule": 16,
+                        "fin_vente_vehicule": 15,
+                        "vitesse_vehicule": 150,
+                        "type_vehicule": "Tourism",
+                        "prix_vehicule": 10321,
+                        "poids_vehicule": 830
+                      },
+                      {
+                        "index": 50001,
+                        "bonus": 0.63,
+                        "type_contrat": "Maxi",
+                        "duree_contrat": 1,
+                        "anciennete_info": 1,
+                        "freq_paiement": "Yearly",
+                        "paiement": "No",
+                        "utilisation": "Retired",
+                        "code_postal": 75015,
+                        "conducteur2": "No",
+                        "age_conducteur1": 66,
+                        "age_conducteur2": 0,
+                        "sex_conducteur1": "F",
+                        "sex_conducteur2": "",
+                        "anciennete_permis1": 34,
+                        "anciennete_permis2": 0,
+                        "anciennete_vehicule": 16.0,
+                        "cylindre_vehicule": 1239,
+                        "din_vehicule": 55,
+                        "essence_vehicule": "Gasoline",
+                        "marque_vehicule": "PEUGEOT",
+                        "modele_vehicule": "208",
+                        "debut_vente_vehicule": 16,
+                        "fin_vente_vehicule": 15,
+                        "vitesse_vehicule": 150,
+                        "type_vehicule": "Tourism",
+                        "prix_vehicule": 14500,
+                        "poids_vehicule": 980
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Frequency, severity, and premium predictions for multiple insurance records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrimePredictionBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Payload validation failed. The request must match the raw business fields expected by the model input contract."
+          },
+          "500": {
+            "description": "The model bundle could not score the request. Check the payload semantics and the loaded artifact integrity."
+          },
+          "503": {
+            "description": "Prediction persistence is unavailable because PostgreSQL is not ready."
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Register a customer account",
+        "operationId": "register_account",
+        "parameters": [
+          {
+            "name": "X-Client-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Client-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthCredentialsInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A user already exists with this email."
+          },
+          "503": {
+            "description": "User persistence is unavailable."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Authenticate a user account",
+        "operationId": "login_account",
+        "parameters": [
+          {
+            "name": "X-Client-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Client-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthCredentialsInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials."
+          },
+          "503": {
+            "description": "Authentication is unavailable."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Inspect the current authenticated session",
+        "operationId": "get_auth_session",
+        "parameters": [
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Close the current authenticated session",
+        "operationId": "logout_account",
+        "parameters": [
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quotes": {
+      "post": {
+        "tags": [
+          "quotes"
+        ],
+        "summary": "Create a persisted quote",
+        "description": "Scores one insurance record, persists the input payload and the resulting quote, and returns the stored quote detail for the current customer context.",
+        "operationId": "create_quote",
+        "parameters": [
+          {
+            "name": "X-Client-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Client-Id"
+            }
+          },
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionInput",
+                "description": "Raw business-facing fields for one insurance contract. The payload mirrors the technical prediction contract used by the model."
+              },
+              "examples": {
+                "single_record": {
+                  "summary": "Single contract quote example",
+                  "value": {
+                    "index": 50000,
+                    "bonus": 0.58,
+                    "type_contrat": "Maxi",
+                    "duree_contrat": 1,
+                    "anciennete_info": 1,
+                    "freq_paiement": "Yearly",
+                    "paiement": "No",
+                    "utilisation": "Retired",
+                    "code_postal": 28388,
+                    "conducteur2": "No",
+                    "age_conducteur1": 66,
+                    "age_conducteur2": 0,
+                    "sex_conducteur1": "F",
+                    "sex_conducteur2": "",
+                    "anciennete_permis1": 34,
+                    "anciennete_permis2": 0,
+                    "anciennete_vehicule": 16.0,
+                    "cylindre_vehicule": 1239,
+                    "din_vehicule": 55,
+                    "essence_vehicule": "Gasoline",
+                    "marque_vehicule": "RENAULT",
+                    "modele_vehicule": "CLIO",
+                    "debut_vente_vehicule": 16,
+                    "fin_vente_vehicule": 15,
+                    "vitesse_vehicule": 150,
+                    "type_vehicule": "Tourism",
+                    "prix_vehicule": 10321,
+                    "poids_vehicule": 830
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Persisted quote detail for the current customer context.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The required X-Client-ID header is missing or invalid."
+          },
+          "503": {
+            "description": "Quote persistence is unavailable because PostgreSQL is not ready."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "quotes"
+        ],
+        "summary": "List persisted quotes",
+        "description": "Returns the quote history associated with the current browser context or authenticated account, ordered from the most recent to the oldest quote.",
+        "operationId": "list_quotes",
+        "parameters": [
+          {
+            "name": "X-Client-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Client-Id"
+            }
+          },
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted quote history for the current customer context.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The required X-Client-ID header is missing or invalid."
+          },
+          "503": {
+            "description": "Quote persistence is unavailable because PostgreSQL is not ready."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quotes/{quote_id}": {
+      "get": {
+        "tags": [
+          "quotes"
+        ],
+        "summary": "Get a persisted quote",
+        "description": "Returns one persisted quote when it belongs to the current browser context, the current account, or when it is accessed by an administrator.",
+        "operationId": "get_quote",
+        "parameters": [
+          {
+            "name": "quote_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Quote Id"
+            }
+          },
+          {
+            "name": "X-Client-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Client-Id"
+            }
+          },
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted quote detail for the current customer context.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The required X-Client-ID header is missing or invalid."
+          },
+          "404": {
+            "description": "The quote does not exist for the current customer context."
+          },
+          "503": {
+            "description": "Quote persistence is unavailable because PostgreSQL is not ready."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quotes/{quote_id}/report.pdf": {
+      "get": {
+        "tags": [
+          "quotes"
+        ],
+        "summary": "Generate the PDF report for one quote",
+        "operationId": "download_quote_report",
+        "parameters": [
+          {
+            "name": "quote_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Quote Id"
+            }
+          },
+          {
+            "name": "X-Client-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Client-Id"
+            }
+          },
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/pdf": {}
+            }
+          },
+          "404": {
+            "description": "Quote not found."
+          },
+          "503": {
+            "description": "Quote report generation is unavailable."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List user accounts for administrators",
+        "operationId": "admin_list_users",
+        "parameters": [
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Deactivate a user account",
+        "operationId": "admin_deactivate_user",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "User not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/quotes": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List recent quotes for administrators",
+        "operationId": "admin_list_quotes",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminQuoteListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/quotes/{quote_id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete a persisted quote",
+        "operationId": "admin_delete_quote",
+        "parameters": [
+          {
+            "name": "quote_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Quote Id"
+            }
+          },
+          {
+            "name": "X-Session-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Quote not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdminQuoteListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of quotes returned to the admin."
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/AdminQuoteSummaryResponse"
+            },
+            "type": "array",
+            "title": "Quotes",
+            "description": "Recent quotes available to the admin console."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "quotes"
+        ],
+        "title": "AdminQuoteListResponse",
+        "examples": [
+          {
+            "count": 1,
+            "quotes": [
+              {
+                "created_at_utc": "2026-03-23T10:15:00+00:00",
+                "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
+                "marque_vehicule": "RENAULT",
+                "modele_vehicule": "CLIO",
+                "owner_email": "client@nova-assurances.fr",
+                "prime_prediction": 201.25504,
+                "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
+                "type_contrat": "Maxi",
+                "user_id": "7416b54b-26a0-4e79-9c27-aea0101f8d55"
+              }
+            ]
+          }
+        ]
+      },
+      "AdminQuoteSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Identifier of the persisted quote."
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At Utc",
+            "description": "UTC timestamp at which the quote was created."
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Model bundle identifier used to compute the quote."
+          },
+          "type_contrat": {
+            "type": "string",
+            "title": "Type Contrat",
+            "description": "Insurance contract type."
+          },
+          "marque_vehicule": {
+            "type": "string",
+            "title": "Marque Vehicule",
+            "description": "Vehicle brand."
+          },
+          "modele_vehicule": {
+            "type": "string",
+            "title": "Modele Vehicule",
+            "description": "Vehicle model."
+          },
+          "prime_prediction": {
+            "type": "number",
+            "title": "Prime Prediction",
+            "description": "Final premium prediction for the quote."
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "Owner user identifier when attached."
+          },
+          "owner_email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email",
+            "description": "Owner email when the quote is attached to an account."
+          },
+          "deleted_at_utc": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At Utc",
+            "description": "Deletion timestamp when the quote has been removed by an admin."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at_utc",
+          "run_id",
+          "type_contrat",
+          "marque_vehicule",
+          "modele_vehicule",
+          "prime_prediction"
+        ],
+        "title": "AdminQuoteSummaryResponse",
+        "examples": [
+          {
+            "created_at_utc": "2026-03-23T10:15:00+00:00",
+            "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
+            "marque_vehicule": "RENAULT",
+            "modele_vehicule": "CLIO",
+            "owner_email": "client@nova-assurances.fr",
+            "prime_prediction": 201.25504,
+            "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
+            "type_contrat": "Maxi",
+            "user_id": "7416b54b-26a0-4e79-9c27-aea0101f8d55"
+          }
+        ]
+      },
+      "AdminUserListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of users returned to the admin."
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserSummaryResponse"
+            },
+            "type": "array",
+            "title": "Users",
+            "description": "User accounts visible to the admin."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "users"
+        ],
+        "title": "AdminUserListResponse",
+        "examples": [
+          {
+            "count": 1,
+            "users": [
+              {
+                "created_at_utc": "2026-03-23T13:00:00+00:00",
+                "email": "client@nova-assurances.fr",
+                "id": "7416b54b-26a0-4e79-9c27-aea0101f8d55",
+                "is_active": true,
+                "role": "customer"
+              }
+            ]
+          }
+        ]
+      },
+      "AdminUserSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Identifier of the user account."
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At Utc",
+            "description": "UTC timestamp at which the user was created."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email",
+            "description": "Email address attached to the account."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "admin"
+            ],
+            "title": "Role",
+            "description": "Authorization role for the account."
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Whether the account is still active."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at_utc",
+          "email",
+          "role",
+          "is_active"
+        ],
+        "title": "AdminUserSummaryResponse",
+        "examples": [
+          {
+            "created_at_utc": "2026-03-23T13:00:00+00:00",
+            "email": "client@nova-assurances.fr",
+            "id": "7416b54b-26a0-4e79-9c27-aea0101f8d55",
+            "is_active": true,
+            "role": "customer"
+          }
+        ]
+      },
+      "ApiIndexResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Human-readable API name."
+          },
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "description": "Version of the installed `insurance_pricing` package."
+          },
+          "docs_url": {
+            "type": "string",
+            "title": "Docs Url",
+            "description": "Absolute URL of the interactive Swagger UI."
+          },
+          "redoc_url": {
+            "type": "string",
+            "title": "Redoc Url",
+            "description": "Absolute URL of the ReDoc documentation."
+          },
+          "openapi_url": {
+            "type": "string",
+            "title": "Openapi Url",
+            "description": "Absolute URL of the OpenAPI JSON schema."
+          },
+          "health_url": {
+            "type": "string",
+            "title": "Health Url",
+            "description": "Absolute URL of the health endpoint."
+          },
+          "ready_url": {
+            "type": "string",
+            "title": "Ready Url",
+            "description": "Absolute URL of the readiness endpoint."
+          },
+          "version_url": {
+            "type": "string",
+            "title": "Version Url",
+            "description": "Absolute URL of the version endpoint."
+          },
+          "current_model_url": {
+            "type": "string",
+            "title": "Current Model Url",
+            "description": "Absolute URL of the current model metadata endpoint."
+          },
+          "prediction_schema_url": {
+            "type": "string",
+            "title": "Prediction Schema Url",
+            "description": "Absolute URL of the prediction input contract endpoint."
+          },
+          "quotes_url": {
+            "type": "string",
+            "title": "Quotes Url",
+            "description": "Absolute URL of the public quote history endpoint."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "api_version",
+          "docs_url",
+          "redoc_url",
+          "openapi_url",
+          "health_url",
+          "ready_url",
+          "version_url",
+          "current_model_url",
+          "prediction_schema_url",
+          "quotes_url"
+        ],
+        "title": "ApiIndexResponse",
+        "examples": [
+          {
+            "api_version": "0.1.0",
+            "current_model_url": "http://127.0.0.1:8000/models/current",
+            "docs_url": "http://127.0.0.1:8000/docs",
+            "health_url": "http://127.0.0.1:8000/health",
+            "name": "Insurance Pricing API",
+            "openapi_url": "http://127.0.0.1:8000/openapi.json",
+            "prediction_schema_url": "http://127.0.0.1:8000/predict/schema",
+            "quotes_url": "http://127.0.0.1:8000/quotes",
+            "ready_url": "http://127.0.0.1:8000/ready",
+            "redoc_url": "http://127.0.0.1:8000/redoc",
+            "version_url": "http://127.0.0.1:8000/version"
+          }
+        ]
+      },
+      "AuthCredentialsInput": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email",
+            "description": "Email used to create or access the account."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password",
+            "description": "Plain-text password submitted by the user."
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AuthCredentialsInput",
+        "examples": [
+          {
+            "email": "client@nova-assurances.fr",
+            "password": "mon-mot-de-passe"
+          }
+        ]
+      },
+      "AuthSessionResponse": {
+        "properties": {
+          "authenticated": {
+            "type": "boolean",
+            "title": "Authenticated",
+            "description": "Whether a valid session is currently active."
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authenticated user summary when a session exists."
+          },
+          "session_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Token",
+            "description": "Opaque session token returned to the trusted frontend BFF."
+          },
+          "expires_at_utc": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Utc",
+            "description": "UTC timestamp at which the returned session expires."
+          }
+        },
+        "type": "object",
+        "required": [
+          "authenticated"
+        ],
+        "title": "AuthSessionResponse",
+        "examples": [
+          {
+            "authenticated": true,
+            "expires_at_utc": "2026-04-22T13:00:00+00:00",
+            "session_token": "opaque-session-token",
+            "user": {
+              "created_at_utc": "2026-03-23T13:00:00+00:00",
+              "email": "client@nova-assurances.fr",
+              "id": "7416b54b-26a0-4e79-9c27-aea0101f8d55",
+              "is_active": true,
+              "role": "customer"
+            }
+          }
+        ]
+      },
+      "FeatureSchemaSummary": {
+        "properties": {
+          "feature_count": {
+            "type": "integer",
+            "title": "Feature Count",
+            "description": "Total number of engineered features used at inference time."
+          },
+          "categorical_feature_count": {
+            "type": "integer",
+            "title": "Categorical Feature Count",
+            "description": "Number of categorical engineered features."
+          },
+          "numerical_feature_count": {
+            "type": "integer",
+            "title": "Numerical Feature Count",
+            "description": "Number of numerical engineered features."
+          },
+          "feature_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Feature Columns",
+            "description": "Ordered engineered feature list expected by the models."
+          },
+          "categorical_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categorical Columns",
+            "description": "Categorical subset of the engineered feature list."
+          },
+          "numerical_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Numerical Columns",
+            "description": "Numerical subset of the engineered feature list."
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature_count",
+          "categorical_feature_count",
+          "numerical_feature_count",
+          "feature_columns",
+          "categorical_columns",
+          "numerical_columns"
+        ],
+        "title": "FeatureSchemaSummary"
+      },
+      "FrequencyPredictionBatchResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Identifier of the model bundle currently serving the request."
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of returned predictions."
+          },
+          "predictions": {
+            "items": {
+              "$ref": "#/components/schemas/FrequencyPredictionResponse"
+            },
+            "type": "array",
+            "title": "Predictions",
+            "description": "Predictions returned in the same order as the input records."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "count",
+          "predictions"
+        ],
+        "title": "FrequencyPredictionBatchResponse",
+        "examples": [
+          {
+            "count": 2,
+            "predictions": [
+              {
+                "frequency_prediction": 0.0835,
+                "index": 50000
+              },
+              {
+                "frequency_prediction": 0.0612,
+                "index": 50001
+              }
+            ],
+            "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none"
+          }
+        ]
+      },
+      "FrequencyPredictionResponse": {
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index",
+            "description": "Input correlation identifier, returned when it was provided by the caller."
+          },
+          "frequency_prediction": {
+            "type": "number",
+            "title": "Frequency Prediction",
+            "description": "Predicted probability of observing at least one claim."
+          }
+        },
+        "type": "object",
+        "required": [
+          "frequency_prediction"
+        ],
+        "title": "FrequencyPredictionResponse",
+        "examples": [
+          {
+            "frequency_prediction": 0.0835,
+            "index": 50000
+          }
+        ]
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "description": "Health status of the API process."
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Configured model bundle identifier loaded at startup."
+          },
+          "model_loaded": {
+            "type": "boolean",
+            "title": "Model Loaded",
+            "description": "Whether the model bundle is loaded in memory."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "run_id",
+          "model_loaded"
+        ],
+        "title": "HealthResponse",
+        "examples": [
+          {
+            "model_loaded": true,
+            "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
+            "status": "ok"
+          }
+        ]
+      },
+      "ModelConfigSummary": {
+        "properties": {
+          "feature_set": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Set",
+            "description": "Feature-set identifier used during training."
+          },
+          "drop_identifiers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drop Identifiers",
+            "description": "Whether identifiers were excluded from training features."
+          },
+          "frequency_engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency Engine",
+            "description": "Training engine used for the frequency model."
+          },
+          "frequency_calibration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency Calibration",
+            "description": "Calibration method applied to the raw frequency scores."
+          },
+          "severity_engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity Engine",
+            "description": "Training engine used for the severity model."
+          },
+          "severity_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity Family",
+            "description": "Severity modeling family."
+          },
+          "severity_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity Mode",
+            "description": "Severity training mode."
+          },
+          "tweedie_power": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tweedie Power",
+            "description": "Tweedie variance power when applicable."
+          },
+          "tail_mapper_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tail Mapper Enabled",
+            "description": "Whether a tail correction mapper is enabled."
+          },
+          "non_negative": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Negative",
+            "description": "Whether final outputs are clipped to non-negative values."
+          }
+        },
+        "type": "object",
+        "title": "ModelConfigSummary"
+      },
+      "ModelMetadataResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Identifier of the model bundle currently served by the API."
+          },
+          "created_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At Utc",
+            "description": "UTC timestamp at which the bundle manifest was created."
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "description": "Optional free-form notes attached to the bundle."
+          },
+          "model_files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Model Files",
+            "description": "Filesystem paths of the loaded model artifacts."
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metrics",
+            "description": "Training or evaluation metrics captured with the model bundle."
+          },
+          "feature_schema": {
+            "$ref": "#/components/schemas/FeatureSchemaSummary",
+            "description": "Summary of the engineered feature schema used for inference."
+          },
+          "config": {
+            "$ref": "#/components/schemas/ModelConfigSummary",
+            "description": "Training configuration summary extracted from the bundle manifest."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "model_files",
+          "metrics",
+          "feature_schema",
+          "config"
+        ],
+        "title": "ModelMetadataResponse",
+        "examples": [
+          {
+            "config": {
+              "drop_identifiers": true,
+              "feature_set": "base_v2",
+              "frequency_calibration": "none",
+              "frequency_engine": "catboost",
+              "non_negative": true,
+              "severity_engine": "catboost",
+              "severity_family": "two_part_tweedie",
+              "severity_mode": "classic",
+              "tail_mapper_enabled": false,
+              "tweedie_power": 1.3
+            },
+            "created_at_utc": "2026-03-20T10:15:00+00:00",
+            "feature_schema": {
+              "categorical_columns": [
+                "type_contrat",
+                "freq_paiement"
+              ],
+              "categorical_feature_count": 8,
+              "feature_columns": [
+                "bonus",
+                "type_contrat"
+              ],
+              "feature_count": 48,
+              "numerical_columns": [
+                "bonus",
+                "duree_contrat"
+              ],
+              "numerical_feature_count": 40
+            },
+            "metrics": {
+              "q99_ratio_pos": 1.04,
+              "rmse_prime": 29.18
+            },
+            "model_files": {
+              "freq": "artifacts/models/.../model_freq.pkl",
+              "prime": "artifacts/models/.../model_prime.pkl",
+              "sev": "artifacts/models/.../model_sev.pkl"
+            },
+            "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none"
+          }
+        ]
+      },
+      "NumericValue": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "PostalCodeValue": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "PredictionBatchInput": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/PredictionInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Records",
+            "description": "Records scored in one request. Input order is preserved in the response."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "records"
+        ],
+        "title": "InsurancePricingBatchRequest",
+        "examples": [
+          {
+            "records": [
+              {
+                "age_conducteur1": 66,
+                "age_conducteur2": 0,
+                "anciennete_info": 1,
+                "anciennete_permis1": 34,
+                "anciennete_permis2": 0,
+                "anciennete_vehicule": 16.0,
+                "bonus": 0.58,
+                "code_postal": 28388,
+                "conducteur2": "No",
+                "cylindre_vehicule": 1239,
+                "debut_vente_vehicule": 16,
+                "din_vehicule": 55,
+                "duree_contrat": 1,
+                "essence_vehicule": "Gasoline",
+                "fin_vente_vehicule": 15,
+                "freq_paiement": "Yearly",
+                "index": 50000,
+                "marque_vehicule": "RENAULT",
+                "modele_vehicule": "CLIO",
+                "paiement": "No",
+                "poids_vehicule": 830,
+                "prix_vehicule": 10321,
+                "sex_conducteur1": "F",
+                "sex_conducteur2": "",
+                "type_contrat": "Maxi",
+                "type_vehicule": "Tourism",
+                "utilisation": "Retired",
+                "vitesse_vehicule": 150
+              },
+              {
+                "age_conducteur1": 66,
+                "age_conducteur2": 0,
+                "anciennete_info": 1,
+                "anciennete_permis1": 34,
+                "anciennete_permis2": 0,
+                "anciennete_vehicule": 16.0,
+                "bonus": 0.63,
+                "code_postal": 75015,
+                "conducteur2": "No",
+                "cylindre_vehicule": 1239,
+                "debut_vente_vehicule": 16,
+                "din_vehicule": 55,
+                "duree_contrat": 1,
+                "essence_vehicule": "Gasoline",
+                "fin_vente_vehicule": 15,
+                "freq_paiement": "Yearly",
+                "index": 50001,
+                "marque_vehicule": "PEUGEOT",
+                "modele_vehicule": "208",
+                "paiement": "No",
+                "poids_vehicule": 980,
+                "prix_vehicule": 14500,
+                "sex_conducteur1": "F",
+                "sex_conducteur2": "",
+                "type_contrat": "Maxi",
+                "type_vehicule": "Tourism",
+                "utilisation": "Retired",
+                "vitesse_vehicule": 150
+              }
+            ]
+          }
+        ]
+      },
+      "PredictionFieldDescriptor": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Field name expected by the prediction API."
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "JSON/OpenAPI type summary for this field."
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "description": "Whether the field must be provided by the client."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Human-readable description of the field."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "required"
+        ],
+        "title": "PredictionFieldDescriptor"
+      },
+      "PredictionInput": {
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index",
+            "description": "Optional correlation identifier echoed back in prediction responses."
+          },
+          "bonus": {
+            "$ref": "#/components/schemas/NumericValue",
+            "description": "Driver bonus-malus coefficient."
+          },
+          "type_contrat": {
+            "type": "string",
+            "title": "Type Contrat",
+            "description": "Insurance contract type."
+          },
+          "duree_contrat": {
+            "type": "integer",
+            "title": "Duree Contrat",
+            "description": "Contract duration."
+          },
+          "anciennete_info": {
+            "type": "integer",
+            "title": "Anciennete Info",
+            "description": "Years of customer history available."
+          },
+          "freq_paiement": {
+            "type": "string",
+            "title": "Freq Paiement",
+            "description": "Premium payment frequency."
+          },
+          "paiement": {
+            "type": "string",
+            "title": "Paiement",
+            "description": "Whether the premium is currently paid."
+          },
+          "utilisation": {
+            "type": "string",
+            "title": "Utilisation",
+            "description": "Vehicle usage profile."
+          },
+          "code_postal": {
+            "$ref": "#/components/schemas/PostalCodeValue",
+            "description": "Postal code of the insured risk."
+          },
+          "conducteur2": {
+            "type": "string",
+            "title": "Conducteur2",
+            "description": "Whether a secondary driver is declared."
+          },
+          "age_conducteur1": {
+            "type": "integer",
+            "title": "Age Conducteur1",
+            "description": "Age of the primary driver."
+          },
+          "age_conducteur2": {
+            "type": "integer",
+            "title": "Age Conducteur2",
+            "description": "Age of the secondary driver, if any."
+          },
+          "sex_conducteur1": {
+            "type": "string",
+            "title": "Sex Conducteur1",
+            "description": "Sex of the primary driver."
+          },
+          "sex_conducteur2": {
+            "type": "string",
+            "title": "Sex Conducteur2",
+            "description": "Sex of the secondary driver."
+          },
+          "anciennete_permis1": {
+            "type": "integer",
+            "title": "Anciennete Permis1",
+            "description": "Driving licence seniority for driver 1."
+          },
+          "anciennete_permis2": {
+            "type": "integer",
+            "title": "Anciennete Permis2",
+            "description": "Driving licence seniority for driver 2."
+          },
+          "anciennete_vehicule": {
+            "$ref": "#/components/schemas/NumericValue",
+            "description": "Vehicle age."
+          },
+          "cylindre_vehicule": {
+            "type": "integer",
+            "title": "Cylindre Vehicule",
+            "description": "Vehicle engine displacement."
+          },
+          "din_vehicule": {
+            "type": "integer",
+            "title": "Din Vehicule",
+            "description": "Vehicle power in DIN."
+          },
+          "essence_vehicule": {
+            "type": "string",
+            "title": "Essence Vehicule",
+            "description": "Vehicle fuel type."
+          },
+          "marque_vehicule": {
+            "type": "string",
+            "title": "Marque Vehicule",
+            "description": "Vehicle brand."
+          },
+          "modele_vehicule": {
+            "type": "string",
+            "title": "Modele Vehicule",
+            "description": "Vehicle model."
+          },
+          "debut_vente_vehicule": {
+            "type": "integer",
+            "title": "Debut Vente Vehicule",
+            "description": "Vehicle sale start indicator."
+          },
+          "fin_vente_vehicule": {
+            "type": "integer",
+            "title": "Fin Vente Vehicule",
+            "description": "Vehicle sale end indicator."
+          },
+          "vitesse_vehicule": {
+            "type": "integer",
+            "title": "Vitesse Vehicule",
+            "description": "Vehicle top speed."
+          },
+          "type_vehicule": {
+            "type": "string",
+            "title": "Type Vehicule",
+            "description": "Vehicle category."
+          },
+          "prix_vehicule": {
+            "type": "integer",
+            "title": "Prix Vehicule",
+            "description": "Vehicle price."
+          },
+          "poids_vehicule": {
+            "type": "integer",
+            "title": "Poids Vehicule",
+            "description": "Vehicle weight."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "bonus",
+          "type_contrat",
+          "duree_contrat",
+          "anciennete_info",
+          "freq_paiement",
+          "paiement",
+          "utilisation",
+          "code_postal",
+          "conducteur2",
+          "age_conducteur1",
+          "age_conducteur2",
+          "sex_conducteur1",
+          "sex_conducteur2",
+          "anciennete_permis1",
+          "anciennete_permis2",
+          "anciennete_vehicule",
+          "cylindre_vehicule",
+          "din_vehicule",
+          "essence_vehicule",
+          "marque_vehicule",
+          "modele_vehicule",
+          "debut_vente_vehicule",
+          "fin_vente_vehicule",
+          "vitesse_vehicule",
+          "type_vehicule",
+          "prix_vehicule",
+          "poids_vehicule"
+        ],
+        "title": "InsurancePricingRecord",
+        "examples": [
+          {
+            "age_conducteur1": 66,
+            "age_conducteur2": 0,
+            "anciennete_info": 1,
+            "anciennete_permis1": 34,
+            "anciennete_permis2": 0,
+            "anciennete_vehicule": 16.0,
+            "bonus": 0.58,
+            "code_postal": 28388,
+            "conducteur2": "No",
+            "cylindre_vehicule": 1239,
+            "debut_vente_vehicule": 16,
+            "din_vehicule": 55,
+            "duree_contrat": 1,
+            "essence_vehicule": "Gasoline",
+            "fin_vente_vehicule": 15,
+            "freq_paiement": "Yearly",
+            "index": 50000,
+            "marque_vehicule": "RENAULT",
+            "modele_vehicule": "CLIO",
+            "paiement": "No",
+            "poids_vehicule": 830,
+            "prix_vehicule": 10321,
+            "sex_conducteur1": "F",
+            "sex_conducteur2": "",
+            "type_contrat": "Maxi",
+            "type_vehicule": "Tourism",
+            "utilisation": "Retired",
+            "vitesse_vehicule": 150
+          }
+        ]
+      },
+      "PredictionSchemaResponse": {
+        "properties": {
+          "record_model": {
+            "type": "string",
+            "title": "Record Model",
+            "description": "Name of the single-record request model."
+          },
+          "batch_model": {
+            "type": "string",
+            "title": "Batch Model",
+            "description": "Name of the batch request model."
+          },
+          "supports_batch": {
+            "type": "boolean",
+            "title": "Supports Batch",
+            "description": "Whether batch scoring is supported by the API."
+          },
+          "required_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Required Fields",
+            "description": "Names of the required raw input fields."
+          },
+          "optional_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Optional Fields",
+            "description": "Names of the optional raw input fields."
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/PredictionFieldDescriptor"
+            },
+            "type": "array",
+            "title": "Fields",
+            "description": "Ordered description of every raw field accepted by the prediction contract."
+          }
+        },
+        "type": "object",
+        "required": [
+          "record_model",
+          "batch_model",
+          "supports_batch",
+          "required_fields",
+          "optional_fields",
+          "fields"
+        ],
+        "title": "PredictionSchemaResponse",
+        "examples": [
+          {
+            "batch_model": "InsurancePricingBatchRequest",
+            "fields": [
+              {
+                "description": "Optional correlation identifier echoed back in prediction responses.",
+                "name": "index",
+                "required": false,
+                "type": "integer | null"
+              },
+              {
+                "description": "Driver bonus-malus coefficient.",
+                "name": "bonus",
+                "required": true,
+                "type": "integer | number"
+              }
+            ],
+            "optional_fields": [
+              "index"
+            ],
+            "record_model": "InsurancePricingRecord",
+            "required_fields": [
+              "bonus",
+              "type_contrat",
+              "duree_contrat"
+            ],
+            "supports_batch": true
+          }
+        ]
+      },
+      "PrimePredictionBatchResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Identifier of the model bundle currently serving the request."
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of returned predictions."
+          },
+          "predictions": {
+            "items": {
+              "$ref": "#/components/schemas/PrimePredictionResponse"
+            },
+            "type": "array",
+            "title": "Predictions",
+            "description": "Predictions returned in the same order as the input records."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "count",
+          "predictions"
+        ],
+        "title": "PrimePredictionBatchResponse",
+        "examples": [
+          {
+            "count": 2,
+            "predictions": [
+              {
+                "frequency_prediction": 0.0835,
+                "index": 50000,
+                "prime_prediction": 201.25504,
+                "severity_prediction": 2410.24
+              },
+              {
+                "frequency_prediction": 0.0612,
+                "index": 50001,
+                "prime_prediction": 109.106232,
+                "severity_prediction": 1795.86
+              }
+            ],
+            "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none"
+          }
+        ]
+      },
+      "PrimePredictionResponse": {
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index",
+            "description": "Input correlation identifier, returned when it was provided by the caller."
+          },
+          "frequency_prediction": {
+            "type": "number",
+            "title": "Frequency Prediction",
+            "description": "Predicted claim frequency component."
+          },
+          "severity_prediction": {
+            "type": "number",
+            "title": "Severity Prediction",
+            "description": "Predicted claim severity component."
+          },
+          "prime_prediction": {
+            "type": "number",
+            "title": "Prime Prediction",
+            "description": "Final premium prediction computed as calibrated frequency x severity."
+          }
+        },
+        "type": "object",
+        "required": [
+          "frequency_prediction",
+          "severity_prediction",
+          "prime_prediction"
+        ],
+        "title": "PrimePredictionResponse",
+        "examples": [
+          {
+            "frequency_prediction": 0.0835,
+            "index": 50000,
+            "prime_prediction": 201.25504,
+            "severity_prediction": 2410.24
+          }
+        ]
+      },
+      "QuoteListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of quotes returned for the current client."
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteSummaryResponse"
+            },
+            "type": "array",
+            "title": "Quotes",
+            "description": "Quote history ordered from the most recent to the oldest quote."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "quotes"
+        ],
+        "title": "QuoteListResponse",
+        "examples": [
+          {
+            "count": 1,
+            "quotes": [
+              {
+                "created_at_utc": "2026-03-23T10:15:00+00:00",
+                "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
+                "index": 50000,
+                "marque_vehicule": "RENAULT",
+                "modele_vehicule": "CLIO",
+                "prime_prediction": 201.25504,
+                "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
+                "type_contrat": "Maxi"
+              }
+            ]
+          }
+        ]
+      },
+      "QuoteResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Identifier of the persisted quote."
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At Utc",
+            "description": "UTC timestamp at which the quote was created."
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Model bundle identifier used to compute the quote."
+          },
+          "input_payload": {
+            "$ref": "#/components/schemas/PredictionInput",
+            "description": "Original input payload used for the quote."
+          },
+          "result": {
+            "$ref": "#/components/schemas/QuoteResultResponse",
+            "description": "Prediction outputs returned for the quote."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at_utc",
+          "run_id",
+          "input_payload",
+          "result"
+        ],
+        "title": "QuoteResponse",
+        "examples": [
+          {
+            "created_at_utc": "2026-03-23T10:15:00+00:00",
+            "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
+            "input_payload": {
+              "age_conducteur1": 66,
+              "age_conducteur2": 0,
+              "anciennete_info": 1,
+              "anciennete_permis1": 34,
+              "anciennete_permis2": 0,
+              "anciennete_vehicule": 16.0,
+              "bonus": 0.58,
+              "code_postal": 28388,
+              "conducteur2": "No",
+              "cylindre_vehicule": 1239,
+              "debut_vente_vehicule": 16,
+              "din_vehicule": 55,
+              "duree_contrat": 1,
+              "essence_vehicule": "Gasoline",
+              "fin_vente_vehicule": 15,
+              "freq_paiement": "Yearly",
+              "index": 50000,
+              "marque_vehicule": "RENAULT",
+              "modele_vehicule": "CLIO",
+              "paiement": "No",
+              "poids_vehicule": 830,
+              "prix_vehicule": 10321,
+              "sex_conducteur1": "F",
+              "sex_conducteur2": "",
+              "type_contrat": "Maxi",
+              "type_vehicule": "Tourism",
+              "utilisation": "Retired",
+              "vitesse_vehicule": 150
+            },
+            "result": {
+              "frequency_prediction": 0.0835,
+              "index": 50000,
+              "prime_prediction": 201.25504,
+              "severity_prediction": 2410.24
+            },
+            "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none"
+          }
+        ]
+      },
+      "QuoteResultResponse": {
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index",
+            "description": "Input correlation identifier, returned when it was provided by the caller."
+          },
+          "frequency_prediction": {
+            "type": "number",
+            "title": "Frequency Prediction",
+            "description": "Predicted claim frequency component."
+          },
+          "severity_prediction": {
+            "type": "number",
+            "title": "Severity Prediction",
+            "description": "Predicted claim severity component."
+          },
+          "prime_prediction": {
+            "type": "number",
+            "title": "Prime Prediction",
+            "description": "Final premium prediction for the quote."
+          }
+        },
+        "type": "object",
+        "required": [
+          "frequency_prediction",
+          "severity_prediction",
+          "prime_prediction"
+        ],
+        "title": "QuoteResultResponse",
+        "examples": [
+          {
+            "frequency_prediction": 0.0835,
+            "index": 50000,
+            "prime_prediction": 201.25504,
+            "severity_prediction": 2410.24
+          }
+        ]
+      },
+      "QuoteSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Identifier of the persisted quote."
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At Utc",
+            "description": "UTC timestamp at which the quote was created."
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Model bundle identifier used to compute the quote."
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index",
+            "description": "Input correlation identifier when it was provided by the caller."
+          },
+          "type_contrat": {
+            "type": "string",
+            "title": "Type Contrat",
+            "description": "Insurance contract type."
+          },
+          "marque_vehicule": {
+            "type": "string",
+            "title": "Marque Vehicule",
+            "description": "Vehicle brand."
+          },
+          "modele_vehicule": {
+            "type": "string",
+            "title": "Modele Vehicule",
+            "description": "Vehicle model."
+          },
+          "prime_prediction": {
+            "type": "number",
+            "title": "Prime Prediction",
+            "description": "Final premium prediction for the quote."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at_utc",
+          "run_id",
+          "type_contrat",
+          "marque_vehicule",
+          "modele_vehicule",
+          "prime_prediction"
+        ],
+        "title": "QuoteSummaryResponse",
+        "examples": [
+          {
+            "created_at_utc": "2026-03-23T10:15:00+00:00",
+            "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
+            "index": 50000,
+            "marque_vehicule": "RENAULT",
+            "modele_vehicule": "CLIO",
+            "prime_prediction": 201.25504,
+            "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
+            "type_contrat": "Maxi"
+          }
+        ]
+      },
+      "SeverityPredictionBatchResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Identifier of the model bundle currently serving the request."
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of returned predictions."
+          },
+          "predictions": {
+            "items": {
+              "$ref": "#/components/schemas/SeverityPredictionResponse"
+            },
+            "type": "array",
+            "title": "Predictions",
+            "description": "Predictions returned in the same order as the input records."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "count",
+          "predictions"
+        ],
+        "title": "SeverityPredictionBatchResponse",
+        "examples": [
+          {
+            "count": 2,
+            "predictions": [
+              {
+                "index": 50000,
+                "severity_prediction": 2410.24
+              },
+              {
+                "index": 50001,
+                "severity_prediction": 1795.86
+              }
+            ],
+            "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none"
+          }
+        ]
+      },
+      "SeverityPredictionResponse": {
+        "properties": {
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index",
+            "description": "Input correlation identifier, returned when it was provided by the caller."
+          },
+          "severity_prediction": {
+            "type": "number",
+            "title": "Severity Prediction",
+            "description": "Predicted expected severity conditional on a claim."
+          }
+        },
+        "type": "object",
+        "required": [
+          "severity_prediction"
+        ],
+        "title": "SeverityPredictionResponse",
+        "examples": [
+          {
+            "index": 50000,
+            "severity_prediction": 2410.24
+          }
+        ]
+      },
+      "UserResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Identifier of the user account."
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At Utc",
+            "description": "UTC timestamp at which the user was created."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email",
+            "description": "Email address attached to the account."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "admin"
+            ],
+            "title": "Role",
+            "description": "Authorization role for the account."
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Whether the account is still active."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at_utc",
+          "email",
+          "role",
+          "is_active"
+        ],
+        "title": "UserResponse",
+        "examples": [
+          {
+            "created_at_utc": "2026-03-23T13:00:00+00:00",
+            "email": "client@nova-assurances.fr",
+            "id": "7416b54b-26a0-4e79-9c27-aea0101f8d55",
+            "is_active": true,
+            "role": "customer"
+          }
+        ]
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VersionResponse": {
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "description": "Version of the installed `insurance_pricing` package."
+          },
+          "model_run_id": {
+            "type": "string",
+            "title": "Model Run Id",
+            "description": "Identifier of the model bundle configured for this API instance."
+          }
+        },
+        "type": "object",
+        "required": [
+          "api_version",
+          "model_run_id"
+        ],
+        "title": "VersionResponse",
+        "examples": [
+          {
+            "api_version": "0.1.0",
+            "model_run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none"
+          }
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "metadata",
+      "description": "Discovery and model metadata endpoints used to identify the running API version and the currently loaded model bundle."
+    },
+    {
+      "name": "health",
+      "description": "Operational health and readiness endpoints for deployment probes."
+    },
+    {
+      "name": "predict",
+      "description": "Inference endpoints for scoring one or many insurance records with either component-level or full-premium outputs."
+    },
+    {
+      "name": "quotes",
+      "description": "Public quote workflow endpoints used by the product frontend to create and retrieve end-user quote history."
+    },
+    {
+      "name": "auth",
+      "description": "Account registration, login, logout, and session discovery."
+    },
+    {
+      "name": "admin",
+      "description": "Protected administrative endpoints for accounts and quote moderation."
+    }
+  ]
+}

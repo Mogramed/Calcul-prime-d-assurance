@@ -29,3 +29,5 @@ artifacts/**
 .DS_Store
 Thumbs.db
 .env
+web/node_modules/
+web/.next/
