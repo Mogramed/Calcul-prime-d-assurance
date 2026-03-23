@@ -1,10 +1,10 @@
 import type {
-  ApiErrorResponse,
   PredictionInput,
   QuoteListResponse,
   QuoteResponse,
 } from "@/generated/client/types.gen";
 import type {
+  ApiErrorBody,
   AdminQuoteListResponse,
   AdminUserListResponse,
   AuthCredentialsInput,
@@ -13,9 +13,9 @@ import type {
 
 export class WebApiError extends Error {
   status: number;
-  body: ApiErrorResponse | unknown;
+  body: ApiErrorBody | unknown;
 
-  constructor(message: string, status: number, body: ApiErrorResponse | unknown) {
+  constructor(message: string, status: number, body: ApiErrorBody | unknown) {
     super(message);
     this.name = "WebApiError";
     this.status = status;
@@ -27,7 +27,7 @@ type RequestOptions = RequestInit & {
   json?: unknown;
 };
 
-function friendlyErrorMessage(status: number, body: ApiErrorResponse | unknown) {
+function friendlyErrorMessage(status: number, body: ApiErrorBody | unknown) {
   if (status === 400 || status === 422) {
     return "Certaines informations doivent etre verifiees avant de continuer.";
   }
@@ -76,7 +76,7 @@ async function request<T>(path: string, options: RequestOptions = {}) {
   }
 
   const text = await response.text();
-  const body = text ? (JSON.parse(text) as ApiErrorResponse | T) : null;
+  const body = text ? (JSON.parse(text) as ApiErrorBody | T) : null;
 
   if (!response.ok) {
     throw new WebApiError(friendlyErrorMessage(response.status, body), response.status, body);

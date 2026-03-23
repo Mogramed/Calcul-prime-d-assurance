@@ -58,10 +58,11 @@ export function QuoteWorkbench() {
     defaultValues: defaultQuoteValues,
   });
 
-  const formValues = useWatch({
+  const watchedValues = useWatch({
     control: form.control,
     defaultValue: defaultQuoteValues,
   });
+  const formValues: QuoteFormValues = { ...defaultQuoteValues, ...watchedValues };
   const currentStep = quoteSteps[activeStepIndex];
   const currentStepFields = getStepFields(currentStep.id, formValues);
   const secondDriverEnabled = isSecondDriverEnabled(formValues);
