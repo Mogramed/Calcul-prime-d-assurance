@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000",
-    "codegen": "node ./scripts/run-python-from-repo-venv.mjs ../scripts/export_openapi.py openapi.json && node ./node_modules/@hey-api/openapi-ts/bin/run.js",
+    "codegen": "node ./scripts/run-python-from-repo-venv.mjs ../scripts/export_openapi.py openapi.json && openapi-ts",
     "catalog:vehicles": "node ./scripts/run-python-from-repo-venv.mjs ../scripts/export_vehicle_catalog.py",
     "build": "next build",
     "start": "next start",

@@ -61,7 +61,7 @@ export function QuoteDetailScreen() {
             <div className="space-y-3">
               <Badge className="border-white/20 bg-white/10 text-white">Recapitulatif</Badge>
               <div className="space-y-2">
-                <h1 className="font-display text-4xl tracking-tight sm:text-5xl">Votre devis en un coup d'oeil</h1>
+                <h1 className="font-display text-4xl tracking-tight sm:text-5xl">Votre devis en un coup d&rsquo;oeil</h1>
                 <p className="max-w-2xl text-sm leading-7 text-white/78 sm:text-base">
                   Retrouvez les informations transmises pour cette estimation, puis revenez au formulaire
                   si vous souhaitez ajuster votre devis.
@@ -124,7 +124,7 @@ export function QuoteDetailScreen() {
               <div className="rounded-[28px] border border-[var(--line)] bg-white/82 p-5">
                 <p className="font-semibold text-[var(--foreground)]">Rapport PDF</p>
                 <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
-                  Telechargez le rapport client de ce devis pour le conserver, l'imprimer ou le partager
+                  Telechargez le rapport client de ce devis pour le conserver, l&rsquo;imprimer ou le partager
                   librement.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-3">

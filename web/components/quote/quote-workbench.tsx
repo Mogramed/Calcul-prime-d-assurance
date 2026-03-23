@@ -16,7 +16,7 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,7 +58,10 @@ export function QuoteWorkbench() {
     defaultValues: defaultQuoteValues,
   });
 
-  const formValues = form.watch();
+  const formValues = useWatch({
+    control: form.control,
+    defaultValue: defaultQuoteValues,
+  });
   const currentStep = quoteSteps[activeStepIndex];
   const currentStepFields = getStepFields(currentStep.id, formValues);
   const secondDriverEnabled = isSecondDriverEnabled(formValues);
@@ -137,7 +140,7 @@ export function QuoteWorkbench() {
                     Obtenez une estimation claire de votre prime auto, etape par etape.
                   </h1>
                   <p className="max-w-2xl text-sm leading-7 text-white/76 sm:text-base">
-                    Nous vous guidons dans la saisie pour aller a l'essentiel, sans jargon
+                    Nous vous guidons dans la saisie pour aller a l&rsquo;essentiel, sans jargon
                     inutile. Votre estimation apparaitra des que le dossier est complet.
                   </p>
                 </div>
@@ -259,7 +262,7 @@ export function QuoteWorkbench() {
                           >
                             <option value="">
                               {isModelField && !formValues.marque_vehicule
-                                ? "Choisissez d'abord une marque"
+                                ? "Choisissez d&rsquo;abord une marque"
                                 : "Selectionnez une option"}
                             </option>
                             {options.map((option) => (
@@ -287,7 +290,7 @@ export function QuoteWorkbench() {
                     <p className="text-sm font-semibold text-[var(--foreground)]">Une estimation simple et lisible</p>
                     <p className="max-w-xl text-sm leading-7 text-[var(--muted)]">
                       {authSessionQuery.data?.authenticated
-                        ? "Chaque devis est rattache a votre compte pour le retrouver plus tard et le modifier depuis n'importe quelle machine."
+                        ? "Chaque devis est rattache a votre compte pour le retrouver plus tard et le modifier depuis n&rsquo;importe quelle machine."
                         : "Chaque devis enregistre votre saisie sur cet appareil pour que vous puissiez le retrouver plus tard et le modifier si besoin."}
                     </p>
                   </div>
@@ -346,7 +349,7 @@ export function QuoteWorkbench() {
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-[var(--line)] bg-[linear-gradient(180deg,rgba(247,240,232,0.96),rgba(255,255,255,0.74))] pb-5">
             <Badge className="w-fit">Votre estimation</Badge>
-            <h2 className="mt-2 font-display text-3xl text-[var(--foreground)]">Restez concentre sur l'essentiel</h2>
+            <h2 className="mt-2 font-display text-3xl text-[var(--foreground)]">Restez concentre sur l&rsquo;essentiel</h2>
             <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
               Nous mettons la prime estimee au premier plan, avec un recapitulatif simple de votre dossier.
             </p>
@@ -420,7 +423,7 @@ export function QuoteWorkbench() {
           <CardHeader className="pb-4">
             <h2 className="font-display text-2xl text-[var(--foreground)]">Recapitulatif rapide</h2>
             <p className="text-sm leading-7 text-[var(--muted)]">
-              Un resume de votre dossier pour suivre l'avancement sans quitter le formulaire.
+              Un resume de votre dossier pour suivre l&rsquo;avancement sans quitter le formulaire.
             </p>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-[var(--muted)]">
