@@ -81,4 +81,6 @@ def serve_api_main() -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
