@@ -16,10 +16,13 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
   INSURANCE_PRICING_RUN_ID: base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
   INSURANCE_PRICING_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@127.0.0.1:54329/insurance_pricing
   INSURANCE_PRICING_TEST_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@127.0.0.1:54329/insurance_pricing
   INSURANCE_PRICING_CONTAINER_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@host.docker.internal:54329/insurance_pricing
+  DOCKERHUB_API_IMAGE_NAME: calcul-prime-assurance
+  DOCKERHUB_WEB_IMAGE_NAME: nova-assurances-web
 
 jobs:
   quality-and-tests:
@@ -58,6 +61,33 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --all-groups --frozen
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm install
+
+      - name: Generate frontend SDK
+        working-directory: web
+        run: npm run codegen
+
+      - name: Run frontend lint
+        working-directory: web
+        run: npm run lint
+
+      - name: Run frontend typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
 
       - name: Run Ruff
         run: uv run ruff check src tests scripts
@@ -148,7 +178,7 @@ jobs:
           docker rm -f insurance-pricing-api || true
 
   publish-docker:
-    name: Publish Docker image to Docker Hub
+    name: Publish Docker images to Docker Hub
     if: github.event_name == 'push'
     needs:
       - quality-and-tests
@@ -169,29 +199,72 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Compute image tags
+      - name: Compute Docker Hub image tags
         id: image-tags
         shell: bash
         run: |
-          repo="${{ secrets.DOCKERHUB_USERNAME }}/calcul-prime-assurance"
+          api_repo="${{ secrets.DOCKERHUB_USERNAME }}/${DOCKERHUB_API_IMAGE_NAME}"
+          web_repo="${{ secrets.DOCKERHUB_USERNAME }}/${DOCKERHUB_WEB_IMAGE_NAME}"
           short_sha="${GITHUB_SHA::12}"
+          branch_tag="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | tr '/_' '--')"
 
           {
-            echo "tags<<EOF"
-            echo "$repo:sha-$short_sha"
+            echo "api_tags<<EOF"
+            echo "$api_repo:sha-$short_sha"
             if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-              echo "$repo:${GITHUB_REF#refs/tags/}"
+              echo "$api_repo:${GITHUB_REF#refs/tags/}"
+            elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+              echo "$api_repo:latest"
             else
-              echo "$repo:latest"
+              echo "$api_repo:$branch_tag"
             fi
             echo "EOF"
-          } >>"$GITHUB_OUTPUT"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
+          {
+            echo "web_tags<<EOF"
+            echo "$web_repo:sha-$short_sha"
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              echo "$web_repo:${GITHUB_REF#refs/tags/}"
+            elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+              echo "$web_repo:latest"
+            else
+              echo "$web_repo:$branch_tag"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push API image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.image-tags.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.image-tags.outputs.api_tags }}
+          cache-from: type=gha,scope=api-image
+          cache-to: type=gha,mode=max,scope=api-image
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          push: true
+          tags: ${{ steps.image-tags.outputs.web_tags }}
+          cache-from: type=gha,scope=web-image
+          cache-to: type=gha,mode=max,scope=web-image
+
+      - name: Summarize Docker Hub publication
+        shell: bash
+        run: |
+          {
+            echo "### Docker Hub Publication"
+            echo
+            echo "- API image tags:"
+            while IFS= read -r tag; do
+              [[ -n "$tag" ]] && echo "  - \`$tag\`"
+            done <<< "${{ steps.image-tags.outputs.api_tags }}"
+            echo "- Web image tags:"
+            while IFS= read -r tag; do
+              [[ -n "$tag" ]] && echo "  - \`$tag\`"
+            done <<< "${{ steps.image-tags.outputs.web_tags }}"
+          } >> "$GITHUB_STEP_SUMMARY"

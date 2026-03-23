@@ -32,6 +32,7 @@ def api_index(request: Request) -> ApiIndexResponse:
         version_url=str(request.url_for("get_version")),
         current_model_url=str(request.url_for("get_current_model")),
         prediction_schema_url=str(request.url_for("get_prediction_schema")),
+        quotes_url=str(request.url_for("list_quotes")),
     )
 
 

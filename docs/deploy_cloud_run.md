@@ -1,38 +1,35 @@
-# Deploy on Cloud Run with Neon PostgreSQL
+# Deploy Nova Assurances on Cloud Run
 
-This repository includes a dedicated GitHub Actions workflow at `.github/workflows/deploy-cloud-run.yml` for deploying the FastAPI service to Google Cloud Run while using Neon as the PostgreSQL database.
+For a GitHub-first setup with only repository variables and secrets to manage day-to-day
+configuration, see `docs/github_only_deploy.md`.
 
-This version intentionally avoids:
+This repository now targets a two-service Cloud Run architecture:
 
-1. Cloud SQL
-2. Google Secret Manager
+1. `nova-web`: public Next.js frontend
+2. `nova-api`: private FastAPI backend
+3. `insurance-pricing-migrate`: Cloud Run Job for Alembic migrations
 
-Instead, the deployment uses:
-
-1. Google Cloud Run for the API and the Alembic migration job
-2. Neon for PostgreSQL
-3. GitHub Actions variables for non-sensitive deployment config
-4. One GitHub Actions secret for the database URL
+The web service calls the private API through server-side route handlers. On Cloud Run, the web
+service obtains an identity token for the API audience and forwards quote requests server to server.
+The browser only calls the public Next.js service. Anonymous quote history is scoped through the
+`nova_client_id` cookie managed by the web service.
 
 ## Deployment model
 
 1. GitHub Actions authenticates to Google Cloud through Workload Identity Federation.
-2. The workflow builds the container image and pushes it to Artifact Registry.
-3. The workflow deploys a Cloud Run Job that runs `alembic upgrade head` against Neon.
-4. The workflow executes the migration job and waits for completion.
-5. The workflow deploys the Cloud Run service with the same image, the pinned model `run_id`, and the Neon database URL injected as an environment variable.
-
-The workflow supports two modes:
-
-1. Manual deployment with `workflow_dispatch`
-2. Automatic deployment after the `CI and Docker Publish` workflow succeeds on `main`, if the repository variable `ENABLE_CLOUD_RUN_DEPLOY` is set to `true`
+2. The workflow builds and pushes two images to Artifact Registry: API and web.
+3. The workflow deploys and executes the migration job with the API image.
+4. The workflow deploys the private FastAPI service.
+5. The workflow grants the runtime service account permission to invoke the private API.
+6. The workflow resolves the private API URL.
+7. The workflow deploys the public Next.js service with `API_BASE_URL`, `API_AUDIENCE`, and `COOKIE_SECURE=true`.
 
 ## Google Cloud resources to create
 
 Create these resources once before the first deployment:
 
 1. One Artifact Registry Docker repository
-2. One runtime service account for Cloud Run and Cloud Run Jobs
+2. One runtime service account for the API, web service, and migration job
 3. One deployer service account used by GitHub Actions through Workload Identity Federation
 
 Neon resources to create:
@@ -68,7 +65,7 @@ gcloud artifacts repositories create "${REPOSITORY}" \
   --project "${PROJECT_ID}" \
   --location "${REGION}" \
   --repository-format docker \
-  --description "Insurance Pricing API images"
+  --description "Nova Assurances images"
 ```
 
 Create service accounts:
@@ -96,8 +93,6 @@ gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
   --member "serviceAccount:${DEPLOYER_SA}" \
   --role roles/iam.serviceAccountUser
 ```
-
-The runtime service account does not need `cloudsql.client` or `secretmanager.secretAccessor` in this Neon-based setup.
 
 ## Workload Identity Federation for GitHub Actions
 
@@ -168,7 +163,8 @@ GCP_ARTIFACT_REGISTRY_LOCATION=europe-west9
 GCP_ARTIFACT_REGISTRY_REPOSITORY=insurance-pricing
 GCP_WORKLOAD_IDENTITY_PROVIDER=projects/123456789/locations/global/workloadIdentityPools/github/providers/calcul-prime-d-assurance
 GCP_DEPLOYER_SERVICE_ACCOUNT=insurance-pricing-deployer@your-gcp-project.iam.gserviceaccount.com
-CLOUD_RUN_SERVICE=insurance-pricing-api
+CLOUD_RUN_API_SERVICE=nova-api
+CLOUD_RUN_WEB_SERVICE=nova-web
 CLOUD_RUN_MIGRATION_JOB=insurance-pricing-migrate
 CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT=insurance-pricing-runtime@your-gcp-project.iam.gserviceaccount.com
 INSURANCE_PRICING_RUN_ID=base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
@@ -183,17 +179,40 @@ INSURANCE_PRICING_DATABASE_URL=postgresql+psycopg://...
 Optional tuning variables:
 
 ```text
-CLOUD_RUN_IMAGE_NAME=insurance-pricing-api
-CLOUD_RUN_CPU=1
-CLOUD_RUN_MEMORY=512Mi
-CLOUD_RUN_TIMEOUT=300
-CLOUD_RUN_CONCURRENCY=10
-CLOUD_RUN_MIN_INSTANCES=0
-CLOUD_RUN_MAX_INSTANCES=1
+CLOUD_RUN_API_IMAGE_NAME=insurance-pricing-api
+CLOUD_RUN_WEB_IMAGE_NAME=nova-assurances-web
+CLOUD_RUN_API_CPU=1
+CLOUD_RUN_API_MEMORY=512Mi
+CLOUD_RUN_API_TIMEOUT=300
+CLOUD_RUN_API_CONCURRENCY=10
+CLOUD_RUN_API_MIN_INSTANCES=0
+CLOUD_RUN_API_MAX_INSTANCES=1
+CLOUD_RUN_WEB_CPU=1
+CLOUD_RUN_WEB_MEMORY=512Mi
+CLOUD_RUN_WEB_TIMEOUT=300
+CLOUD_RUN_WEB_CONCURRENCY=10
+CLOUD_RUN_WEB_MIN_INSTANCES=0
+CLOUD_RUN_WEB_MAX_INSTANCES=2
 CLOUD_RUN_JOB_CPU=1
 CLOUD_RUN_JOB_MEMORY=512Mi
 CLOUD_RUN_JOB_TIMEOUT=600s
+INSURANCE_PRICING_ADMIN_EMAILS=admin@nova-assurances.fr
+INSURANCE_PRICING_SESSION_TTL_HOURS=720
+ENABLE_CLOUD_RUN_SMOKE_TEST=false
+CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL=admin@nova-assurances.fr
 ```
+
+Optional GitHub Actions secret for the smoke test:
+
+```text
+CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD=your-admin-password
+```
+
+## IAM note for the private API
+
+The workflow grants `roles/run.invoker` on the private API service to the runtime service account.
+This allows the public web service to call the API with an identity token obtained from the Cloud Run
+metadata server.
 
 ## Deployments
 
@@ -201,7 +220,7 @@ Manual deployment:
 
 1. Open GitHub Actions
 2. Run `Deploy to Cloud Run`
-3. Wait for the migration job and the Cloud Run service rollout to finish
+3. Wait for the migration job, API rollout, and web rollout to finish
 
 Automatic deployment:
 
@@ -209,9 +228,74 @@ Automatic deployment:
 2. Push to `main`
 3. The deployment workflow will trigger automatically after the `CI and Docker Publish` workflow succeeds
 
-## Notes
+## First admin bootstrap
 
-1. The Cloud Run workflow does not toggle public access. If you want a public service, manage the Cloud Run IAM policy separately.
-2. The runtime still expects `INSURANCE_PRICING_RUN_ID` and `INSURANCE_PRICING_DATABASE_URL`; in this setup both are injected through GitHub Actions at deploy time.
-3. The workflow defaults to `min instances = 0` and `max instances = 1` to reduce cost exposure during the Google Cloud Free Trial period.
-4. This setup is designed to minimize paid Google services, but it does not guarantee zero billing if you upgrade your Google billing account or exceed the free program limits.
+The admin console becomes available when the account email is listed in
+`INSURANCE_PRICING_ADMIN_EMAILS`.
+
+Recommended first bootstrap:
+
+1. Set `INSURANCE_PRICING_ADMIN_EMAILS=admin@nova-assurances.fr` in GitHub repository variables
+2. Deploy the stack once
+3. Open the public web URL
+4. Create the admin account from `/inscription` with the same email address
+5. Confirm that `/admin` is now visible after login
+
+If you enable the optional smoke test with `CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL`, the workflow can
+also bootstrap this admin account automatically on its first run when the email already appears in
+`INSURANCE_PRICING_ADMIN_EMAILS`.
+
+## Post-deployment smoke test
+
+The repository includes `scripts/smoke_web_app.py` to validate the public customer flow against the
+deployed web URL:
+
+```bash
+uv run --group test python scripts/smoke_web_app.py \
+  --base-url "https://nova-web-xxxxx-ew.a.run.app"
+```
+
+This checks:
+
+1. public pages load correctly
+2. account registration works
+3. quote creation reaches the private API through the Next.js BFF
+4. quote history is returned
+5. the PDF report downloads successfully
+
+To validate admin access and automatically clean up the temporary smoke user and quote, provide an
+admin account:
+
+```bash
+uv run --group test python scripts/smoke_web_app.py \
+  --base-url "https://nova-web-xxxxx-ew.a.run.app" \
+  --admin-email "admin@nova-assurances.fr" \
+  --admin-password "replace-me" \
+  --admin-register-if-missing
+```
+
+If you run the script without admin credentials, it leaves a smoke user and a smoke quote in the
+database. That is acceptable for a first validation, but for production it is cleaner to use the
+admin cleanup mode.
+
+## Go-live checklist
+
+Before opening the site to real customers, validate these points:
+
+1. Neon connection string is configured in `INSURANCE_PRICING_DATABASE_URL`
+2. `INSURANCE_PRICING_RUN_ID` points to the production model bundle
+3. `INSURANCE_PRICING_ADMIN_EMAILS` includes at least one real admin address
+4. The Cloud Run deployment workflow succeeds end to end
+5. The public web URL passes `scripts/smoke_web_app.py`
+6. The admin can sign in and access `/admin`
+7. The PDF report can be downloaded from a real customer account
+8. Domain and DNS mapping are configured if you do not want to expose the default `run.app` URL
+
+## Result
+
+At the end of the workflow:
+
+1. The web service is public and exposes the customer-facing site
+2. The API service stays private
+3. The browser only talks to the public web URL
+4. The web service forwards quote requests to the private API through server-side route handlers
