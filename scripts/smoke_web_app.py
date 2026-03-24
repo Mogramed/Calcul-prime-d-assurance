@@ -87,6 +87,26 @@ def _check_page(client: httpx.Client, path: str, *, expected_text: str) -> None:
     _log_ok(step, "page rendered")
 
 
+def _check_protected_page_redirect(
+    client: httpx.Client,
+    path: str,
+    *,
+    expected_redirect_path: str,
+    expected_text: str,
+) -> None:
+    step = f"protected page {path}"
+    response = client.get(path)
+    _expect_status(response, step=step, expected=200)
+    if response.url.path != expected_redirect_path:
+        raise _fail(
+            step,
+            f"expected final path '{expected_redirect_path}', got '{response.url.path}'.",
+        )
+    if expected_text not in response.text:
+        raise _fail(step, f"expected to find '{expected_text}' in the redirected HTML response.")
+    _log_ok(step, "authentication gate confirmed")
+
+
 def _post_json(
     client: httpx.Client,
     path: str,
@@ -340,12 +360,19 @@ def main() -> int:
             headers={"User-Agent": "nova-assurances-smoke/1.0"},
         ) as client:
             _check_page(client, "/", expected_text="Nova Assurances")
-            _check_page(client, "/devis", expected_text="Profil et formule")
+            _check_protected_page_redirect(
+                client,
+                "/devis",
+                expected_redirect_path="/connexion",
+                expected_text="Connexion a votre espace",
+            )
             artifacts = _customer_flow(
                 client,
                 email=customer_email,
                 password=args.customer_password,
             )
+            _check_page(client, "/devis", expected_text="Profil et formule")
+            _check_page(client, "/mes-devis", expected_text="Retrouvez vos derniers devis")
 
         if artifacts and args.admin_email and args.admin_password:
             _admin_cleanup(
