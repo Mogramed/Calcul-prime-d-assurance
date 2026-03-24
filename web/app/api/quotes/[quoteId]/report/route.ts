@@ -10,8 +10,16 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ quoteId: string }> },
 ) {
-  const session = await getClientSession(request);
   const authSession = await getAuthCookieSession(request);
+  if (!authSession.sessionToken) {
+    return NextResponse.json(
+      {
+        detail: "Veuillez vous connecter pour telecharger ce rapport.",
+      },
+      { status: 401 },
+    );
+  }
+  const session = await getClientSession(request);
 
   try {
     const { quoteId } = await context.params;

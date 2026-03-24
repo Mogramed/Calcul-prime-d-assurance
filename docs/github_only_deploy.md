@@ -100,6 +100,7 @@ CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD=your-admin-password
 ```
 
 L'email admin utilise ici doit deja etre present dans `INSURANCE_PRICING_ADMIN_EMAILS`.
+Le mot de passe doit etre cree dans `Actions > Secrets`, pas dans `Actions > Variables`.
 
 ## Ordre recommande
 

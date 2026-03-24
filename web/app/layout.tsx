@@ -49,16 +49,18 @@ export default async function RootLayout({
                     <Link className="rounded-full px-4 py-2 hover:bg-white/70" href="/">
                       Accueil
                     </Link>
-                    <Link className="rounded-full px-4 py-2 hover:bg-white/70" href="/devis">
-                      Devis
-                    </Link>
-                    <Link className="rounded-full px-4 py-2 hover:bg-white/70" href="/mes-devis">
-                      Mes devis
-                    </Link>
                     {currentUser ? (
-                      <Link className="rounded-full px-4 py-2 hover:bg-white/70" href="/compte">
-                        Mon compte
-                      </Link>
+                      <>
+                        <Link className="rounded-full px-4 py-2 hover:bg-white/70" href="/devis">
+                          Devis
+                        </Link>
+                        <Link className="rounded-full px-4 py-2 hover:bg-white/70" href="/mes-devis">
+                          Mes devis
+                        </Link>
+                        <Link className="rounded-full px-4 py-2 hover:bg-white/70" href="/compte">
+                          Mon compte
+                        </Link>
+                      </>
                     ) : (
                       <>
                         <Link className="rounded-full px-4 py-2 hover:bg-white/70" href="/connexion">

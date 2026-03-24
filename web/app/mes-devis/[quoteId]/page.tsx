@@ -1,5 +1,14 @@
-import { QuoteDetailScreen } from "@/components/history/quote-detail-screen";
+import { redirect } from "next/navigation";
 
-export default function QuoteDetailPage() {
+import { QuoteDetailScreen } from "@/components/history/quote-detail-screen";
+import { getCurrentSessionUser } from "@/lib/server/current-user";
+
+export default async function QuoteDetailPage() {
+  const user = await getCurrentSessionUser();
+
+  if (!user) {
+    redirect("/connexion");
+  }
+
   return <QuoteDetailScreen />;
 }

@@ -107,6 +107,21 @@ jobs:
             exit 1
           fi
 
+      - name: Validate smoke test credentials
+        if: env.ENABLE_CLOUD_RUN_SMOKE_TEST == 'true'
+        shell: bash
+        env:
+          CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL: ${{ vars.CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL }}
+          CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD: ${{ secrets.CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD }}
+        run: |
+          if [[ -n "${CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL}" && -z "${CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD}" ]]; then
+            echo "CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD is missing." >&2
+            echo "Create it in GitHub > Settings > Secrets and variables > Actions > Secrets." >&2
+            echo "This workflow reads CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL from Repository variables" >&2
+            echo "and CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD from Repository secrets." >&2
+            exit 1
+          fi
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
@@ -227,7 +242,7 @@ jobs:
           --wait
           --quiet
 
-      - name: Deploy private API service
+      - name: Deploy public API service
         shell: bash
         env:
           API_IMAGE_URI: ${{ steps.image.outputs.api_image_uri }}
@@ -247,10 +262,10 @@ jobs:
             --max-instances "${CLOUD_RUN_API_MAX_INSTANCES}" \
             --timeout "${CLOUD_RUN_API_TIMEOUT}" \
             --labels "managed-by=github-actions,commit-sha=${SHORT_SHA}" \
-            --no-allow-unauthenticated \
+            --allow-unauthenticated \
             --quiet
 
-      - name: Grant web runtime access to the private API
+      - name: Grant web runtime access to the API
         run: >
           gcloud run services add-iam-policy-binding "${CLOUD_RUN_API_SERVICE}"
           --project "${GCP_PROJECT_ID}"
@@ -371,5 +386,5 @@ jobs:
               echo "- Smoke test: disabled"
             fi
             echo
-            echo "The web service is public. The API service stays private and is invoked by the web runtime through Cloud Run IAM."
+            echo "The web service is public. The API service is public too, so Swagger and direct API access stay available on the Cloud Run URL."
           } >> "${GITHUB_STEP_SUMMARY}"
