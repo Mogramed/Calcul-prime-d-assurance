@@ -8,8 +8,16 @@ import { createUpstreamQuote, listUpstreamQuotes } from "@/lib/server/upstream-q
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const session = await getClientSession(request);
   const authSession = await getAuthCookieSession(request);
+  if (!authSession.sessionToken) {
+    return NextResponse.json(
+      {
+        detail: "Veuillez vous connecter pour acceder a vos devis.",
+      },
+      { status: 401 },
+    );
+  }
+  const session = await getClientSession(request);
 
   try {
     const quotes = await listUpstreamQuotes(session.clientId, authSession.sessionToken);
@@ -20,8 +28,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getClientSession(request);
   const authSession = await getAuthCookieSession(request);
+  if (!authSession.sessionToken) {
+    return NextResponse.json(
+      {
+        detail: "Veuillez vous connecter pour creer un devis.",
+      },
+      { status: 401 },
+    );
+  }
+  const session = await getClientSession(request);
 
   try {
     const payload = (await request.json()) as PredictionInput;
