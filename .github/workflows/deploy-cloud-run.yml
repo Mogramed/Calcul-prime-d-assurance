@@ -120,11 +120,27 @@ jobs:
           project_id: ${{ env.GCP_PROJECT_ID }}
           version: ">= 416.0.0"
 
-      - name: Verify Artifact Registry repository
-        run: >
-          gcloud artifacts repositories describe "${GCP_ARTIFACT_REGISTRY_REPOSITORY}"
-          --location "${GCP_ARTIFACT_REGISTRY_LOCATION}"
-          --project "${GCP_PROJECT_ID}"
+      - name: Ensure Artifact Registry repository exists
+        shell: bash
+        run: |
+          if gcloud artifacts repositories describe "${GCP_ARTIFACT_REGISTRY_REPOSITORY}" \
+            --location "${GCP_ARTIFACT_REGISTRY_LOCATION}" \
+            --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+            echo "Artifact Registry repository '${GCP_ARTIFACT_REGISTRY_REPOSITORY}' already exists."
+            exit 0
+          fi
+
+          echo "Artifact Registry repository '${GCP_ARTIFACT_REGISTRY_REPOSITORY}' was not found. Creating it now..."
+
+          if ! gcloud artifacts repositories create "${GCP_ARTIFACT_REGISTRY_REPOSITORY}" \
+            --location "${GCP_ARTIFACT_REGISTRY_LOCATION}" \
+            --project "${GCP_PROJECT_ID}" \
+            --repository-format docker \
+            --description "Nova Assurances images"; then
+            echo "Unable to create Artifact Registry repository '${GCP_ARTIFACT_REGISTRY_REPOSITORY}'." >&2
+            echo "For the first deployment, grant ${GCP_DEPLOYER_SERVICE_ACCOUNT} the role roles/artifactregistry.admin or create the repository manually." >&2
+            exit 1
+          fi
 
       - name: Configure Docker for Artifact Registry
         run: >

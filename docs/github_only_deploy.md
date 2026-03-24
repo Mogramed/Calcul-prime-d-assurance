@@ -11,7 +11,7 @@ Concretement:
 
 La seule limite incompressible est la suivante:
 
-1. les ressources Google Cloud doivent exister une premiere fois: projet GCP, Cloud Run, Artifact Registry, comptes de service, Workload Identity Federation
+1. les ressources Google Cloud doivent exister une premiere fois: projet GCP, Cloud Run, comptes de service, Workload Identity Federation
 2. la base Neon doit exister
 
 Une fois ce bootstrap fait, tu peux piloter le deploiement uniquement depuis GitHub.
@@ -123,10 +123,13 @@ Pour la prod Cloud Run:
 
 Il reste uniquement ces prerequis hors GitHub:
 
-1. creer une fois le projet GCP et Artifact Registry
+1. creer une fois le projet GCP
 2. creer une fois le compte de service runtime
 3. creer une fois le compte de service deployer
 4. creer une fois le provider Workload Identity Federation
 5. creer une fois le projet Neon et recuperer l'URL PostgreSQL
+
+Le repository Artifact Registry peut etre cree automatiquement par le workflow GitHub au premier
+deploiement si le compte de service deployer dispose du role `roles/artifactregistry.admin`.
 
 Apres cela, ton pilotage quotidien peut rester centre sur GitHub.

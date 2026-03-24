@@ -28,9 +28,11 @@ The browser only calls the public Next.js service. Anonymous quote history is sc
 
 Create these resources once before the first deployment:
 
-1. One Artifact Registry Docker repository
-2. One runtime service account for the API, web service, and migration job
-3. One deployer service account used by GitHub Actions through Workload Identity Federation
+1. One runtime service account for the API, web service, and migration job
+2. One deployer service account used by GitHub Actions through Workload Identity Federation
+
+Artifact Registry can now be bootstrapped automatically by the deployment workflow on the first run,
+as long as the deployer service account has permission to create repositories.
 
 Neon resources to create:
 
@@ -58,7 +60,7 @@ gcloud services enable \
   iamcredentials.googleapis.com
 ```
 
-Create Artifact Registry:
+Create Artifact Registry manually if you do not want the workflow to bootstrap it:
 
 ```bash
 gcloud artifacts repositories create "${REPOSITORY}" \
@@ -87,12 +89,16 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
 
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --member "serviceAccount:${DEPLOYER_SA}" \
-  --role roles/artifactregistry.writer
+  --role roles/artifactregistry.admin
 
 gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
   --member "serviceAccount:${DEPLOYER_SA}" \
   --role roles/iam.serviceAccountUser
 ```
+
+If you prefer to create Artifact Registry manually and keep narrower permissions, you can replace
+`roles/artifactregistry.admin` with `roles/artifactregistry.writer` after the repository already
+exists.
 
 ## Workload Identity Federation for GitHub Actions
 
