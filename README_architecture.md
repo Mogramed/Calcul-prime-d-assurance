@@ -22,6 +22,7 @@ Code canonique actif:
 9. `src/insurance_pricing/runtime/`
 10. `src/insurance_pricing/workflows.py`
 11. `src/insurance_pricing/api/`
+12. `web/`
 
 Archive historique:
 
@@ -38,6 +39,7 @@ Archive historique:
 6. Persistence/export DS: `src/insurance_pricing/runtime/`
 7. Facade Python stable: `src/insurance_pricing/workflows.py`
 8. Couche HTTP FastAPI: `src/insurance_pricing/api/`
+9. Frontend produit Next.js: `web/`
 
 ## API publique
 
@@ -55,9 +57,59 @@ Archive historique:
 
 ## Checks recommandes
 
-1. `uv sync --group api --group train --group test`
+1. `uv sync --group api --group train --group test --group lint`
 2. `uv run pytest -q`
-3. `uv run insurance-pricing-api --help`
+3. `uv run ruff check src tests scripts`
+4. `uv run mypy`
+5. `uv run insurance-pricing-api --help`
+6. `cd web && npm install`
+7. `cd web && npm run codegen`
+8. `cd web && npm run typecheck && npm run build`
+
+## Typage statique
+
+1. Le gate mypy strict couvre tout `src/insurance_pricing`.
+2. Les seules tolerances restantes dans `pyproject.toml` concernent des dependances externes non typees.
+3. La commande `uv run mypy` est donc un vrai gate repo-wide sur le package applicatif.
+
+## Logging et PostgreSQL API
+
+1. Le logging API est structure en JSON sur stdout.
+2. Les predictions et erreurs API sont persistees en PostgreSQL.
+3. `GET /health` reste une liveness probe.
+4. `GET /ready` valide le modele charge et la connectivite PostgreSQL.
+5. En Docker, l'image embarque aussi une copie de secours de `artifacts/models` pour les postes Windows ou Docker Desktop monte un bind volume vide.
+
+## Workflow local DB/API
+
+1. Demarrer PostgreSQL:
+`docker compose up -d postgres`
+2. Appliquer les migrations:
+`docker compose run --rm migrate`
+3. Lancer les tests d'integration:
+`set INSURANCE_PRICING_TEST_DATABASE_URL=postgresql+psycopg://insurance_pricing:insurance_pricing@127.0.0.1:54329/insurance_pricing`
+`uv run pytest -q -m integration`
+4. Lancer l'API en local hors Docker:
+`uv run insurance-pricing-api --host 127.0.0.1 --port 8000`
+5. Lancer l'API via compose:
+`docker compose up api`
+6. Si Docker Desktop monte un dossier `artifacts/` vide sur Windows, definir `INSURANCE_PRICING_ARTIFACTS_DIR` dans `.env` vers un chemin partage par Docker.
+7. Lancer le frontend Next.js en local:
+`cd web`
+`npm install`
+`npm run codegen`
+`npm run catalog:vehicles`
+`npm run dev`
+8. Lancer la preview full-stack via compose:
+`docker compose up --build api web`
+
+## Deploiement Cloud Run
+
+1. Le repo contient un workflow GitHub Actions dedie au deploiement Cloud Run: `.github/workflows/deploy-cloud-run.yml`.
+2. Le detail du bootstrap GCP, de Workload Identity Federation, des variables GitHub et du branchement Neon est documente dans `docs/deploy_cloud_run.md`.
+3. Une checklist simplifiee orientee `Repository variables` et `Repository secrets` GitHub est disponible dans `docs/github_only_deploy.md`.
+4. Un smoke test post-deploiement est disponible:
+`uv run --group test python scripts/smoke_web_app.py --base-url https://nova-web-xxxxx-ew.a.run.app`
 
 ## Correction encoding notebook
 

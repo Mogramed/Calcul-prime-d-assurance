@@ -1,24 +1,31 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 
 from insurance_pricing import analytics as ds
 from insurance_pricing import training as v2
+from insurance_pricing._typing import BoolArray, FloatArray, SplitIndices, as_float_array
 
 from . import dualtrack_impl as w23
 from . import gap_diagnosis_impl as w22
 from .common import (
     rmse as _rmse,
+)
+from .common import (
     safe_float as _safe_float,
+)
+from .common import (
     safe_read_csv as _safe_read_csv,
+)
+from .common import (
     safe_read_parquet as _safe_read_parquet,
 )
-
 
 ARTIFACT_V24_DIR = Path("artifacts") / "v2_4_tail_recovery"
 EPS = 1e-9
@@ -29,7 +36,7 @@ def ensure_v24_dir(root: str | Path = ".") -> Path:
     return v2.ensure_dir(Path(root) / ARTIFACT_V24_DIR)
 
 
-def _rmse_subset(y_true: np.ndarray, y_pred: np.ndarray, mask: np.ndarray) -> float:
+def _rmse_subset(y_true: FloatArray, y_pred: FloatArray, mask: BoolArray) -> float:
     m = np.asarray(mask, dtype=bool)
     if not np.any(m):
         return float("nan")
@@ -58,7 +65,14 @@ def _drop_array_cols_for_csv(df: pd.DataFrame) -> pd.DataFrame:
         s = df[c]
         if s.dtype == "object":
             try:
-                sample = next((x for x in s.tolist() if x is not None and not (isinstance(x, float) and np.isnan(x))), None)
+                sample = next(
+                    (
+                        x
+                        for x in s.tolist()
+                        if x is not None and not (isinstance(x, float) and np.isnan(x))
+                    ),
+                    None,
+                )
             except Exception:
                 sample = None
             if isinstance(sample, (np.ndarray, list, tuple, dict)):
@@ -82,19 +96,31 @@ def load_tail_recovery_context(root: str | Path = ".") -> dict[str, Any]:
     ctx["artifact_v24"] = out_dir
 
     a_v23 = root / "artifacts" / "v2_3_dualtrack_quick"
-    ctx["v23_overfit_summary"] = json.loads((a_v23 / "overfit_ood_queue_summary.json").read_text(encoding="utf-8")) if (a_v23 / "overfit_ood_queue_summary.json").exists() else {}
+    ctx["v23_overfit_summary"] = (
+        json.loads((a_v23 / "overfit_ood_queue_summary.json").read_text(encoding="utf-8"))
+        if (a_v23 / "overfit_ood_queue_summary.json").exists()
+        else {}
+    )
     ctx["v23_overfit_diag"] = _safe_read_csv(a_v23 / "overfit_ood_queue_diagnosis.csv")
     ctx["v23_scale_sweep"] = _safe_read_csv(a_v23 / "direct_tweedie_scale_sweep.csv")
     ctx["v23_blend_sweep"] = _safe_read_csv(a_v23 / "direct_tweedie_blend_sweep.csv")
     ctx["v23_direct_registry"] = _safe_read_csv(a_v23 / "direct_tweedie_cv_registry.csv")
     ctx["v23_oof_compare_bridge"] = _safe_read_parquet(a_v23 / "oof_compare_bridge.parquet")
     ctx["v23_submission_robust"] = _safe_read_csv(a_v23 / "submission_v2_3_robust.csv")
-    ctx["v23_submission_lb_challenger"] = _safe_read_csv(a_v23 / "submission_v2_3_lb_challenger.csv")
-    ctx["v23_decision_md"] = (a_v23 / "submission_decision_v2_3_dualtrack.md").read_text(encoding="utf-8") if (a_v23 / "submission_decision_v2_3_dualtrack.md").exists() else ""
+    ctx["v23_submission_lb_challenger"] = _safe_read_csv(
+        a_v23 / "submission_v2_3_lb_challenger.csv"
+    )
+    ctx["v23_decision_md"] = (
+        (a_v23 / "submission_decision_v2_3_dualtrack.md").read_text(encoding="utf-8")
+        if (a_v23 / "submission_decision_v2_3_dualtrack.md").exists()
+        else ""
+    )
     return ctx
 
 
-def _extract_run_row_from_v2(ctx: Mapping[str, Any], run_id: str, split: str = "primary_time") -> Optional[dict[str, Any]]:
+def _extract_run_row_from_v2(
+    ctx: Mapping[str, Any], run_id: str, split: str = "primary_time"
+) -> dict[str, Any] | None:
     rr = pd.DataFrame(ctx.get("v2_run_registry", pd.DataFrame()))
     if rr.empty:
         return None
@@ -103,7 +129,7 @@ def _extract_run_row_from_v2(ctx: Mapping[str, Any], run_id: str, split: str = "
 
 def extract_base_run_predictions(
     ctx: Mapping[str, Any],
-    run_id: Optional[str] = None,
+    run_id: str | None = None,
     split: str = "primary_time",
 ) -> dict[str, Any]:
     v2_sel = pd.DataFrame(ctx.get("v2_selected", pd.DataFrame()))
@@ -112,10 +138,21 @@ def extract_base_run_predictions(
             run_id = str(v2_sel.iloc[0]["run_id"])
         else:
             rr = pd.DataFrame(ctx.get("v2_run_registry", pd.DataFrame()))
-            best = rr[(rr.get("level", "run").astype(str) == "run") & (rr.get("split", split).astype(str) == split)].sort_values("rmse_prime").head(1)
+            best = (
+                rr[
+                    (rr.get("level", "run").astype(str) == "run")
+                    & (rr.get("split", split).astype(str) == split)
+                ]
+                .sort_values("rmse_prime")
+                .head(1)
+            )
             if best.empty:
                 raise ValueError("No base V2 run found in artifacts.")
-            run_id = str(best.iloc[0]["run_id"]) if "run_id" in best.columns else str(v2.make_run_id(best.iloc[[0]]).iloc[0])
+            run_id = (
+                str(best.iloc[0]["run_id"])
+                if "run_id" in best.columns
+                else str(v2.make_run_id(best.iloc[[0]]).iloc[0])
+            )
 
     v2_oof = _ensure_run_id(pd.DataFrame(ctx.get("v2_oof", pd.DataFrame())))
     if v2_oof.empty:
@@ -137,7 +174,9 @@ def extract_base_run_predictions(
 
     ds_diag = {}
     try:
-        ds_diag = ds.compute_oof_model_diagnostics(v2_oof, run_id=str(run_id), split=split, decile_mode="zero_aware")
+        ds_diag = ds.compute_oof_model_diagnostics(
+            v2_oof, run_id=str(run_id), split=split, decile_mode="zero_aware"
+        )
     except Exception:
         ds_diag = {}
 
@@ -158,12 +197,14 @@ def fit_tail_rank_scaler(
     lambda_: float,
     gamma_: float,
     on: str = "pred_sev",
-) -> dict:
+) -> dict[str, Any]:
     d = oof_df.copy()
     col = str(on)
     if col not in d.columns or "y_sev" not in d.columns:
         return {"kind": "identity", "reason": "missing_columns"}
-    pos = (pd.to_numeric(d["y_sev"], errors="coerce") > 0) & pd.to_numeric(d[col], errors="coerce").notna()
+    pos = (pd.to_numeric(d["y_sev"], errors="coerce") > 0) & pd.to_numeric(
+        d[col], errors="coerce"
+    ).notna()
     x = pd.to_numeric(d.loc[pos, col], errors="coerce").to_numpy(dtype=float)
     x = x[np.isfinite(x) & (x >= 0)]
     if len(x) < 50:
@@ -184,19 +225,19 @@ def fit_tail_rank_scaler(
 
 
 def apply_tail_rank_scaler(
-    pred: np.ndarray,
+    pred: FloatArray,
     *,
-    rank_ref: np.ndarray,
+    rank_ref: FloatArray,
     params: Mapping[str, Any],
-) -> np.ndarray:
+) -> FloatArray:
     p = np.asarray(pred, dtype=float)
     p = np.maximum(np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     if str(params.get("kind", "identity")) != "tail_rank_scaler":
-        return p
+        return as_float_array(p)
     ref = np.sort(np.asarray(rank_ref, dtype=float))
     ref = ref[np.isfinite(ref) & (ref >= 0)]
     if len(ref) == 0:
-        return p
+        return as_float_array(p)
     thr_q = float(params.get("threshold_q", 0.95))
     lam = float(params.get("lambda", 0.0))
     gam = float(params.get("gamma", 1.0))
@@ -204,17 +245,17 @@ def apply_tail_rank_scaler(
     z = np.clip((rank - thr_q) / max(1.0 - thr_q, 1e-9), 0.0, 1.0)
     mult = 1.0 + lam * np.power(z, gam)
     out = np.maximum(p * mult, 0.0)
-    return out
+    return as_float_array(out)
 
 
 def fit_tail_mapper_thresholded(
-    oof_pred_pos: np.ndarray,
-    y_pos: np.ndarray,
+    oof_pred_pos: FloatArray,
+    y_pos: FloatArray,
     *,
     threshold_q: float,
     mode: str = "piecewise_monotone",
     min_samples_tail: int = 150,
-) -> dict:
+) -> dict[str, Any]:
     x = np.asarray(oof_pred_pos, dtype=float)
     y = np.asarray(y_pos, dtype=float)
     mask = np.isfinite(x) & np.isfinite(y) & (x >= 0) & (y >= 0)
@@ -226,11 +267,21 @@ def fit_tail_mapper_thresholded(
     x_thr = float(np.quantile(x, thr_q))
     tail = x >= x_thr
     if int(np.sum(tail)) < int(min_samples_tail):
-        return {"kind": "identity", "reason": "insufficient_tail_samples", "threshold_q": thr_q, "x_threshold": x_thr}
+        return {
+            "kind": "identity",
+            "reason": "insufficient_tail_samples",
+            "threshold_q": thr_q,
+            "x_threshold": x_thr,
+        }
 
     base_mapper = v2.fit_tail_mapper_safe(x[tail], y[tail], min_samples=min_samples_tail)
     if str(base_mapper.get("kind", "identity")) == "identity":
-        return {"kind": "identity", "reason": "base_mapper_identity", "threshold_q": thr_q, "x_threshold": x_thr}
+        return {
+            "kind": "identity",
+            "reason": "base_mapper_identity",
+            "threshold_q": thr_q,
+            "x_threshold": x_thr,
+        }
 
     mapped_thr = float(v2.apply_tail_mapper_safe(base_mapper, np.array([x_thr], dtype=float))[0])
     return {
@@ -244,23 +295,23 @@ def fit_tail_mapper_thresholded(
     }
 
 
-def apply_tail_mapper_thresholded(pred_pos: np.ndarray, mapper: Mapping[str, Any]) -> np.ndarray:
+def apply_tail_mapper_thresholded(pred_pos: FloatArray, mapper: Mapping[str, Any]) -> FloatArray:
     p = np.asarray(pred_pos, dtype=float)
     p = np.maximum(np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     if str(mapper.get("kind", "identity")) != "tail_mapper_thresholded":
-        return p
+        return as_float_array(p)
     x_thr = float(mapper.get("x_threshold", 0.0))
     mapped_thr = float(mapper.get("mapped_threshold", x_thr))
     base_mapper = mapper.get("base_mapper", {"kind": "identity"})
     out = p.copy()
     hi = p > x_thr
     if not np.any(hi):
-        return out
+        return as_float_array(out)
     raw_hi = v2.apply_tail_mapper_safe(base_mapper, p[hi])
     # Anchor continuity at threshold and enforce no reduction above threshold.
     adj_hi = x_thr + np.maximum(raw_hi - mapped_thr, 0.0)
     out[hi] = np.maximum(adj_hi, p[hi])
-    return np.maximum(out, 0.0)
+    return as_float_array(np.maximum(out, 0.0))
 
 
 def _apply_tail_transform_to_pred_df(
@@ -289,7 +340,12 @@ def _apply_tail_transform_to_pred_df(
         sev_new = sev.copy()
 
     if "pred_freq" in d.columns and d["pred_freq"].notna().any():
-        pf = pd.to_numeric(d["pred_freq"], errors="coerce").fillna(0.0).clip(lower=0.0, upper=1.0).to_numpy(dtype=float)
+        pf = (
+            pd.to_numeric(d["pred_freq"], errors="coerce")
+            .fillna(0.0)
+            .clip(lower=0.0, upper=1.0)
+            .to_numpy(dtype=float)
+        )
         prime_new = np.maximum(pf * sev_new, 0.0)
     else:
         prime_new = np.maximum(sev_new, 0.0)
@@ -330,7 +386,9 @@ def _score_one_split_candidate(
     d["run_id"] = run_id_tmp
     d["split"] = split
 
-    diag = ds.compute_oof_model_diagnostics(d, run_id=run_id_tmp, split=split, decile_mode="zero_aware")
+    diag = ds.compute_oof_model_diagnostics(
+        d, run_id=run_id_tmp, split=split, decile_mode="zero_aware"
+    )
     m = diag.get("metrics", pd.DataFrame())
     if not m.empty:
         row = m.iloc[0]
@@ -366,7 +424,12 @@ def score_tail_candidate_multi_split(
 ) -> dict[str, Any]:
     d = pred_df_all_splits.copy()
     if d.empty:
-        return {"registry_rows": pd.DataFrame(), "pred_df": pd.DataFrame(), "dist_df": pd.DataFrame(), "params": dict(transform_params)}
+        return {
+            "registry_rows": pd.DataFrame(),
+            "pred_df": pd.DataFrame(),
+            "dist_df": pd.DataFrame(),
+            "params": dict(transform_params),
+        }
 
     scored_pred = _apply_tail_transform_to_pred_df(
         d,
@@ -388,7 +451,11 @@ def score_tail_candidate_multi_split(
         split_rows.append(srow)
 
     split_df = pd.DataFrame(split_rows)
-    dist_df = v2.build_prediction_distribution_table(scored_pred) if not scored_pred.empty else pd.DataFrame()
+    dist_df = (
+        v2.build_prediction_distribution_table(scored_pred)
+        if not scored_pred.empty
+        else pd.DataFrame()
+    )
 
     agg = {
         "candidate_id": candidate_id,
@@ -417,10 +484,20 @@ def score_tail_candidate_multi_split(
         rmse_sec = _safe_float(piv["rmse_prime"].get("secondary_group"))
         rmse_aux = _safe_float(piv["rmse_prime"].get("aux_blocked5"))
         agg["rmse_prime"] = rmse_primary
-        agg["rmse_gap_secondary"] = rmse_sec - rmse_primary if np.isfinite(rmse_sec) and np.isfinite(rmse_primary) else np.nan
-        agg["rmse_gap_aux"] = rmse_aux - rmse_primary if np.isfinite(rmse_aux) and np.isfinite(rmse_primary) else np.nan
+        agg["rmse_gap_secondary"] = (
+            rmse_sec - rmse_primary
+            if np.isfinite(rmse_sec) and np.isfinite(rmse_primary)
+            else np.nan
+        )
+        agg["rmse_gap_aux"] = (
+            rmse_aux - rmse_primary
+            if np.isfinite(rmse_aux) and np.isfinite(rmse_primary)
+            else np.nan
+        )
         rmses = np.asarray([rmse_primary, rmse_sec, rmse_aux], dtype=float)
-        agg["rmse_split_std"] = float(np.nanstd(rmses, ddof=0)) if np.sum(np.isfinite(rmses)) >= 2 else np.nan
+        agg["rmse_split_std"] = (
+            float(np.nanstd(rmses, ddof=0)) if np.sum(np.isfinite(rmses)) >= 2 else np.nan
+        )
         agg["rmse_prime_top1pct"] = _safe_float(piv["rmse_prime_top1pct"].get("primary_time"))
         agg["q95_ratio_pos"] = _safe_float(piv["q95_ratio_pos"].get("primary_time"))
         agg["q99_ratio_pos"] = _safe_float(piv["q99_ratio_pos"].get("primary_time"))
@@ -429,9 +506,13 @@ def score_tail_candidate_multi_split(
 
     if not dist_df.empty:
         # Use primary_time alignment as main reference
-        align = w22.compute_distribution_alignment_from_dist(dist_df, run_id=str(candidate_id), split="primary_time")
-        agg.update({k: align.get(k) for k in align.keys()})
-        agg["distribution_alignment_penalty"] = _safe_float(align.get("distribution_alignment_penalty"))
+        align = w22.compute_distribution_alignment_from_dist(
+            dist_df, run_id=str(candidate_id), split="primary_time"
+        )
+        agg.update({k: align.get(k) for k in align})
+        agg["distribution_alignment_penalty"] = _safe_float(
+            align.get("distribution_alignment_penalty")
+        )
 
     q99 = _safe_float(agg.get("q99_ratio_pos"))
     tail_under_penalty = 15.0 * max(0.0, 0.45 - q99) if np.isfinite(q99) else 15.0
@@ -444,15 +525,27 @@ def score_tail_candidate_multi_split(
         base_rmse = 1e9
     agg["tail_undercoverage_flag"] = int(np.isfinite(q99) and q99 < 0.10)
     agg["tail_overcorrection_flag"] = int(np.isfinite(q99) and q99 > 0.85)
-    agg["selection_score_tail"] = float(base_rmse + 0.5 * gap_sec_pos + 0.5 * gap_aux_pos + tail_under_penalty + tail_over_penalty + (align_pen if np.isfinite(align_pen) else 0.0))
+    agg["selection_score_tail"] = float(
+        base_rmse
+        + 0.5 * gap_sec_pos
+        + 0.5 * gap_aux_pos
+        + tail_under_penalty
+        + tail_over_penalty
+        + (align_pen if np.isfinite(align_pen) else 0.0)
+    )
 
     registry_rows = split_df.copy()
     for c, v in agg.items():
-        if c not in ["pred_df_candidate"] and c not in registry_rows.columns:
-            if c in {"candidate_id", "base_run_id", "candidate_family", "selection_status"}:
-                registry_rows[c] = v
+        if (
+            c != "pred_df_candidate"
+            and c not in registry_rows.columns
+            and c in {"candidate_id", "base_run_id", "candidate_family", "selection_status"}
+        ):
+            registry_rows[c] = v
     multi_row = {k: v for k, v in agg.items() if k != "pred_df_candidate"}
-    registry_rows = pd.concat([registry_rows, pd.DataFrame([multi_row])], ignore_index=True, sort=False)
+    registry_rows = pd.concat(
+        [registry_rows, pd.DataFrame([multi_row])], ignore_index=True, sort=False
+    )
     return {
         "registry_rows": registry_rows,
         "pred_df": scored_pred,
@@ -462,10 +555,21 @@ def score_tail_candidate_multi_split(
     }
 
 
-def _load_train_test_and_feature_sets(ctx: Mapping[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, v2.DatasetBundle], dict[str, dict[int, tuple[np.ndarray, np.ndarray]]]]:
+def _load_train_test_and_feature_sets(
+    ctx: Mapping[str, Any],
+) -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    dict[str, v2.DatasetBundle],
+    dict[str, dict[int, SplitIndices]],
+]:
     train_raw, test_raw = v2.load_train_test(Path(ctx.get("data_dir", Path(".") / "data")))
-    feature_sets = v2.prepare_feature_sets(train_raw, test_raw, rare_min_count=30, drop_identifiers=True)
-    splits = v2.build_split_registry(train_raw, n_blocks_time=5, n_splits_group=5, group_col="id_client")
+    feature_sets = v2.prepare_feature_sets(
+        train_raw, test_raw, rare_min_count=30, drop_identifiers=True
+    )
+    splits = v2.build_split_registry(
+        train_raw, n_blocks_time=5, n_splits_group=5, group_col="id_client"
+    )
     return train_raw, test_raw, feature_sets, splits
 
 
@@ -474,9 +578,9 @@ def fit_severity_weighted_tail_variant(
     *,
     base_run_row: Mapping[str, Any],
     seed: int = 42,
-    feature_set_override: Optional[str] = None,
-    sev_params_override: Optional[Mapping[str, Any]] = None,
-    out_dir: Optional[str | Path] = None,
+    feature_set_override: str | None = None,
+    sev_params_override: Mapping[str, Any] | None = None,
+    out_dir: str | Path | None = None,
 ) -> pd.DataFrame:
     # Phase B wrapper: rerun the same base spec but force severity_mode='weighted_tail'
     train_raw, test_raw, feature_sets, splits = _load_train_test_and_feature_sets(ctx)
@@ -495,9 +599,19 @@ def fit_severity_weighted_tail_variant(
     )
     if sev_params_override:
         spec["sev_params"] = {**dict(spec.get("sev_params", {})), **dict(sev_params_override)}
-    fold_df, run_df, pred_df = v2.run_benchmark(spec=spec, bundle=feature_sets, splits=splits, seed=seed)
-    dist_df = v2.build_prediction_distribution_table(pred_df) if not pred_df.empty else pd.DataFrame()
-    scored_df = w22.score_quick_runs(run_df, pred_df, dist_df, seed=seed, n_sim_shakeup=0, run_shakeup=False) if not run_df.empty else pd.DataFrame()
+    fold_df, run_df, pred_df = v2.run_benchmark(
+        spec=spec, bundle=feature_sets, splits=splits, seed=seed
+    )
+    dist_df = (
+        v2.build_prediction_distribution_table(pred_df) if not pred_df.empty else pd.DataFrame()
+    )
+    scored_df = (
+        w22.score_quick_runs(
+            run_df, pred_df, dist_df, seed=seed, n_sim_shakeup=0, run_shakeup=False
+        )
+        if not run_df.empty
+        else pd.DataFrame()
+    )
     if scored_df.empty:
         return pd.DataFrame()
     scored_df = scored_df.copy()
@@ -506,11 +620,17 @@ def fit_severity_weighted_tail_variant(
     scored_df["candidate_id"] = "sev_retrain_weighted_tail"
     scored_df["split"] = "multi"
     scored_df["rmse_prime"] = pd.to_numeric(scored_df.get("rmse_primary_time"), errors="coerce")
-    scored_df["rmse_prime_top1pct"] = pd.to_numeric(scored_df.get("rmse_prime_top1pct"), errors="coerce")
-    scored_df["selection_score_tail"] = pd.to_numeric(scored_df.get("selection_score_quick"), errors="coerce")
+    scored_df["rmse_prime_top1pct"] = pd.to_numeric(
+        scored_df.get("rmse_prime_top1pct"), errors="coerce"
+    )
+    scored_df["selection_score_tail"] = pd.to_numeric(
+        scored_df.get("selection_score_quick"), errors="coerce"
+    )
     if out_dir is not None:
         out = v2.ensure_dir(out_dir)
-        _drop_array_cols_for_csv(scored_df).to_csv(out / "weighted_tail_variant_registry.csv", index=False)
+        _drop_array_cols_for_csv(scored_df).to_csv(
+            out / "weighted_tail_variant_registry.csv", index=False
+        )
         if not pred_df.empty:
             pred_df.to_parquet(out / "weighted_tail_variant_oof_predictions.parquet", index=False)
     return scored_df
@@ -524,14 +644,18 @@ def build_tail_pareto_front(candidates_df: pd.DataFrame) -> pd.DataFrame:
         d = d[d["split"].astype(str) == "multi"].copy()
     if d.empty:
         return pd.DataFrame()
-    d["pareto_tail_distance"] = (pd.to_numeric(d.get("q99_ratio_pos", np.nan), errors="coerce") - 0.60).abs()
+    d["pareto_tail_distance"] = (
+        pd.to_numeric(d.get("q99_ratio_pos", np.nan), errors="coerce") - 0.60
+    ).abs()
     for c in ["rmse_prime", "rmse_split_std", "rmse_prime_top1pct", "pareto_tail_distance"]:
         if c not in d.columns:
             d[c] = np.nan
     d = d[pd.to_numeric(d["rmse_prime"], errors="coerce").notna()].copy()
     if d.empty:
         return pd.DataFrame()
-    vals = d[["rmse_prime", "rmse_split_std", "rmse_prime_top1pct", "pareto_tail_distance"]].to_numpy(dtype=float)
+    vals = d[
+        ["rmse_prime", "rmse_split_std", "rmse_prime_top1pct", "pareto_tail_distance"]
+    ].to_numpy(dtype=float)
     finite_fill = np.nanmax(np.where(np.isfinite(vals), vals, np.nan), axis=0)
     finite_fill = np.where(np.isfinite(finite_fill), finite_fill, 1e9)
     vals = np.where(np.isfinite(vals), vals, finite_fill + 1.0)
@@ -544,7 +668,9 @@ def build_tail_pareto_front(candidates_df: pd.DataFrame) -> pd.DataFrame:
         if np.any(dominated):
             keep[i] = False
     out = d.loc[keep].copy()
-    out = out.sort_values(["rmse_prime", "pareto_tail_distance", "rmse_split_std"], na_position="last").reset_index(drop=True)
+    out = out.sort_values(
+        ["rmse_prime", "pareto_tail_distance", "rmse_split_std"], na_position="last"
+    ).reset_index(drop=True)
     return out
 
 
@@ -563,10 +689,18 @@ def select_tail_recovery_submissions(
     if "selection_score_tail" not in d.columns:
         # Backfill a simple balanced-tail score
         q99 = pd.to_numeric(d.get("q99_ratio_pos", np.nan), errors="coerce")
-        rmse_primary = pd.to_numeric(d.get("rmse_prime", d.get("rmse_primary_time", np.nan)), errors="coerce")
-        gap_sec = np.maximum(pd.to_numeric(d.get("rmse_gap_secondary", np.nan), errors="coerce").fillna(0.0), 0.0)
-        gap_aux = np.maximum(pd.to_numeric(d.get("rmse_gap_aux", np.nan), errors="coerce").fillna(0.0), 0.0)
-        dist_pen = pd.to_numeric(d.get("distribution_alignment_penalty", np.nan), errors="coerce").fillna(0.0)
+        rmse_primary = pd.to_numeric(
+            d.get("rmse_prime", d.get("rmse_primary_time", np.nan)), errors="coerce"
+        )
+        gap_sec = np.maximum(
+            pd.to_numeric(d.get("rmse_gap_secondary", np.nan), errors="coerce").fillna(0.0), 0.0
+        )
+        gap_aux = np.maximum(
+            pd.to_numeric(d.get("rmse_gap_aux", np.nan), errors="coerce").fillna(0.0), 0.0
+        )
+        dist_pen = pd.to_numeric(
+            d.get("distribution_alignment_penalty", np.nan), errors="coerce"
+        ).fillna(0.0)
         d["selection_score_tail"] = (
             rmse_primary.fillna(1e9)
             + 0.5 * gap_sec
@@ -582,20 +716,37 @@ def select_tail_recovery_submissions(
     d["passes_guardrails"] = (
         (pd.to_numeric(d.get("rmse_gap_secondary", np.nan), errors="coerce").fillna(0.0) <= 1.0)
         & (pd.to_numeric(d.get("rmse_gap_aux", np.nan), errors="coerce").fillna(0.0) <= 1.0)
-        & (pd.to_numeric(d.get("distribution_alignment_penalty", np.nan), errors="coerce").fillna(0.0) < 5.0)
+        & (
+            pd.to_numeric(d.get("distribution_alignment_penalty", np.nan), errors="coerce").fillna(
+                0.0
+            )
+            < 5.0
+        )
         & (pd.to_numeric(d.get("tail_overcorrection_flag", 0), errors="coerce").fillna(0.0) <= 0)
         & (q99.fillna(0.0) >= 0.10)
     )
 
     robust_pool = d[d["passes_guardrails"]].copy()
     if robust_pool.empty:
-        robust_pool = d.sort_values(["selection_score_tail", "rmse_prime"], na_position="last").head(1).copy()
-    robust_row = robust_pool.sort_values(["selection_score_tail", "rmse_prime"], na_position="last").iloc[0].to_dict() if not robust_pool.empty else None
+        robust_pool = (
+            d.sort_values(["selection_score_tail", "rmse_prime"], na_position="last").head(1).copy()
+        )
+    robust_row = (
+        robust_pool.sort_values(["selection_score_tail", "rmse_prime"], na_position="last")
+        .iloc[0]
+        .to_dict()
+        if not robust_pool.empty
+        else None
+    )
 
     challenger_pool = d.copy()
     # Prefer candidates with stronger tail than base but without overcorrection.
-    challenger_pool["tail_strength_rank"] = -(pd.to_numeric(challenger_pool.get("q99_ratio_pos", np.nan), errors="coerce").fillna(0.0))
-    challenger_pool = challenger_pool.sort_values(["tail_strength_rank", "rmse_prime", "selection_score_tail"], na_position="last")
+    challenger_pool["tail_strength_rank"] = -(
+        pd.to_numeric(challenger_pool.get("q99_ratio_pos", np.nan), errors="coerce").fillna(0.0)
+    )
+    challenger_pool = challenger_pool.sort_values(
+        ["tail_strength_rank", "rmse_prime", "selection_score_tail"], na_position="last"
+    )
     challenger_row = challenger_pool.iloc[0].to_dict() if not challenger_pool.empty else None
 
     rows = []
@@ -604,7 +755,10 @@ def select_tail_recovery_submissions(
         robust_row["selection_status"] = "selected_robust"
         robust_row["risk_tag"] = "robust"
         rows.append(robust_row)
-    if challenger_row is not None and (robust_row is None or str(challenger_row.get("candidate_id")) != str(robust_row.get("candidate_id"))):
+    if challenger_row is not None and (
+        robust_row is None
+        or str(challenger_row.get("candidate_id")) != str(robust_row.get("candidate_id"))
+    ):
         challenger_row["role"] = "lb_challenger"
         challenger_row["selection_status"] = "selected_challenger"
         challenger_row["risk_tag"] = "public_private_risk"
@@ -630,7 +784,10 @@ def _fit_base_fulltrain_components(
     tail_mapper_name = str(r.get("tail_mapper", "none"))
     spec = w22.build_spec_from_row(r, cfg_lookup=cfg_lookup, te_cols=te_cols)
     bundle = feature_sets[fs_name]
-    out = v2.fit_full_predict_fulltrain(spec=spec, bundle=bundle, seed=seed, complexity={})
+    out = cast(
+        dict[str, FloatArray],
+        v2.fit_full_predict_fulltrain(spec=spec, bundle=bundle, seed=seed, complexity={}),
+    )
     test_freq = out["test_freq"].copy()
     test_sev = out["test_sev"].copy()
 
@@ -654,16 +811,24 @@ def _fit_base_fulltrain_components(
     if tail_mapper_name != "none" and family != "direct_tweedie" and len(oo):
         pos = (oo["y_freq"] == 1) & oo["pred_sev"].notna() & oo["y_sev"].notna()
         if int(pos.sum()) >= 80:
-            mapper = v2.fit_tail_mapper_safe(oo.loc[pos, "pred_sev"].to_numpy(), oo.loc[pos, "y_sev"].to_numpy())
+            mapper = v2.fit_tail_mapper_safe(
+                oo.loc[pos, "pred_sev"].to_numpy(), oo.loc[pos, "y_sev"].to_numpy()
+            )
             sev_before = test_sev.copy()
             test_sev = v2.apply_tail_mapper_safe(mapper, test_sev)
-            std_ratio = float(np.std(test_sev) / max(np.std(sev_before), 1e-9))
+            std_test = float(np.asarray(test_sev, dtype=float).std())
+            std_before = float(np.asarray(sev_before, dtype=float).std())
+            std_ratio = std_test / max(std_before, 1e-9)
             q99_oof = float(np.nanquantile(oo.loc[pos, "pred_sev"].to_numpy(), 0.99))
             q99_test = float(np.nanquantile(test_sev, 0.99))
             if (std_ratio < 0.70) or (q99_test < 0.60 * q99_oof):
                 test_sev = sev_before
 
-    pred = np.maximum(out["test_prime"], 0.0) if family == "direct_tweedie" else np.maximum(test_freq * test_sev, 0.0)
+    pred = (
+        np.maximum(out["test_prime"], 0.0)
+        if family == "direct_tweedie"
+        else np.maximum(test_freq * test_sev, 0.0)
+    )
     sub = v2.build_submission(test_raw["index"], pred)
     return {
         "run_id": run_id,
@@ -677,12 +842,12 @@ def _fit_base_fulltrain_components(
 
 
 def _apply_candidate_transform_to_test_components(
-    test_freq: np.ndarray,
-    test_sev: np.ndarray,
+    test_freq: FloatArray,
+    test_sev: FloatArray,
     *,
     candidate_row: Mapping[str, Any],
     transform_store: Mapping[str, Mapping[str, Any]],
-) -> np.ndarray:
+) -> FloatArray:
     cid = str(candidate_row.get("candidate_id"))
     payload = transform_store.get(cid, {})
     kind = str(payload.get("transform_kind", "identity"))
@@ -694,11 +859,15 @@ def _apply_candidate_transform_to_test_components(
     elif kind == "tail_mapper_thresholded":
         sev = apply_tail_mapper_thresholded(sev, params)
     pred = np.maximum(np.asarray(test_freq, dtype=float) * sev, 0.0)
-    return pred
+    return as_float_array(pred)
 
 
-def _save_submission_from_pred(index_values: pd.Series | np.ndarray, pred: np.ndarray, path: str | Path) -> Path:
-    sub = v2.build_submission(pd.Series(index_values), np.maximum(np.asarray(pred, dtype=float), 0.0))
+def _save_submission_from_pred(
+    index_values: pd.Series | FloatArray, pred: FloatArray, path: str | Path
+) -> Path:
+    sub = v2.build_submission(
+        pd.Series(index_values), np.maximum(np.asarray(pred, dtype=float), 0.0)
+    )
     p = Path(path)
     v2.ensure_dir(p.parent)
     sub.to_csv(p, index=False)
@@ -719,24 +888,55 @@ def write_tail_decision_report(
     lines.append("")
     lines.append("## 1) Contexte")
     lines.append(f"- Base run V2 (ancre robuste): `{base_info.get('base_run_id')}`")
-    lines.append("- Objectif: corriger la queue (q95/q99) sans casser RMSE global ni la stabilité inter-splits.")
+    lines.append(
+        "- Objectif: corriger la queue (q95/q99) sans casser RMSE global ni la stabilité inter-splits."
+    )
     lines.append("")
     lines.append("## 2) Résumé candidats")
     if candidates_df is not None and not candidates_df.empty:
         d = candidates_df.copy()
         if "split" in d.columns:
             d = d[d["split"].astype(str) == "multi"]
-        cols = [c for c in ["candidate_id", "candidate_family", "rmse_prime", "rmse_gap_secondary", "rmse_gap_aux", "q95_ratio_pos", "q99_ratio_pos", "rmse_prime_top1pct", "selection_score_tail"] if c in d.columns]
+        cols = [
+            c
+            for c in [
+                "candidate_id",
+                "candidate_family",
+                "rmse_prime",
+                "rmse_gap_secondary",
+                "rmse_gap_aux",
+                "q95_ratio_pos",
+                "q99_ratio_pos",
+                "rmse_prime_top1pct",
+                "selection_score_tail",
+            ]
+            if c in d.columns
+        ]
         if not d.empty and cols:
             lines.append("")
-            lines.append(d[cols].sort_values(["selection_score_tail", "rmse_prime"], na_position="last").to_markdown(index=False))
+            lines.append(
+                d[cols]
+                .sort_values(["selection_score_tail", "rmse_prime"], na_position="last")
+                .to_markdown(index=False)
+            )
             lines.append("")
     else:
         lines.append("- Aucun candidat évalué")
         lines.append("")
     lines.append("## 3) Front Pareto")
     if pareto_df is not None and not pareto_df.empty:
-        cols = [c for c in ["candidate_id", "candidate_family", "rmse_prime", "q99_ratio_pos", "rmse_split_std", "rmse_prime_top1pct"] if c in pareto_df.columns]
+        cols = [
+            c
+            for c in [
+                "candidate_id",
+                "candidate_family",
+                "rmse_prime",
+                "q99_ratio_pos",
+                "rmse_split_std",
+                "rmse_prime_top1pct",
+            ]
+            if c in pareto_df.columns
+        ]
         lines.append("")
         lines.append(pareto_df[cols].to_markdown(index=False))
         lines.append("")
@@ -745,7 +945,19 @@ def write_tail_decision_report(
         lines.append("")
     lines.append("## 4) Sélection finale")
     if selected_df is not None and not selected_df.empty:
-        cols = [c for c in ["role", "candidate_id", "candidate_family", "risk_tag", "rmse_prime", "q99_ratio_pos", "selection_score_tail"] if c in selected_df.columns]
+        cols = [
+            c
+            for c in [
+                "role",
+                "candidate_id",
+                "candidate_family",
+                "risk_tag",
+                "rmse_prime",
+                "q99_ratio_pos",
+                "selection_score_tail",
+            ]
+            if c in selected_df.columns
+        ]
         lines.append("")
         lines.append(selected_df[cols].to_markdown(index=False))
         lines.append("")
@@ -754,7 +966,9 @@ def write_tail_decision_report(
         lines.append("")
     lines.append("## 5) Rappel méthode")
     lines.append("- Pas de scaling global seul pour corriger la queue.")
-    lines.append("- Priorité aux corrections tail-only au-dessus d'un seuil, avec garde-fous RMSE + stabilité.")
+    lines.append(
+        "- Priorité aux corrections tail-only au-dessus d'un seuil, avec garde-fous RMSE + stabilité."
+    )
     lines.append("- Overfitting CV non conclu sans preuve inter-splits.")
     lines.append("")
     path = out / "submission_decision_v2_4_tail.md"
@@ -785,8 +999,20 @@ def materialize_tail_recovery_submissions(
         pred_base = np.maximum(np.asarray(base_payload["test_prime"], dtype=float), 0.0)
         p = _save_submission_from_pred(test_index, pred_base, out / "submission_v2_4_robust.csv")
         submission_paths["robust"] = p
-        pred_audits.append({"role": "robust", **v2.compute_prediction_distribution_audit(pred_base, run_id="v2_4_fallback_base", split="test", sample="test")})
-        return {"base_payload": base_payload, "submission_paths": submission_paths, "pred_audits": pd.DataFrame(pred_audits), "generated_rows": pd.DataFrame(generated_rows)}
+        pred_audits.append(
+            {
+                "role": "robust",
+                **v2.compute_prediction_distribution_audit(
+                    pred_base, run_id="v2_4_fallback_base", split="test", sample="test"
+                ),
+            }
+        )
+        return {
+            "base_payload": base_payload,
+            "submission_paths": submission_paths,
+            "pred_audits": pd.DataFrame(pred_audits),
+            "generated_rows": pd.DataFrame(generated_rows),
+        }
 
     for _, row in selected_df.iterrows():
         role = str(row.get("role"))
@@ -805,8 +1031,25 @@ def materialize_tail_recovery_submissions(
             fname = f"submission_{role}.csv"
         path = _save_submission_from_pred(test_index, pred, out / fname)
         submission_paths[role] = path
-        pred_audits.append({"role": role, "candidate_id": cid, **v2.compute_prediction_distribution_audit(pred, run_id=cid, split="test", sample="test")})
-        generated_rows.append({"role": role, "candidate_id": cid, "file": str(path), "n": int(len(pred)), "pred_mean": float(np.mean(pred)), "pred_q99": float(np.quantile(pred, 0.99))})
+        pred_audits.append(
+            {
+                "role": role,
+                "candidate_id": cid,
+                **v2.compute_prediction_distribution_audit(
+                    pred, run_id=cid, split="test", sample="test"
+                ),
+            }
+        )
+        generated_rows.append(
+            {
+                "role": role,
+                "candidate_id": cid,
+                "file": str(path),
+                "n": int(len(pred)),
+                "pred_mean": float(np.mean(pred)),
+                "pred_q99": float(np.quantile(pred, 0.99)),
+            }
+        )
 
     pred_audits_df = pd.DataFrame(pred_audits)
     if not pred_audits_df.empty:
@@ -819,7 +1062,7 @@ def materialize_tail_recovery_submissions(
     }
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return dict(_train_run(config_path))

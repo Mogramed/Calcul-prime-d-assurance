@@ -1,6 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
-from insurance_pricing.api.dependencies import get_prediction_service
+from insurance_pricing.api.audit import AuditStore
+from insurance_pricing.api.dependencies import (
+    get_audit_store,
+    get_prediction_service,
+    get_quote_store,
+)
+from insurance_pricing.api.quote_store import QuoteStore
 from insurance_pricing.api.schemas import HealthResponse
 from insurance_pricing.api.service import PredictionService
 
@@ -39,5 +45,13 @@ def health(service: PredictionService = Depends(get_prediction_service)) -> Heal
     name="readiness_check",
     response_description="Readiness status of the API instance.",
 )
-def ready(service: PredictionService = Depends(get_prediction_service)) -> HealthResponse:
+async def ready(
+    service: PredictionService = Depends(get_prediction_service),
+    audit_store: AuditStore = Depends(get_audit_store),
+    quote_store: QuoteStore = Depends(get_quote_store),
+) -> HealthResponse:
+    if not await audit_store.check_ready():
+        raise HTTPException(status_code=503, detail="Database is not ready.")
+    if not await quote_store.check_ready():
+        raise HTTPException(status_code=503, detail="Quote storage is not ready.")
     return _build_health_response(service)

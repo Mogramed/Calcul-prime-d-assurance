@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -27,10 +27,11 @@ def build_feature_frame_for_inference(
     return out
 
 
-def build_feature_schema(feature_cols: Sequence[str], cat_cols: Sequence[str]) -> dict:
+def build_feature_schema(
+    feature_cols: Sequence[str], cat_cols: Sequence[str]
+) -> dict[str, list[str]]:
     return {
         "feature_cols": list(feature_cols),
         "cat_cols": list(cat_cols),
         "num_cols": [c for c in feature_cols if c not in set(cat_cols)],
     }
-

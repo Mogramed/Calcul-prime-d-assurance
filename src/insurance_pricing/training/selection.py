@@ -1,45 +1,60 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Sequence
+from collections.abc import Mapping
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
+from insurance_pricing._typing import FloatArray, as_float_array
 from insurance_pricing.evaluation.metrics import rmse
 from insurance_pricing.evaluation.run_id import make_run_id_from_df
 
-def optimize_non_negative_weights(pred_matrix: np.ndarray, y_true: np.ndarray) -> np.ndarray:
-    p = np.asarray(pred_matrix, dtype=float)
-    y = np.asarray(y_true, dtype=float)
+
+def _policy_float(policy: Mapping[str, Any], key: str, default: float) -> float:
+    value = policy.get(key, default)
+    return default if value is None else float(value)
+
+
+def _policy_int(policy: Mapping[str, Any], key: str, default: int) -> int:
+    value = policy.get(key, default)
+    return default if value is None else int(value)
+
+
+def optimize_non_negative_weights(pred_matrix: FloatArray, y_true: FloatArray) -> FloatArray:
+    p = as_float_array(pred_matrix)
+    y = as_float_array(y_true)
     n_models = p.shape[1]
-    x0 = np.full(n_models, 1.0 / n_models)
+    x0 = as_float_array(np.full(n_models, 1.0 / n_models))
     bounds = [(0.0, 1.0)] * n_models
     constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
 
-    def objective(w: np.ndarray) -> float:
-        return rmse(y, p @ w)
+    def objective(w: FloatArray) -> float:
+        return float(rmse(y, as_float_array(p @ w)))
 
     r = minimize(objective, x0=x0, bounds=bounds, constraints=constraints)
     if not r.success:
         return x0
-    w = np.clip(r.x, 0.0, 1.0)
+    w = as_float_array(np.clip(r.x, 0.0, 1.0))
     s = w.sum()
-    return x0 if s <= 0 else w / s
+    return x0 if s <= 0 else as_float_array(w / s)
+
 
 def pick_top_configs(
     run_registry: pd.DataFrame,
     *,
     split_name: str = "primary_time",
     top_k_per_engine: int = 2,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     rr = run_registry.copy()
     rr = rr[(rr["level"] == "run") & (rr["split"] == split_name)]
     rr = rr.sort_values(["engine", "rmse_prime", "brier_freq"])
-    out: Dict[str, List[str]] = {}
+    out: dict[str, list[str]] = {}
     for engine, g in rr.groupby("engine"):
         out[engine] = g["config_id"].drop_duplicates().head(top_k_per_engine).tolist()
     return out
+
 
 def select_final_models(
     run_registry: pd.DataFrame,
@@ -47,6 +62,7 @@ def select_final_models(
     *,
     return_report: bool = False,
 ) -> pd.DataFrame:
+    policy: dict[str, Any]
     if isinstance(risk_policy, str):
         rp = risk_policy.lower()
         if rp == "stability_private":
@@ -117,7 +133,9 @@ def select_final_models(
         return pd.DataFrame()
 
     piv_rmse = rr.pivot_table(index="run_id", columns="split", values="rmse_prime", aggfunc="mean")
-    piv_q99 = rr.pivot_table(index="run_id", columns="split", values="q99_ratio_pos", aggfunc="mean")
+    piv_q99 = rr.pivot_table(
+        index="run_id", columns="split", values="q99_ratio_pos", aggfunc="mean"
+    )
     meta_cols_all = [
         "feature_set",
         "engine",
@@ -168,7 +186,12 @@ def select_final_models(
     if out["rmse_gap_aux"].isna().all():
         out["rmse_gap_aux"] = out["rmse_aux_blocked5"] - out["rmse_primary_time"]
 
-    split_weights = dict(policy.get("split_weights", {}))
+    split_weights_value = policy.get("split_weights", {})
+    split_weights = (
+        dict(cast(Mapping[str, float], split_weights_value))
+        if isinstance(split_weights_value, Mapping)
+        else {}
+    )
     if not split_weights:
         split_weights = {"primary_time": 1.0}
     w_primary = float(split_weights.get("primary_time", 0.0))
@@ -189,36 +212,36 @@ def select_final_models(
     out["rmse_split_std"] = out[
         ["rmse_primary_time", "rmse_secondary_group", "rmse_aux_blocked5"]
     ].std(axis=1, ddof=0)
-    out["gap_penalty"] = (
-        np.maximum(out["rmse_gap_secondary"].fillna(0.0), 0.0)
-        + np.maximum(out["rmse_gap_aux"].fillna(0.0), 0.0)
+    out["gap_penalty"] = np.maximum(out["rmse_gap_secondary"].fillna(0.0), 0.0) + np.maximum(
+        out["rmse_gap_aux"].fillna(0.0), 0.0
     )
     out["tail_penalty"] = (1.0 - out["q99_primary_time"].fillna(0.0)).abs()
     out["selection_score"] = (
         out["rmse_weighted"].fillna(np.inf)
-        + float(policy.get("gap_penalty_weight", 1.0)) * out["gap_penalty"]
-        + float(policy.get("dispersion_penalty_weight", 0.0)) * out["rmse_split_std"].fillna(0.0)
-        + float(policy.get("tail_penalty_weight", 0.0)) * out["tail_penalty"]
-        + float(policy.get("collapse_penalty_weight", 0.0))
+        + _policy_float(policy, "gap_penalty_weight", 1.0) * out["gap_penalty"]
+        + _policy_float(policy, "dispersion_penalty_weight", 0.0)
+        * out["rmse_split_std"].fillna(0.0)
+        + _policy_float(policy, "tail_penalty_weight", 0.0) * out["tail_penalty"]
+        + _policy_float(policy, "collapse_penalty_weight", 0.0)
         * out["distribution_collapse_flag"].fillna(0.0).astype(float)
-        + float(policy.get("tail_dispersion_penalty_weight", 0.0))
+        + _policy_float(policy, "tail_dispersion_penalty_weight", 0.0)
         * out["tail_dispersion_flag"].fillna(0.0).astype(float)
     )
 
     out["accepted_secondary"] = out["rmse_gap_secondary"].fillna(0.0) <= float(
-        policy.get("max_secondary_gap", np.inf)
+        _policy_float(policy, "max_secondary_gap", float(np.inf))
     )
     out["accepted_aux"] = out["rmse_gap_aux"].fillna(0.0) <= float(
-        policy.get("max_aux_gap", np.inf)
+        _policy_float(policy, "max_aux_gap", float(np.inf))
     )
     out["accepted_tail"] = out["q99_primary_time"].fillna(0.0) >= float(
-        policy.get("min_q99_ratio", 0.0)
+        _policy_float(policy, "min_q99_ratio", 0.0)
     )
     out["accepted_collapse"] = out["distribution_collapse_flag"].fillna(0.0) <= float(
-        policy.get("max_distribution_collapse_flag", np.inf)
+        _policy_float(policy, "max_distribution_collapse_flag", float(np.inf))
     )
     out["accepted_dispersion"] = out["tail_dispersion_flag"].fillna(0.0) <= float(
-        policy.get("max_tail_dispersion_flag", np.inf)
+        _policy_float(policy, "max_tail_dispersion_flag", float(np.inf))
     )
     out["accepted"] = (
         out["accepted_secondary"]
@@ -229,7 +252,7 @@ def select_final_models(
     )
 
     def _build_reason(r: pd.Series) -> str:
-        reasons: List[str] = []
+        reasons: list[str] = []
         if not bool(r["accepted_secondary"]):
             reasons.append("secondary_gap")
         if not bool(r["accepted_aux"]):
@@ -243,15 +266,17 @@ def select_final_models(
         return "accepted" if not reasons else ",".join(reasons)
 
     out["decision_reason"] = out.apply(_build_reason, axis=1)
-    out = out.sort_values(["accepted", "selection_score"], ascending=[False, True]).reset_index(drop=True)
+    out = out.sort_values(["accepted", "selection_score"], ascending=[False, True]).reset_index(
+        drop=True
+    )
     out["rank"] = np.arange(1, len(out) + 1, dtype=int)
 
     if return_report:
         return out
 
-    sel = out[out["accepted"]].head(int(policy["max_models"]))
+    sel = out[out["accepted"]].head(_policy_int(policy, "max_models", 6))
     if sel.empty:
-        sel = out.head(int(policy["max_models"])).copy()
+        sel = out.head(_policy_int(policy, "max_models", 6)).copy()
         sel["decision_reason"] = sel["decision_reason"].astype(str) + "|fallback"
     return sel.reset_index(drop=True)
 
@@ -271,7 +296,7 @@ def select_best_run(
     if d.empty:
         raise ValueError(f"No rows for split={split}.")
     d = d.sort_values("rmse_prime", na_position="last")
-    return d.iloc[0].to_dict()
+    return dict(d.iloc[0].to_dict())
 
 
 def score_multi_split(run_df: pd.DataFrame) -> pd.DataFrame:
@@ -295,7 +320,9 @@ def score_multi_split(run_df: pd.DataFrame) -> pd.DataFrame:
         ]
         if c in d.columns
     ]
-    piv = d.pivot_table(index=keys, columns="split", values="rmse_prime", aggfunc="first").reset_index()
+    piv = d.pivot_table(
+        index=keys, columns="split", values="rmse_prime", aggfunc="first"
+    ).reset_index()
     piv["rmse_primary_time"] = pd.to_numeric(piv.get("primary_time"), errors="coerce")
     piv["rmse_secondary_group"] = pd.to_numeric(piv.get("secondary_group"), errors="coerce")
     piv["rmse_aux_blocked5"] = pd.to_numeric(piv.get("aux_blocked5"), errors="coerce")
@@ -310,4 +337,3 @@ def score_multi_split(run_df: pd.DataFrame) -> pd.DataFrame:
     ).T
     piv["rmse_split_std"] = np.nanstd(arr, axis=1)
     return piv.sort_values("rmse_primary_time", na_position="last").reset_index(drop=True)
-

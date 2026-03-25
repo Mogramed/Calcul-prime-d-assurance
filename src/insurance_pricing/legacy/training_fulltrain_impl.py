@@ -1,30 +1,37 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from insurance_pricing.data.schema import DatasetBundle, INDEX_COL
+from insurance_pricing._typing import FloatArray, IntArray, ModelKwargs
+from insurance_pricing.data.schema import INDEX_COL, DatasetBundle, OrdinalFrameEncoder
+from insurance_pricing.evaluation.metrics import make_tail_weights
 from insurance_pricing.features.target_encoding import _add_fold_target_encoding
-from insurance_pricing.legacy.engines.catboost_impl import _fit_catboost_fulltrain_v2
+from insurance_pricing.legacy.engines.catboost_impl import (
+    _fit_catboost_fulltrain_v2,
+    _severity_fallback,
+)
 from insurance_pricing.legacy.engines.lightgbm_impl import _fit_lgbm_fulltrain_v2
 from insurance_pricing.legacy.engines.xgboost_impl import _fit_xgb_fulltrain_v2
 from insurance_pricing.training.benchmark import _fit_predict_fold_v2
+
 
 def fit_full_two_part_predict(
     *,
     engine: str,
     X_train: pd.DataFrame,
-    y_freq_train: np.ndarray,
-    y_sev_train: np.ndarray,
+    y_freq_train: IntArray,
+    y_sev_train: FloatArray,
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray]:
     """Train on full train and return (test_freq_raw, test_sev)."""
     e = engine.lower()
 
@@ -32,7 +39,7 @@ def fit_full_two_part_predict(
         from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
         cat_idx = [X_train.columns.get_loc(c) for c in cat_cols]
-        fp = {
+        cat_freq_params: ModelKwargs = {
             "loss_function": "Logloss",
             "eval_metric": "Logloss",
             "iterations": 1200,
@@ -42,8 +49,8 @@ def fit_full_two_part_predict(
             "random_seed": seed,
             "verbose": False,
         }
-        fp.update(freq_params)
-        sp = {
+        cat_freq_params.update(freq_params)
+        cat_sev_params: ModelKwargs = {
             "loss_function": "RMSE",
             "eval_metric": "RMSE",
             "iterations": 1800,
@@ -53,9 +60,9 @@ def fit_full_two_part_predict(
             "random_seed": seed,
             "verbose": False,
         }
-        sp.update(sev_params)
+        cat_sev_params.update(sev_params)
 
-        clf = CatBoostClassifier(**fp)
+        clf = CatBoostClassifier(**cat_freq_params)
         clf.fit(Pool(X_train, y_freq_train, cat_features=cat_idx))
         p_te = clf.predict_proba(Pool(X_test, cat_features=cat_idx))[:, 1]
 
@@ -66,7 +73,7 @@ def fit_full_two_part_predict(
         y_pos = y_sev_train[pos]
         y_log = np.log1p(y_pos)
         w = make_tail_weights(y_pos) if severity_mode == "weighted_tail" else None
-        reg = CatBoostRegressor(**sp)
+        reg = CatBoostRegressor(**cat_sev_params)
         reg.fit(Pool(X_train.loc[pos], y_log, cat_features=cat_idx, weight=w))
         z_te = reg.predict(Pool(X_test, cat_features=cat_idx))
         z_tr = reg.predict(Pool(X_train.loc[pos], cat_features=cat_idx))
@@ -79,7 +86,9 @@ def fit_full_two_part_predict(
         if not np.isfinite(smear) or smear <= 0:
             smear = 1.0
         m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-        m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+        m_te = np.nan_to_num(
+            m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+        )
         return p_te, m_te
 
     if e in {"lightgbm", "xgboost"}:
@@ -93,7 +102,7 @@ def fit_full_two_part_predict(
         Xte = enc.transform(X_test)
 
         if e == "lightgbm":
-            fp = {
+            lgb_freq_params: ModelKwargs = {
                 "objective": "binary",
                 "n_estimators": 2000,
                 "learning_rate": 0.03,
@@ -103,7 +112,7 @@ def fit_full_two_part_predict(
                 "random_state": seed,
                 "n_jobs": -1,
             }
-            sp = {
+            lgb_sev_params: ModelKwargs = {
                 "objective": "rmse",
                 "n_estimators": 2500,
                 "learning_rate": 0.03,
@@ -113,12 +122,12 @@ def fit_full_two_part_predict(
                 "random_state": seed,
                 "n_jobs": -1,
             }
-            fp.update(freq_params)
-            sp.update(sev_params)
-            clf = LGBMClassifier(**fp)
-            reg = LGBMRegressor(**sp)
+            lgb_freq_params.update(freq_params)
+            lgb_sev_params.update(sev_params)
+            clf = LGBMClassifier(**lgb_freq_params)
+            reg = LGBMRegressor(**lgb_sev_params)
         else:
-            fp = {
+            xgb_freq_params: ModelKwargs = {
                 "objective": "binary:logistic",
                 "eval_metric": "logloss",
                 "n_estimators": 1800,
@@ -130,7 +139,7 @@ def fit_full_two_part_predict(
                 "n_jobs": -1,
                 "tree_method": "hist",
             }
-            sp = {
+            xgb_sev_params: ModelKwargs = {
                 "objective": "reg:squarederror",
                 "eval_metric": "rmse",
                 "n_estimators": 2200,
@@ -142,10 +151,10 @@ def fit_full_two_part_predict(
                 "n_jobs": -1,
                 "tree_method": "hist",
             }
-            fp.update(freq_params)
-            sp.update(sev_params)
-            clf = XGBClassifier(**fp)
-            reg = XGBRegressor(**sp)
+            xgb_freq_params.update(freq_params)
+            xgb_sev_params.update(sev_params)
+            clf = XGBClassifier(**xgb_freq_params)
+            reg = XGBRegressor(**xgb_sev_params)
 
         if e == "xgboost":
             clf.fit(Xtr, y_freq_train, verbose=False)
@@ -175,10 +184,13 @@ def fit_full_two_part_predict(
         if not np.isfinite(smear) or smear <= 0:
             smear = 1.0
         m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-        m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+        m_te = np.nan_to_num(
+            m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+        )
         return p_te, m_te
 
     raise ValueError(f"Unsupported engine: {engine}")
+
 
 def fit_full_predict(
     *,
@@ -186,7 +198,7 @@ def fit_full_predict(
     bundle: DatasetBundle,
     seed: int,
     valid_ratio: float = 0.1,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, FloatArray]:
     n = len(bundle.X_train)
     n_val = max(int(n * valid_ratio), 1000)
     order = np.argsort(bundle.train_raw[INDEX_COL].to_numpy())
@@ -240,13 +252,14 @@ def fit_full_predict(
         "test_prime": np.maximum(np.nan_to_num(prime_te, nan=0.0), 0.0),
     }
 
+
 def _apply_fulltrain_complexity(
     engine: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
     direct_params: Mapping[str, Any],
-    complexity: Optional[Mapping[str, Any]],
-) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    complexity: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     fp = dict(freq_params)
     sp = dict(sev_params)
     dp = dict(direct_params)
@@ -277,13 +290,14 @@ def _apply_fulltrain_complexity(
 
     return fp, sp, dp
 
+
 def fit_full_predict_fulltrain(
     *,
     spec: Mapping[str, Any],
     bundle: DatasetBundle,
     seed: int,
-    complexity: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, np.ndarray]:
+    complexity: Mapping[str, Any] | None = None,
+) -> dict[str, FloatArray]:
     engine = str(spec.get("engine", "catboost")).lower()
     family = str(spec.get("family", "two_part_classic")).lower()
     severity_mode = str(spec.get("severity_mode", "classic")).lower()
@@ -373,4 +387,3 @@ def fit_full_predict_fulltrain(
         "test_sev": np.maximum(np.nan_to_num(m_te, nan=0.0, posinf=0.0, neginf=0.0), 0.0),
         "test_prime": np.maximum(np.nan_to_num(prime_te, nan=0.0, posinf=0.0, neginf=0.0), 0.0),
     }
-

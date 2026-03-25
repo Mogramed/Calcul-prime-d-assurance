@@ -1,18 +1,25 @@
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 import pandas as pd
-from sklearn.metrics import average_precision_score, brier_score_loss, log_loss, mean_absolute_error, r2_score, roc_auc_score
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    log_loss,
+    mean_absolute_error,
+    r2_score,
+    roc_auc_score,
+)
 
-from .quality import _rmse
-from insurance_pricing.data.schema import TARGET_SEV_COL
+from insurance_pricing._typing import FloatArray
 from insurance_pricing.evaluation import diagnostics as v2diag
 
+from .quality import _rmse
+
+
 def compute_error_by_deciles(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
+    y_true: FloatArray,
+    y_pred: FloatArray,
     n_bins: int = 10,
     mode: str = "qcut_all",
     zero_aware: bool | None = None,
@@ -98,10 +105,11 @@ def compute_error_by_deciles(
 
     # default legacy mode
     q = max(1, min(n_bins, len(np.unique(y))))
-    if q == 1:
-        rank = pd.Series(["all"] * len(y))
-    else:
-        rank = pd.qcut(pd.Series(y), q=q, duplicates="drop")
+    rank = (
+        pd.Series(["all"] * len(y))
+        if q == 1
+        else pd.qcut(pd.Series(y), q=q, duplicates="drop")
+    )
     d = pd.DataFrame({"y_true": y, "y_pred": p, "bin": rank.astype(str)})
     out = _agg(d)
     if not out.empty:
@@ -111,7 +119,10 @@ def compute_error_by_deciles(
         out = out[cols_front + [c for c in out.columns if c not in cols_front]]
     return out
 
-def compute_calibration_table(y_true: np.ndarray, p_pred: np.ndarray, n_bins: int = 10) -> pd.DataFrame:
+
+def compute_calibration_table(
+    y_true: FloatArray, p_pred: FloatArray, n_bins: int = 10
+) -> pd.DataFrame:
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(p_pred, dtype=float)
     mask = np.isfinite(y) & np.isfinite(p)
@@ -133,6 +144,7 @@ def compute_calibration_table(y_true: np.ndarray, p_pred: np.ndarray, n_bins: in
     out["calibration_gap"] = out["p_mean"] - out["y_rate"]
     return out
 
+
 def compute_oof_model_diagnostics(
     oof_df: pd.DataFrame,
     run_id: str,
@@ -142,14 +154,27 @@ def compute_oof_model_diagnostics(
     d = oof_df.copy()
     if "run_id" not in d.columns:
         # fallback legacy
-        cols = ["feature_set", "engine", "family", "config_id", "seed", "severity_mode", "calibration", "tail_mapper"]
+        cols = [
+            "feature_set",
+            "engine",
+            "family",
+            "config_id",
+            "seed",
+            "severity_mode",
+            "calibration",
+            "tail_mapper",
+        ]
         cols = [c for c in cols if c in d.columns]
         if cols:
             rid = d[cols[0]].astype(str)
             for c in cols[1:]:
                 rid = rid + "|" + d[c].astype(str)
             d["run_id"] = rid
-    d = d[(d.get("is_test", 0) == 0) & (d["split"] == split) & (d["run_id"].astype(str) == str(run_id))].copy()
+    d = d[
+        (d.get("is_test", 0) == 0)
+        & (d["split"] == split)
+        & (d["run_id"].astype(str) == str(run_id))
+    ].copy()
     if d.empty:
         return {
             "metrics": pd.DataFrame(),
@@ -166,8 +191,14 @@ def compute_oof_model_diagnostics(
     d = d[d["y_sev"].notna() & d["pred_prime"].notna()].copy()
     y = d["y_sev"].to_numpy(dtype=float)
     pred_prime = d["pred_prime"].to_numpy(dtype=float)
-    pred_freq = d["pred_freq"].to_numpy(dtype=float) if "pred_freq" in d.columns else np.full(len(d), np.nan)
-    pred_sev = d["pred_sev"].to_numpy(dtype=float) if "pred_sev" in d.columns else np.full(len(d), np.nan)
+    pred_freq = (
+        d["pred_freq"].to_numpy(dtype=float)
+        if "pred_freq" in d.columns
+        else np.full(len(d), np.nan)
+    )
+    pred_sev = (
+        d["pred_sev"].to_numpy(dtype=float) if "pred_sev" in d.columns else np.full(len(d), np.nan)
+    )
     y_freq = d["y_freq"].to_numpy(dtype=float) if "y_freq" in d.columns else (y > 0).astype(float)
     pos = y > 0
 
@@ -180,25 +211,51 @@ def compute_oof_model_diagnostics(
         "rmse_prime": _rmse(y, pred_prime),
         "mae_prime": float(mean_absolute_error(y, pred_prime)),
         "r2_prime": float(r2_score(y, pred_prime)),
-        "auc_freq": float(roc_auc_score(y_freq, pred_freq)) if len(np.unique(y_freq)) > 1 else np.nan,
-        "gini_freq": float(2 * roc_auc_score(y_freq, pred_freq) - 1) if len(np.unique(y_freq)) > 1 else np.nan,
-        "brier_freq": float(brier_score_loss(y_freq.astype(int), np.clip(pred_freq, 0, 1))) if np.isfinite(pred_freq).any() else np.nan,
-        "logloss_freq": float(log_loss(y_freq.astype(int), np.clip(pred_freq, 1e-6, 1 - 1e-6))) if np.isfinite(pred_freq).any() and len(np.unique(y_freq)) > 1 else np.nan,
-        "pr_auc_freq": float(average_precision_score(y_freq.astype(int), pred_freq)) if len(np.unique(y_freq)) > 1 else np.nan,
-        "rmse_sev_pos": _rmse(y[pos], pred_sev[pos]) if pos.any() and np.isfinite(pred_sev[pos]).any() else np.nan,
-        "mae_sev_pos": float(mean_absolute_error(y[pos], pred_sev[pos])) if pos.any() and np.isfinite(pred_sev[pos]).any() else np.nan,
-        "q95_ratio_pos": (float(np.quantile(pred_sev[pos], 0.95)) / max(float(np.quantile(y[pos], 0.95)), 1e-9)) if pos.any() and np.isfinite(pred_sev[pos]).any() else np.nan,
-        "q99_ratio_pos": (float(np.quantile(pred_sev[pos], 0.99)) / max(float(np.quantile(y[pos], 0.99)), 1e-9)) if pos.any() and np.isfinite(pred_sev[pos]).any() else np.nan,
+        "auc_freq": float(roc_auc_score(y_freq, pred_freq))
+        if len(np.unique(y_freq)) > 1
+        else np.nan,
+        "gini_freq": float(2 * roc_auc_score(y_freq, pred_freq) - 1)
+        if len(np.unique(y_freq)) > 1
+        else np.nan,
+        "brier_freq": float(brier_score_loss(y_freq.astype(int), np.clip(pred_freq, 0, 1)))
+        if np.isfinite(pred_freq).any()
+        else np.nan,
+        "logloss_freq": float(log_loss(y_freq.astype(int), np.clip(pred_freq, 1e-6, 1 - 1e-6)))
+        if np.isfinite(pred_freq).any() and len(np.unique(y_freq)) > 1
+        else np.nan,
+        "pr_auc_freq": float(average_precision_score(y_freq.astype(int), pred_freq))
+        if len(np.unique(y_freq)) > 1
+        else np.nan,
+        "rmse_sev_pos": _rmse(y[pos], pred_sev[pos])
+        if pos.any() and np.isfinite(pred_sev[pos]).any()
+        else np.nan,
+        "mae_sev_pos": float(mean_absolute_error(y[pos], pred_sev[pos]))
+        if pos.any() and np.isfinite(pred_sev[pos]).any()
+        else np.nan,
+        "q95_ratio_pos": (
+            float(np.quantile(pred_sev[pos], 0.95)) / max(float(np.quantile(y[pos], 0.95)), 1e-9)
+        )
+        if pos.any() and np.isfinite(pred_sev[pos]).any()
+        else np.nan,
+        "q99_ratio_pos": (
+            float(np.quantile(pred_sev[pos], 0.99)) / max(float(np.quantile(y[pos], 0.99)), 1e-9)
+        )
+        if pos.any() and np.isfinite(pred_sev[pos]).any()
+        else np.nan,
     }
     if pos.any():
         metrics["mae_prime_nonzero"] = float(mean_absolute_error(y[pos], pred_prime[pos]))
-        metrics["r2_prime_nonzero"] = float(r2_score(y[pos], pred_prime[pos])) if int(np.sum(pos)) > 1 else np.nan
+        metrics["r2_prime_nonzero"] = (
+            float(r2_score(y[pos], pred_prime[pos])) if int(np.sum(pos)) > 1 else np.nan
+        )
     else:
         metrics["mae_prime_nonzero"] = np.nan
         metrics["r2_prime_nonzero"] = np.nan
     q99_true_all = float(np.quantile(y, 0.99)) if len(y) else np.nan
     mask_top1 = y >= q99_true_all if np.isfinite(q99_true_all) else np.zeros(len(y), dtype=bool)
-    metrics["rmse_prime_top1pct"] = _rmse(y[mask_top1], pred_prime[mask_top1]) if mask_top1.any() else np.nan
+    metrics["rmse_prime_top1pct"] = (
+        _rmse(y[mask_top1], pred_prime[mask_top1]) if mask_top1.any() else np.nan
+    )
     metrics_df = pd.DataFrame([metrics])
 
     residuals = d[["row_idx"]].copy() if "row_idx" in d.columns else pd.DataFrame(index=d.index)
@@ -214,43 +271,52 @@ def compute_oof_model_diagnostics(
     residuals["is_nonzero_true"] = (y > 0).astype(int)
     residuals["decile_true_zero_aware_bucket"] = None
 
-    err_true_zero_aware = compute_error_by_deciles(y_true=y, y_pred=pred_prime, n_bins=10, mode="zero_aware")
+    err_true_zero_aware = compute_error_by_deciles(
+        y_true=y, y_pred=pred_prime, n_bins=10, mode="zero_aware"
+    )
     err_true = compute_error_by_deciles(y_true=y, y_pred=pred_prime, n_bins=10, mode=decile_mode)
     err_true.insert(0, "decile_basis", "y_true")
     if not err_true_zero_aware.empty:
         err_true_zero_aware.insert(0, "decile_basis", "y_true_zero_aware")
         if {"bin", "bin_type"}.issubset(err_true_zero_aware.columns):
-            bucket_map = (
-                err_true_zero_aware[["bin", "bin_type"]]
-                .assign(bucket=lambda x: x["bin_type"].astype(str) + ":" + x["bin"].astype(str))
-            )
             # assign per-row bucket for downstream residual summaries
             y_series = pd.Series(y)
-            zero_mask_arr = (y <= 0)
+            zero_mask_arr = y <= 0
             if zero_mask_arr.any():
                 residuals.loc[zero_mask_arr, "decile_true_zero_aware_bucket"] = "zero:zero"
-            pos_mask_arr = (y > 0)
+            pos_mask_arr = y > 0
             if pos_mask_arr.any():
                 try:
                     y_pos_series = y_series[pos_mask_arr]
                     qpos = max(1, min(10, int(y_pos_series.nunique())))
                     if qpos == 1:
-                        pos_bins = pd.Series(["positive_decile:positive_all"] * int(np.sum(pos_mask_arr)), index=y_pos_series.index)
+                        pos_bins = pd.Series(
+                            ["positive_decile:positive_all"] * int(np.sum(pos_mask_arr)),
+                            index=y_pos_series.index,
+                        )
                     else:
-                        pos_bin_labels = pd.qcut(y_pos_series, q=qpos, duplicates="drop").astype(str)
+                        pos_bin_labels = pd.qcut(y_pos_series, q=qpos, duplicates="drop").astype(
+                            str
+                        )
                         pos_bins = "positive_decile:" + pos_bin_labels
                     residuals.loc[pos_mask_arr, "decile_true_zero_aware_bucket"] = pos_bins.values
                 except Exception:
-                    residuals.loc[pos_mask_arr, "decile_true_zero_aware_bucket"] = "positive_decile:unknown"
-    err_true_pos_only = compute_error_by_deciles(
-        y_true=y[pos], y_pred=pred_prime[pos], n_bins=10, mode="qcut_all"
-    ) if pos.any() else pd.DataFrame()
+                    residuals.loc[pos_mask_arr, "decile_true_zero_aware_bucket"] = (
+                        "positive_decile:unknown"
+                    )
+    err_true_pos_only = (
+        compute_error_by_deciles(y_true=y[pos], y_pred=pred_prime[pos], n_bins=10, mode="qcut_all")
+        if pos.any()
+        else pd.DataFrame()
+    )
     if not err_true_pos_only.empty:
         err_true_pos_only.insert(0, "decile_basis", "y_true_positive_only")
 
     # predicted deciles
     try:
-        bins_pred = pd.qcut(pd.Series(pred_prime), q=min(10, len(np.unique(pred_prime))), duplicates="drop")
+        bins_pred = pd.qcut(
+            pd.Series(pred_prime), q=min(10, len(np.unique(pred_prime))), duplicates="drop"
+        )
         tmp_pred = pd.DataFrame({"y_true": y, "y_pred": pred_prime, "bin": bins_pred.astype(str)})
         tmp_pred["err"] = tmp_pred["y_pred"] - tmp_pred["y_true"]
         tmp_pred["abs_err"] = tmp_pred["err"].abs()
@@ -318,7 +384,9 @@ def compute_oof_model_diagnostics(
                     "y_mean": float(rr["y_true"].mean()),
                     "pred_mean": float(rr["pred_prime"].mean()),
                     "mae": float(rr["abs_error"].mean()),
-                    "rmse": float(np.sqrt(np.mean(np.square(rr["residual"])))) if len(rr) else np.nan,
+                    "rmse": float(np.sqrt(np.mean(np.square(rr["residual"]))))
+                    if len(rr)
+                    else np.nan,
                     "q95_abs_error": float(rr["abs_error"].quantile(0.95)) if len(rr) else np.nan,
                     "max_abs_error": float(rr["abs_error"].max()) if len(rr) else np.nan,
                 }
@@ -336,4 +404,3 @@ def compute_oof_model_diagnostics(
         "extreme_cases_summary": extreme_cases_summary,
         "distribution": dist,
     }
-

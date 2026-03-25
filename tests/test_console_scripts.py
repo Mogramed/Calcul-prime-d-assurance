@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,8 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
     ],
 )
 def test_console_scripts_smoke_with_uv(script_name: str):
+    # On appelle directement 'uv' au lieu de 'sys.executable, "-m", "uv"'
     result = subprocess.run(
-        [sys.executable, "-m", "uv", "run", "--no-sync", script_name, "--help"],
+        ["uv", "run", "--no-sync", script_name, "--help"],
         cwd=ROOT,
         capture_output=True,
         text=True,

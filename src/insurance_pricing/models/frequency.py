@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from insurance_pricing._typing import FloatArray, IntArray, as_float_array, as_int_array
 from insurance_pricing.features.schema import build_feature_frame_for_inference
 
 
@@ -16,19 +18,19 @@ class FrequencyModel:
     cat_cols: list[str]
     engine: str = "catboost"
 
-    def predict_proba(self, raw_df: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, raw_df: pd.DataFrame) -> FloatArray:
         X = build_feature_frame_for_inference(
             raw_df,
             feature_cols=self.feature_cols,
             cat_cols=self.cat_cols,
         )
         p = self.model.predict_proba(X)[:, 1]
-        return np.clip(np.asarray(p, dtype=float), 0.0, 1.0)
+        return as_float_array(np.clip(as_float_array(p), 0.0, 1.0))
 
 
 def fit_frequency_model(
     X_train: pd.DataFrame,
-    y_freq: np.ndarray,
+    y_freq: IntArray,
     *,
     cat_cols: Sequence[str],
     engine: str = "catboost",
@@ -55,11 +57,14 @@ def fit_frequency_model(
     }
     base.update(params)
     model = CatBoostClassifier(**base)
-    model.fit(X_train, y_freq, cat_features=[X_train.columns.get_loc(c) for c in cat_cols if c in X_train.columns])
+    model.fit(
+        X_train,
+        as_int_array(y_freq),
+        cat_features=[X_train.columns.get_loc(c) for c in cat_cols if c in X_train.columns],
+    )
     return FrequencyModel(
         model=model,
         feature_cols=list(X_train.columns),
         cat_cols=[c for c in cat_cols if c in X_train.columns],
         engine="catboost",
     )
-

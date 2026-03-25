@@ -1,22 +1,22 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
-
 import numpy as np
 from sklearn.metrics import brier_score_loss, mean_absolute_error, mean_squared_error, roc_auc_score
 
+from insurance_pricing._typing import FloatArray, IntArray, as_float_array, as_int_array
 
-def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+
+def rmse(y_true: FloatArray | IntArray, y_pred: FloatArray) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 
-def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+def mae(y_true: FloatArray | IntArray, y_pred: FloatArray) -> float:
     return float(mean_absolute_error(y_true, y_pred))
 
 
-def summarize_prime_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    y = np.asarray(y_true, dtype=float)
-    p = np.asarray(y_pred, dtype=float)
+def summarize_prime_metrics(y_true: FloatArray | IntArray, y_pred: FloatArray) -> dict[str, float]:
+    y = as_float_array(y_true)
+    p = as_float_array(y_pred)
     top1_thr = float(np.quantile(y, 0.99))
     m_top = y >= top1_thr
     return {
@@ -26,39 +26,45 @@ def summarize_prime_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str,
     }
 
 
-def _safe_auc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+def _safe_auc(y_true: IntArray, y_prob: FloatArray) -> float:
     if len(np.unique(y_true)) < 2:
         return float("nan")
     return float(roc_auc_score(y_true, y_prob))
 
 
-def make_tail_weights(y_pos: np.ndarray) -> np.ndarray:
-    y = np.asarray(y_pos, dtype=float)
+def make_tail_weights(y_pos: FloatArray) -> FloatArray:
+    y = as_float_array(y_pos)
     ref = max(float(np.nanpercentile(y, 50)), 1.0)
     w = np.sqrt((y + 1.0) / (ref + 1.0))
     q90 = float(np.nanpercentile(y, 90))
     w[y >= q90] *= 1.5
-    return np.clip(w, 1.0, 8.0)
+    return as_float_array(np.clip(w, 1.0, 8.0))
 
 
 def compute_metric_row(
     *,
-    y_freq_true: np.ndarray,
-    y_sev_true: np.ndarray,
-    pred_freq: np.ndarray,
-    pred_sev: np.ndarray,
-    pred_prime: Optional[np.ndarray] = None,
-) -> Dict[str, float]:
-    pred_freq = np.nan_to_num(np.asarray(pred_freq, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
-    pred_sev = np.nan_to_num(np.asarray(pred_sev, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
-    y_freq_true = np.asarray(y_freq_true, dtype=int)
-    y_sev_true = np.asarray(y_sev_true, dtype=float)
+    y_freq_true: IntArray,
+    y_sev_true: FloatArray,
+    pred_freq: FloatArray,
+    pred_sev: FloatArray,
+    pred_prime: FloatArray | None = None,
+) -> dict[str, float]:
+    pred_freq = as_float_array(
+        np.nan_to_num(as_float_array(pred_freq), nan=0.0, posinf=0.0, neginf=0.0)
+    )
+    pred_sev = as_float_array(
+        np.nan_to_num(as_float_array(pred_sev), nan=0.0, posinf=0.0, neginf=0.0)
+    )
+    y_freq_true = as_int_array(y_freq_true)
+    y_sev_true = as_float_array(y_sev_true)
 
     if pred_prime is None:
         pred_prime = pred_freq * pred_sev
     else:
-        pred_prime = np.nan_to_num(
-            np.asarray(pred_prime, dtype=float), nan=0.0, posinf=0.0, neginf=0.0
+        pred_prime = as_float_array(
+            np.nan_to_num(
+                as_float_array(pred_prime), nan=0.0, posinf=0.0, neginf=0.0
+            )
         )
     pos = y_freq_true == 1
     q99_true = float(np.nanpercentile(y_sev_true[pos], 99)) if pos.any() else float("nan")

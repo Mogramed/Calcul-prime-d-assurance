@@ -1,31 +1,34 @@
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from insurance_pricing.data.schema import TARGET_SEV_COL
+from insurance_pricing._typing import FloatArray, IntArray
 from insurance_pricing.evaluation.metrics import make_tail_weights
 from insurance_pricing.features.target_encoding import (
     _apply_winsor,
     _smearing_inverse,
 )
 
-def _severity_fallback(y_sev_tr: np.ndarray, n_va: int, n_te: int) -> Tuple[np.ndarray, np.ndarray]:
+
+def _severity_fallback(y_sev_tr: FloatArray, n_va: int, n_te: int) -> tuple[FloatArray, FloatArray]:
     pos = np.asarray(y_sev_tr, dtype=float)
     pos = pos[pos > 0]
     base = float(np.nanmean(pos)) if len(pos) else 0.0
     return np.full(n_va, base, dtype=float), np.full(n_te, base, dtype=float)
 
+
 def _severity_fallback_v2(
-    y_sev_tr: np.ndarray,
+    y_sev_tr: FloatArray,
     n_va: int,
     n_te: int,
     *,
-    p_va: Optional[np.ndarray] = None,
-    p_te: Optional[np.ndarray] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    p_va: FloatArray | None = None,
+    p_te: FloatArray | None = None,
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
     pos = np.asarray(y_sev_tr, dtype=float)
     pos = pos[pos > 0]
     base = float(np.nanmean(pos)) if len(pos) else 0.0
@@ -39,21 +42,22 @@ def _severity_fallback_v2(
     prime_te = p_te * m_te
     return p_va, m_va, prime_va, p_te, m_te, prime_te
 
+
 def _fit_catboost(
     *,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
     cat_idx = [X_tr.columns.get_loc(c) for c in cat_cols]
@@ -107,24 +111,33 @@ def _fit_catboost(
     z_te = reg.predict(Pool(X_te, cat_features=cat_idx))
     z_tr = reg.predict(Pool(X_tr.loc[pos], cat_features=cat_idx))
     resid = y_log - z_tr
-    smear = float(np.average(np.exp(resid), weights=w)) if w is not None else float(np.mean(np.exp(resid)))
+    smear = (
+        float(np.average(np.exp(resid), weights=w))
+        if w is not None
+        else float(np.mean(np.exp(resid)))
+    )
     if not np.isfinite(smear) or smear <= 0:
         smear = 1.0
     m_va = np.maximum(smear * np.exp(z_va) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-    m_va = np.nan_to_num(m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
-    m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+    m_va = np.nan_to_num(
+        m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
+    m_te = np.nan_to_num(
+        m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
     return p_va, m_va, p_te, m_te
+
 
 def _fit_catboost_fold_v2(
     *,
     family: str,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -133,7 +146,7 @@ def _fit_catboost_fold_v2(
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
     direct_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
     from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
     cat_idx = [X_tr.columns.get_loc(c) for c in cat_cols]
@@ -251,11 +264,12 @@ def _fit_catboost_fold_v2(
     prime_te = np.maximum(p_te * m_te, 0.0)
     return p_va, m_va, prime_va, p_te, m_te, prime_te
 
+
 def _fit_catboost_fulltrain_v2(
     *,
     X_train: pd.DataFrame,
-    y_freq_train: np.ndarray,
-    y_sev_train: np.ndarray,
+    y_freq_train: IntArray,
+    y_sev_train: FloatArray,
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -265,7 +279,7 @@ def _fit_catboost_fulltrain_v2(
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
     direct_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray]:
     from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
     cat_idx = [X_train.columns.get_loc(c) for c in cat_cols]
@@ -355,4 +369,3 @@ def _fit_catboost_fulltrain_v2(
     m_te = np.maximum(np.nan_to_num(m_te, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
     prime_te = np.maximum(p_te * m_te, 0.0)
     return p_te, m_te, prime_te
-

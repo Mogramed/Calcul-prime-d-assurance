@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -10,16 +12,24 @@ from sklearn.model_selection import KFold
 
 from insurance_pricing import analytics as ds
 from insurance_pricing import training as v2
+from insurance_pricing._typing import BoolArray, FloatArray, SplitIndices
 
 from . import gap_diagnosis_impl as w22
 from .common import (
     rmse as _rmse,
+)
+from .common import (
     safe_float as _safe_float,
+)
+from .common import (
     safe_read_csv as _safe_read_csv,
+)
+from .common import (
     safe_read_json as _safe_read_json,
+)
+from .common import (
     safe_read_parquet as _safe_read_parquet,
 )
-
 
 ARTIFACT_V23_DIR = Path("artifacts") / "v2_3_dualtrack_quick"
 EPS = 1e-9
@@ -41,10 +51,10 @@ DIRECT_TWEEDIE_CAT_COLS = [
 
 
 def ensure_v23_dir(root: str | Path = ".") -> Path:
-    return v2.ensure_dir(Path(root) / ARTIFACT_V23_DIR)
+    return Path(v2.ensure_dir(Path(root) / ARTIFACT_V23_DIR))
 
 
-def _ls_alpha(y_true: np.ndarray, pred: np.ndarray) -> float:
+def _ls_alpha(y_true: FloatArray, pred: FloatArray) -> float:
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(pred, dtype=float)
     mask = np.isfinite(y) & np.isfinite(p)
@@ -61,7 +71,7 @@ def detect_submission_schema(
     test_df: pd.DataFrame,
     *,
     root: str | Path = ".",
-) -> tuple[str, str, Optional[pd.DataFrame]]:
+) -> tuple[str, str, pd.DataFrame | None]:
     root = Path(root)
     for p in [root / "sample_submission.csv", root / "data" / "sample_submission.csv"]:
         if p.exists():
@@ -89,7 +99,9 @@ def load_existing_artifacts(root: str | Path = ".") -> dict[str, object]:
     ctx["v22_quick_gap_summary"] = _safe_read_json(a_v22 / "gap_diagnosis_summary.json")
     ctx["v22_quick_gap_report"] = _safe_read_csv(a_v22 / "gap_diagnosis_report.csv")
     ctx["v22_quick_submission_robust"] = _safe_read_csv(a_v22 / "submission_v2_2_quick_robust.csv")
-    ctx["v22_quick_submission_challenger"] = _safe_read_csv(a_v22 / "submission_v2_2_quick_challenger.csv")
+    ctx["v22_quick_submission_challenger"] = _safe_read_csv(
+        a_v22 / "submission_v2_2_quick_challenger.csv"
+    )
     ctx["v22_quick_pred_dist"] = _safe_read_csv(a_v22 / "pred_distribution_audit_v2_2_quick.csv")
     ctx["v22_quick_oof"] = _safe_read_parquet(a_v22 / "quick_oof_predictions.parquet")
     ctx["v22_quick_decision_md"] = (
@@ -105,10 +117,8 @@ def _extract_run_rows(rr: pd.DataFrame, *, split: str = "primary_time") -> pd.Da
         return pd.DataFrame()
     d = rr.copy()
     if "run_id" not in d.columns:
-        try:
+        with suppress(Exception):
             d["run_id"] = v2.make_run_id(d)
-        except Exception:
-            pass
     if "level" in d.columns:
         d = d[d["level"].astype(str) == "run"]
     if "split" in d.columns and split is not None:
@@ -116,11 +126,11 @@ def _extract_run_rows(rr: pd.DataFrame, *, split: str = "primary_time") -> pd.Da
     return d
 
 
-def _best_row_by_rmse(rr: pd.DataFrame, *, split: str = "primary_time") -> Optional[dict[str, Any]]:
+def _best_row_by_rmse(rr: pd.DataFrame, *, split: str = "primary_time") -> dict[str, Any] | None:
     d = _extract_run_rows(rr, split=split)
     if d.empty or "rmse_prime" not in d.columns:
         return None
-    return d.sort_values("rmse_prime").iloc[0].to_dict()
+    return dict(d.sort_values("rmse_prime").iloc[0].to_dict())
 
 
 def _submission_stats(df: pd.DataFrame, name: str) -> dict[str, Any]:
@@ -149,7 +159,9 @@ def _submission_stats(df: pd.DataFrame, name: str) -> dict[str, Any]:
 def build_bridge_summary(ctx: Mapping[str, object], *, kaggle_public_rmse: float) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
 
-    v1_best = _best_row_by_rmse(pd.DataFrame(ctx.get("v1_run_registry", pd.DataFrame())), split="primary_time")
+    v1_best = _best_row_by_rmse(
+        pd.DataFrame(ctx.get("v1_run_registry", pd.DataFrame())), split="primary_time"
+    )
     if v1_best:
         rows.append(
             {
@@ -187,7 +199,10 @@ def build_bridge_summary(ctx: Mapping[str, object], *, kaggle_public_rmse: float
 
     v22_reg = pd.DataFrame(ctx.get("v22_quick_retrain_registry", pd.DataFrame()))
     if not v22_reg.empty and "selection_status" in v22_reg.columns:
-        for status, label in [("selected_robust", "v2_2_quick_robust"), ("selected_challenger", "v2_2_quick_challenger")]:
+        for status, label in [
+            ("selected_robust", "v2_2_quick_robust"),
+            ("selected_challenger", "v2_2_quick_challenger"),
+        ]:
             rr = v22_reg[v22_reg["selection_status"].astype(str) == status]
             if rr.empty:
                 continue
@@ -229,17 +244,29 @@ def build_bridge_summary(ctx: Mapping[str, object], *, kaggle_public_rmse: float
 
     out = pd.DataFrame(rows)
     if not out.empty:
-        out = out.sort_values(["rmse_primary_time", "model_version"], na_position="last").reset_index(drop=True)
+        out = out.sort_values(
+            ["rmse_primary_time", "model_version"], na_position="last"
+        ).reset_index(drop=True)
     return out
 
 
 def build_pred_distribution_compare(ctx: Mapping[str, object]) -> pd.DataFrame:
     rows = [
         _submission_stats(pd.DataFrame(ctx.get("v1_submission", pd.DataFrame())), "submission_v1"),
-        _submission_stats(pd.DataFrame(ctx.get("v2_submission_robust", pd.DataFrame())), "submission_v2_robust"),
-        _submission_stats(pd.DataFrame(ctx.get("v2_submission_single", pd.DataFrame())), "submission_v2_single"),
-        _submission_stats(pd.DataFrame(ctx.get("v22_quick_submission_robust", pd.DataFrame())), "submission_v2_2_quick_robust"),
-        _submission_stats(pd.DataFrame(ctx.get("v22_quick_submission_challenger", pd.DataFrame())), "submission_v2_2_quick_challenger"),
+        _submission_stats(
+            pd.DataFrame(ctx.get("v2_submission_robust", pd.DataFrame())), "submission_v2_robust"
+        ),
+        _submission_stats(
+            pd.DataFrame(ctx.get("v2_submission_single", pd.DataFrame())), "submission_v2_single"
+        ),
+        _submission_stats(
+            pd.DataFrame(ctx.get("v22_quick_submission_robust", pd.DataFrame())),
+            "submission_v2_2_quick_robust",
+        ),
+        _submission_stats(
+            pd.DataFrame(ctx.get("v22_quick_submission_challenger", pd.DataFrame())),
+            "submission_v2_2_quick_challenger",
+        ),
     ]
     return pd.DataFrame(rows)
 
@@ -248,7 +275,7 @@ def build_direct_tweedie_features(
     train: pd.DataFrame,
     test: pd.DataFrame,
     id_col: str,
-) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, list[int]]:
+) -> tuple[pd.DataFrame, pd.DataFrame, FloatArray, list[int]]:
     y = train[v2.TARGET_SEV_COL].to_numpy(dtype=float)
     drop_cols = [v2.TARGET_SEV_COL, v2.TARGET_FREQ_COL, *v2.ID_COLS]
     if id_col in train.columns:
@@ -273,10 +300,10 @@ def build_direct_tweedie_features(
 
 def _catboost_tweedie_fit_predict(
     X_tr: pd.DataFrame,
-    y_tr: np.ndarray,
+    y_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_va: np.ndarray,
-    X_te: Optional[pd.DataFrame],
+    y_va: FloatArray,
+    X_te: pd.DataFrame | None,
     cat_idx: Sequence[int],
     *,
     variance_power: float,
@@ -286,7 +313,7 @@ def _catboost_tweedie_fit_predict(
     depth: int,
     od_wait: int,
     verbose: int | bool = False,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray]:
     from catboost import CatBoostRegressor
 
     model = CatBoostRegressor(
@@ -316,9 +343,9 @@ def _catboost_tweedie_fit_predict(
 
 @dataclass
 class DirectTweedieFoldPayload:
-    oof: np.ndarray
-    test_pred: np.ndarray
-    valid_mask: np.ndarray
+    oof: FloatArray
+    test_pred: FloatArray
+    valid_mask: BoolArray
     alpha_ls: float
     variance_power: float
     cv_scheme: str
@@ -328,10 +355,10 @@ def _build_direct_pred_df(
     *,
     run_id: str,
     split: str,
-    y_true_train: np.ndarray,
-    oof: np.ndarray,
-    valid_mask: np.ndarray,
-    test_pred: np.ndarray,
+    y_true_train: FloatArray,
+    oof: FloatArray,
+    valid_mask: BoolArray,
+    test_pred: FloatArray,
     n_test: int,
 ) -> pd.DataFrame:
     rows: list[pd.DataFrame] = []
@@ -412,7 +439,9 @@ def _diag_from_pred_df(pred_df: pd.DataFrame, run_id: str, split: str) -> dict[s
     if pred_df.empty:
         return out
     try:
-        diag = ds.compute_oof_model_diagnostics(pred_df, run_id=run_id, split=split, decile_mode="zero_aware")
+        diag = ds.compute_oof_model_diagnostics(
+            pred_df, run_id=run_id, split=split, decile_mode="zero_aware"
+        )
         metrics = diag.get("metrics", pd.DataFrame())
         if not metrics.empty:
             row = metrics.iloc[0].to_dict()
@@ -440,7 +469,7 @@ def run_direct_tweedie_random_kfold(
     depth: int = 8,
     od_wait: int = 300,
     verbose: int | bool = False,
-    out_dir: Optional[str | Path] = None,
+    out_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     X_train, X_test, y, cat_idx = build_direct_tweedie_features(train, test, id_col=id_col)
     kf = KFold(n_splits=int(n_splits_random), shuffle=True, random_state=int(seed))
@@ -485,19 +514,39 @@ def run_direct_tweedie_random_kfold(
             n_test=len(X_test),
         )
         pred_parts.append(pred_df)
-        dist_df = v2.build_prediction_distribution_table(pred_df) if not pred_df.empty else pd.DataFrame()
+        dist_df = (
+            v2.build_prediction_distribution_table(pred_df) if not pred_df.empty else pd.DataFrame()
+        )
         diag = _diag_from_pred_df(pred_df, run_id=run_id, split="random_kfold")
         dist_align: dict[str, Any] = {}
         if not dist_df.empty:
-            row_oof = dist_df[(dist_df["run_id"].astype(str) == run_id) & (dist_df["split"] == "random_kfold") & (dist_df["sample"] == "oof")]
-            row_test = dist_df[(dist_df["run_id"].astype(str) == run_id) & (dist_df["split"] == "random_kfold") & (dist_df["sample"] == "test")]
+            row_oof = dist_df[
+                (dist_df["run_id"].astype(str) == run_id)
+                & (dist_df["split"] == "random_kfold")
+                & (dist_df["sample"] == "oof")
+            ]
+            row_test = dist_df[
+                (dist_df["run_id"].astype(str) == run_id)
+                & (dist_df["split"] == "random_kfold")
+                & (dist_df["sample"] == "test")
+            ]
             if not row_oof.empty and not row_test.empty:
                 o = row_oof.iloc[0]
                 t = row_test.iloc[0]
-                q90_ratio = _safe_float(t.get("pred_q90")) / max(_safe_float(o.get("pred_q90")), 1e-9)
-                q99_ratio = _safe_float(t.get("pred_q99")) / max(_safe_float(o.get("pred_q99")), 1e-9)
-                std_ratio = _safe_float(t.get("pred_std")) / max(_safe_float(o.get("pred_std")), 1e-9)
-                penalty = 10.0 * abs(q99_ratio - 1.0) + 5.0 * abs(q90_ratio - 1.0) + 2.0 * abs(std_ratio - 1.0)
+                q90_ratio = _safe_float(t.get("pred_q90")) / max(
+                    _safe_float(o.get("pred_q90")), 1e-9
+                )
+                q99_ratio = _safe_float(t.get("pred_q99")) / max(
+                    _safe_float(o.get("pred_q99")), 1e-9
+                )
+                std_ratio = _safe_float(t.get("pred_std")) / max(
+                    _safe_float(o.get("pred_std")), 1e-9
+                )
+                penalty = (
+                    10.0 * abs(q99_ratio - 1.0)
+                    + 5.0 * abs(q90_ratio - 1.0)
+                    + 2.0 * abs(std_ratio - 1.0)
+                )
                 dist_align = {
                     "pred_q90_oof": _safe_float(o.get("pred_q90")),
                     "pred_q99_oof": _safe_float(o.get("pred_q99")),
@@ -529,8 +578,12 @@ def run_direct_tweedie_random_kfold(
             "q95_ratio_pos": _safe_float(diag.get("q95_ratio_pos")),
             "q99_ratio_pos": _safe_float(diag.get("q99_ratio_pos")),
             "rmse_prime_top1pct": _safe_float(diag.get("rmse_prime_top1pct")),
-            "distribution_alignment_score": _safe_float(dist_align.get("distribution_alignment_score")),
-            "distribution_alignment_penalty": _safe_float(dist_align.get("distribution_alignment_penalty")),
+            "distribution_alignment_score": _safe_float(
+                dist_align.get("distribution_alignment_score")
+            ),
+            "distribution_alignment_penalty": _safe_float(
+                dist_align.get("distribution_alignment_penalty")
+            ),
             "dominant_gap_hypothesis": None,
             "selection_status": "candidate",
             "n_valid_oof": int(val_mask.sum()),
@@ -540,7 +593,9 @@ def run_direct_tweedie_random_kfold(
         results.append(result_row)
 
     registry_df = (
-        pd.DataFrame(results).sort_values(["rmse_local", "distribution_alignment_penalty"], na_position="last").reset_index(drop=True)
+        pd.DataFrame(results)
+        .sort_values(["rmse_local", "distribution_alignment_penalty"], na_position="last")
+        .reset_index(drop=True)
         if results
         else pd.DataFrame()
     )
@@ -564,14 +619,18 @@ def run_direct_tweedie_random_kfold(
                 "cv_scheme": "random_kfold",
                 "oof_df": oof_rows,
                 "test_df": test_rows,
-                "pred_test": test_rows.sort_values("row_idx")["pred_prime"].to_numpy(dtype=float) if not test_rows.empty else np.array([], dtype=float),
+                "pred_test": test_rows.sort_values("row_idx")["pred_prime"].to_numpy(dtype=float)
+                if not test_rows.empty
+                else np.array([], dtype=float),
             }
         if best_row is not None:
             best_payload = payloads_by_candidate.get(str(best_row["candidate_id"]))
 
     if out_dir is not None and not registry_df.empty:
         out = v2.ensure_dir(out_dir)
-        registry_df.drop(columns=["pred_test_array"], errors="ignore").to_csv(out / "direct_tweedie_cv_registry.csv", index=False)
+        registry_df.drop(columns=["pred_test_array"], errors="ignore").to_csv(
+            out / "direct_tweedie_cv_registry.csv", index=False
+        )
 
     return {
         "registry_df": registry_df,
@@ -587,10 +646,10 @@ def run_direct_tweedie_random_kfold(
 
 def _run_direct_tweedie_on_folds(
     X_train: pd.DataFrame,
-    y: np.ndarray,
+    y: FloatArray,
     X_test: pd.DataFrame,
     cat_idx: Sequence[int],
-    folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     *,
     variance_power: float,
     seed: int,
@@ -626,13 +685,26 @@ def _run_direct_tweedie_on_folds(
         oof[va_idx_arr] = pred_va
         valid_mask[va_idx_arr] = True
         test_pred += pred_te / float(n_folds)
-        fold_rows.append({"fold_id": int(fold_id), "split": split_name, "n_valid": int(len(va_idx_arr)), "fold_rmse": _rmse(y[va_idx_arr], pred_va)})
+        fold_rows.append(
+            {
+                "fold_id": int(fold_id),
+                "split": split_name,
+                "n_valid": int(len(va_idx_arr)),
+                "fold_rmse": _rmse(y[va_idx_arr], pred_va),
+            }
+        )
 
     alpha = _ls_alpha(y[valid_mask], oof[valid_mask])
     oof_cal = np.maximum(oof * alpha, 0.0)
     test_cal = np.maximum(test_pred * alpha, 0.0)
     return (
-        {"oof": oof_cal, "test_pred": test_cal, "valid_mask": valid_mask, "alpha_ls": alpha, "fold_metrics": pd.DataFrame(fold_rows)},
+        {
+            "oof": oof_cal,
+            "test_pred": test_cal,
+            "valid_mask": valid_mask,
+            "alpha_ls": alpha,
+            "fold_metrics": pd.DataFrame(fold_rows),
+        },
         {"oof_raw": oof, "test_raw": test_pred},
     )
 
@@ -652,12 +724,18 @@ def run_direct_tweedie_v2_splits(
     return_payloads: bool = False,
 ) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, Any]]:
     X_train, X_test, y, cat_idx = build_direct_tweedie_features(train, test, id_col=id_col)
-    splits = v2.build_split_registry(train, n_blocks_time=5, n_splits_group=5, group_col="id_client")
+    splits = v2.build_split_registry(
+        train, n_blocks_time=5, n_splits_group=5, group_col="id_client"
+    )
     split_names = ["primary_time", "secondary_group", "aux_blocked5"]
 
     summary_rows: list[dict[str, Any]] = []
     pred_parts: list[pd.DataFrame] = []
-    payloads: dict[str, Any] = {"per_run_split": {}, "combined_pred_df": pd.DataFrame(), "train_y": y}
+    payloads: dict[str, Any] = {
+        "per_run_split": {},
+        "combined_pred_df": pd.DataFrame(),
+        "train_y": y,
+    }
 
     for p in variance_powers:
         run_base_id = f"direct_tweedie|catboost|v2splits|p{p}|seed{seed}|alpha_ls"
@@ -690,7 +768,11 @@ def run_direct_tweedie_v2_splits(
             )
             pred_parts.append(pred_df)
             diag = _diag_from_pred_df(pred_df, run_id=run_id, split=split_name)
-            dist_df = v2.build_prediction_distribution_table(pred_df) if not pred_df.empty else pd.DataFrame()
+            dist_df = (
+                v2.build_prediction_distribution_table(pred_df)
+                if not pred_df.empty
+                else pd.DataFrame()
+            )
             dist_align: dict[str, Any] = {}
             if not dist_df.empty:
                 o = dist_df[(dist_df["sample"] == "oof") & (dist_df["split"] == split_name)]
@@ -698,10 +780,20 @@ def run_direct_tweedie_v2_splits(
                 if not o.empty and not t.empty:
                     oo = o.iloc[0]
                     tt = t.iloc[0]
-                    q90_ratio = _safe_float(tt.get("pred_q90")) / max(_safe_float(oo.get("pred_q90")), 1e-9)
-                    q99_ratio = _safe_float(tt.get("pred_q99")) / max(_safe_float(oo.get("pred_q99")), 1e-9)
-                    std_ratio = _safe_float(tt.get("pred_std")) / max(_safe_float(oo.get("pred_std")), 1e-9)
-                    penalty = 10.0 * abs(q99_ratio - 1.0) + 5.0 * abs(q90_ratio - 1.0) + 2.0 * abs(std_ratio - 1.0)
+                    q90_ratio = _safe_float(tt.get("pred_q90")) / max(
+                        _safe_float(oo.get("pred_q90")), 1e-9
+                    )
+                    q99_ratio = _safe_float(tt.get("pred_q99")) / max(
+                        _safe_float(oo.get("pred_q99")), 1e-9
+                    )
+                    std_ratio = _safe_float(tt.get("pred_std")) / max(
+                        _safe_float(oo.get("pred_std")), 1e-9
+                    )
+                    penalty = (
+                        10.0 * abs(q99_ratio - 1.0)
+                        + 5.0 * abs(q90_ratio - 1.0)
+                        + 2.0 * abs(std_ratio - 1.0)
+                    )
                     dist_align = {
                         "pred_q90_oof": _safe_float(oo.get("pred_q90")),
                         "pred_q99_oof": _safe_float(oo.get("pred_q99")),
@@ -732,8 +824,12 @@ def run_direct_tweedie_v2_splits(
                 "q95_ratio_pos": _safe_float(diag.get("q95_ratio_pos")),
                 "q99_ratio_pos": _safe_float(diag.get("q99_ratio_pos")),
                 "rmse_prime_top1pct": _safe_float(diag.get("rmse_prime_top1pct")),
-                "distribution_alignment_score": _safe_float(dist_align.get("distribution_alignment_score")),
-                "distribution_alignment_penalty": _safe_float(dist_align.get("distribution_alignment_penalty")),
+                "distribution_alignment_score": _safe_float(
+                    dist_align.get("distribution_alignment_score")
+                ),
+                "distribution_alignment_penalty": _safe_float(
+                    dist_align.get("distribution_alignment_penalty")
+                ),
                 "dominant_gap_hypothesis": None,
                 "selection_status": "candidate",
                 "n_valid_oof": int(np.sum(fold_payload["valid_mask"])),
@@ -758,7 +854,9 @@ def run_direct_tweedie_v2_splits(
                 "run_id": f"{run_base_id}|multi",
                 "cv_scheme": "multi",
                 "variance_power": float(p),
-                "alpha_ls": float(np.nanmedian(pd.to_numeric(split_df["alpha_ls"], errors="coerce"))),
+                "alpha_ls": float(
+                    np.nanmedian(pd.to_numeric(split_df["alpha_ls"], errors="coerce"))
+                ),
                 "scale_multiplier": 1.0,
                 "blend_weight": np.nan,
                 "baseline_blend_source": None,
@@ -768,19 +866,45 @@ def run_direct_tweedie_v2_splits(
                 "rmse_aux_blocked5": _safe_float(by_name["rmse_local"].get("aux_blocked5")),
                 "q95_ratio_pos": _safe_float(by_name["q95_ratio_pos"].get("primary_time")),
                 "q99_ratio_pos": _safe_float(by_name["q99_ratio_pos"].get("primary_time")),
-                "rmse_prime_top1pct": _safe_float(by_name["rmse_prime_top1pct"].get("primary_time")),
-                "distribution_alignment_penalty": _safe_float(by_name["distribution_alignment_penalty"].get("primary_time")),
-                "distribution_alignment_score": _safe_float(by_name["distribution_alignment_score"].get("primary_time")),
-                "distribution_collapse_flag": _safe_float(by_name["distribution_collapse_flag"].get("primary_time")),
+                "rmse_prime_top1pct": _safe_float(
+                    by_name["rmse_prime_top1pct"].get("primary_time")
+                ),
+                "distribution_alignment_penalty": _safe_float(
+                    by_name["distribution_alignment_penalty"].get("primary_time")
+                ),
+                "distribution_alignment_score": _safe_float(
+                    by_name["distribution_alignment_score"].get("primary_time")
+                ),
+                "distribution_collapse_flag": _safe_float(
+                    by_name["distribution_collapse_flag"].get("primary_time")
+                ),
             }
             try:
-                agg["pred_test_array"] = payloads["per_run_split"][(float(p), "primary_time")]["fold_payload"]["test_pred"]
+                agg["pred_test_array"] = payloads["per_run_split"][(float(p), "primary_time")][
+                    "fold_payload"
+                ]["test_pred"]
             except Exception:
                 agg["pred_test_array"] = None
-            rmses = np.asarray([agg["rmse_primary_time"], agg["rmse_secondary_group"], agg["rmse_aux_blocked5"]], dtype=float)
-            agg["rmse_split_std"] = float(np.nanstd(rmses, ddof=0)) if np.sum(np.isfinite(rmses)) >= 2 else np.nan
-            agg["rmse_gap_secondary"] = agg["rmse_secondary_group"] - agg["rmse_primary_time"] if np.isfinite(agg["rmse_secondary_group"]) and np.isfinite(agg["rmse_primary_time"]) else np.nan
-            agg["rmse_gap_aux"] = agg["rmse_aux_blocked5"] - agg["rmse_primary_time"] if np.isfinite(agg["rmse_aux_blocked5"]) and np.isfinite(agg["rmse_primary_time"]) else np.nan
+            rmses = np.asarray(
+                [agg["rmse_primary_time"], agg["rmse_secondary_group"], agg["rmse_aux_blocked5"]],
+                dtype=float,
+            )
+            agg["rmse_split_std"] = (
+                float(np.nanstd(rmses, ddof=0)) if np.sum(np.isfinite(rmses)) >= 2 else np.nan
+            )
+            rmse_primary = _safe_float(agg.get("rmse_primary_time"))
+            rmse_secondary = _safe_float(agg.get("rmse_secondary_group"))
+            rmse_aux = _safe_float(agg.get("rmse_aux_blocked5"))
+            agg["rmse_gap_secondary"] = (
+                rmse_secondary - rmse_primary
+                if np.isfinite(rmse_secondary) and np.isfinite(rmse_primary)
+                else np.nan
+            )
+            agg["rmse_gap_aux"] = (
+                rmse_aux - rmse_primary
+                if np.isfinite(rmse_aux) and np.isfinite(rmse_primary)
+                else np.nan
+            )
             summary_rows.extend(split_metric_rows)
             summary_rows.append(agg)
 
@@ -794,7 +918,7 @@ def compute_scale_sweep(
     *,
     random_result: Mapping[str, Any],
     scale_sweep: Sequence[float] = (1.0, 1.1, 1.2, 1.3),
-    v2_split_payloads: Optional[Mapping[str, Any]] = None,
+    v2_split_payloads: Mapping[object, Any] | None = None,
 ) -> pd.DataFrame:
     best_payload = random_result.get("best_payload")
     best_row = random_result.get("best_row")
@@ -837,11 +961,17 @@ def compute_scale_sweep(
         dist_row: dict[str, Any] = {}
         if not dist_df.empty:
             o = dist_df[(dist_df["sample"] == "oof") & (dist_df["split"] == "random_kfold")].iloc[0]
-            t = dist_df[(dist_df["sample"] == "test") & (dist_df["split"] == "random_kfold")].iloc[0]
+            t = dist_df[(dist_df["sample"] == "test") & (dist_df["split"] == "random_kfold")].iloc[
+                0
+            ]
             q90_ratio = _safe_float(t.get("pred_q90")) / max(_safe_float(o.get("pred_q90")), 1e-9)
             q99_ratio = _safe_float(t.get("pred_q99")) / max(_safe_float(o.get("pred_q99")), 1e-9)
             std_ratio = _safe_float(t.get("pred_std")) / max(_safe_float(o.get("pred_std")), 1e-9)
-            penalty = 10.0 * abs(q99_ratio - 1.0) + 5.0 * abs(q90_ratio - 1.0) + 2.0 * abs(std_ratio - 1.0)
+            penalty = (
+                10.0 * abs(q99_ratio - 1.0)
+                + 5.0 * abs(q90_ratio - 1.0)
+                + 2.0 * abs(std_ratio - 1.0)
+            )
             dist_row = {
                 "pred_q90_oof": _safe_float(o.get("pred_q90")),
                 "pred_q99_oof": _safe_float(o.get("pred_q99")),
@@ -881,7 +1011,7 @@ def compute_scale_sweep(
         if primary_payload:
             pr = primary_payload["fold_payload"]
             valid_mask = np.asarray(pr["valid_mask"], dtype=bool)
-            y_primary = v2_split_payloads.get("train_y", random_result.get("y"))
+            y_primary = (v2_split_payloads or {}).get("train_y") or random_result.get("y")
             if y_primary is not None:
                 y_primary_arr = np.asarray(y_primary, dtype=float)
                 p_primary = np.maximum(np.asarray(pr["oof"], dtype=float) * m, 0.0)
@@ -890,7 +1020,9 @@ def compute_scale_sweep(
     return pd.DataFrame(rows)
 
 
-def _find_baseline_submission_for_blend(ctx: Mapping[str, object]) -> tuple[Optional[np.ndarray], Optional[str], Optional[pd.DataFrame]]:
+def _find_baseline_submission_for_blend(
+    ctx: Mapping[str, object],
+) -> tuple[FloatArray | None, str | None, pd.DataFrame | None]:
     for key, label in [
         ("v1_submission", "submission_v1.csv"),
         ("v2_submission_robust", "artifacts/v2/submission_v2_robust.csv"),
@@ -902,20 +1034,36 @@ def _find_baseline_submission_for_blend(ctx: Mapping[str, object]) -> tuple[Opti
         pred_col = "pred" if "pred" in df.columns else (df.columns[1] if df.shape[1] > 1 else None)
         if pred_col is None:
             continue
-        return np.maximum(pd.to_numeric(df[pred_col], errors="coerce").fillna(0.0).to_numpy(dtype=float), 0.0), label, df
+        return (
+            np.maximum(
+                pd.to_numeric(df[pred_col], errors="coerce").fillna(0.0).to_numpy(dtype=float), 0.0
+            ),
+            label,
+            df,
+        )
     return None, None, None
 
 
-def _extract_v2_selected_primary_oof(ctx: Mapping[str, object]) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[str]]:
+def _extract_v2_selected_primary_oof(
+    ctx: Mapping[str, object],
+) -> tuple[FloatArray | None, FloatArray | None, str | None]:
     v2_sel = pd.DataFrame(ctx.get("v2_selected", pd.DataFrame()))
     v2_oof = pd.DataFrame(ctx.get("v2_oof", pd.DataFrame()))
     if v2_sel.empty or v2_oof.empty or "run_id" not in v2_sel.columns:
         return None, None, None
     rid = str(v2_sel.iloc[0]["run_id"])
-    d = v2_oof[(v2_oof["is_test"] == 0) & (v2_oof["split"].astype(str) == "primary_time") & (v2_oof["run_id"].astype(str) == rid)].copy()
+    d = v2_oof[
+        (v2_oof["is_test"] == 0)
+        & (v2_oof["split"].astype(str) == "primary_time")
+        & (v2_oof["run_id"].astype(str) == rid)
+    ].copy()
     if d.empty:
         return None, None, rid
-    d = d[["row_idx", "y_sev", "pred_prime"]].drop_duplicates(subset=["row_idx"]).sort_values("row_idx")
+    d = (
+        d[["row_idx", "y_sev", "pred_prime"]]
+        .drop_duplicates(subset=["row_idx"])
+        .sort_values("row_idx")
+    )
     return d["pred_prime"].to_numpy(dtype=float), d["y_sev"].to_numpy(dtype=float), rid
 
 
@@ -924,7 +1072,7 @@ def compute_blend_sweep(
     ctx: Mapping[str, object],
     scale_df: pd.DataFrame,
     random_result: Mapping[str, Any],
-    v2_splits_payloads: Optional[Mapping[str, Any]] = None,
+    v2_splits_payloads: Mapping[object, Any] | None = None,
     blend_weights: Sequence[float] = (0.2, 0.4, 0.6, 0.8),
 ) -> pd.DataFrame:
     if scale_df.empty:
@@ -933,7 +1081,9 @@ def compute_blend_sweep(
     if base_preds is None or base_source is None:
         return pd.DataFrame()
 
-    scale_best = scale_df.sort_values(["rmse_local", "distribution_alignment_penalty"], na_position="last").iloc[0]
+    scale_best = scale_df.sort_values(
+        ["rmse_local", "distribution_alignment_penalty"], na_position="last"
+    ).iloc[0]
     tweedie_test = np.asarray(scale_best["pred_test_array"], dtype=float)
     n = min(len(tweedie_test), len(base_preds))
     if n <= 0:
@@ -988,7 +1138,12 @@ def compute_blend_sweep(
             "pred_test_array": blended_test,
             "selection_status": "candidate",
         }
-        if not comparability_partial and baseline_oof_pred is not None and baseline_oof_y is not None and direct_primary_oof is not None:
+        if (
+            not comparability_partial
+            and baseline_oof_pred is not None
+            and baseline_oof_y is not None
+            and direct_primary_oof is not None
+        ):
             direct_pred, y_true = direct_primary_oof
             blended_oof = np.maximum(w * direct_pred + (1.0 - w) * baseline_oof_pred, 0.0)
             y_true = np.asarray(y_true, dtype=float)
@@ -996,13 +1151,21 @@ def compute_blend_sweep(
             row["rmse_primary_time"] = row["rmse_local"]
             pos = y_true > 0
             if np.any(pos):
-                row["q95_ratio_pos"] = float(np.quantile(blended_oof[pos], 0.95) / max(np.quantile(y_true[pos], 0.95), 1e-9))
-                row["q99_ratio_pos"] = float(np.quantile(blended_oof[pos], 0.99) / max(np.quantile(y_true[pos], 0.99), 1e-9))
+                row["q95_ratio_pos"] = float(
+                    np.quantile(blended_oof[pos], 0.95) / max(np.quantile(y_true[pos], 0.95), 1e-9)
+                )
+                row["q99_ratio_pos"] = float(
+                    np.quantile(blended_oof[pos], 0.99) / max(np.quantile(y_true[pos], 0.99), 1e-9)
+                )
                 thr = float(np.quantile(y_true, 0.99))
                 mask_top = y_true >= thr
-                row["rmse_prime_top1pct"] = _rmse(y_true[mask_top], blended_oof[mask_top]) if np.any(mask_top) else np.nan
+                row["rmse_prime_top1pct"] = (
+                    _rmse(y_true[mask_top], blended_oof[mask_top]) if np.any(mask_top) else np.nan
+                )
 
-        audit = v2.compute_prediction_distribution_audit(blended_test, run_id=str(row["candidate_id"]), split="test", sample="test")
+        audit = v2.compute_prediction_distribution_audit(
+            blended_test, run_id=str(row["candidate_id"]), split="test", sample="test"
+        )
         row.update(
             {
                 "pred_q90_test": _safe_float(audit.get("pred_q90")),
@@ -1035,7 +1198,7 @@ def classify_gap_cause_dualtrack(
     ctx: Mapping[str, object],
     v23_candidates_df: pd.DataFrame,
     kaggle_public_rmse_user: float,
-) -> tuple[pd.DataFrame, dict]:
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
     v22_gap = pd.DataFrame(ctx.get("v22_quick_gap_report", pd.DataFrame()))
@@ -1047,7 +1210,9 @@ def classify_gap_cause_dualtrack(
                     "track": "v2_two_part",
                     "cv_instability_flag": int(_safe_float(r.get("cv_instability_flag"), 0.0)),
                     "ood_risk_flag": int(_safe_float(r.get("ood_risk_flag"), 0.0)),
-                    "tail_undercoverage_flag": int(_safe_float(r.get("tail_undercoverage_flag"), 0.0)),
+                    "tail_undercoverage_flag": int(
+                        _safe_float(r.get("tail_undercoverage_flag"), 0.0)
+                    ),
                     "tail_overcorrection_flag": 0,
                     "public_lb_heuristic_flag": 0,
                     "kaggle_gap_hypothesis": str(r.get("kaggle_gap_hypothesis", "")),
@@ -1059,11 +1224,19 @@ def classify_gap_cause_dualtrack(
     if not d.empty:
         for _, r in d.iterrows():
             q99 = _safe_float(r.get("q99_ratio_pos"))
-            gap_sec = _safe_float(r.get("rmse_secondary_group")) - _safe_float(r.get("rmse_primary_time"))
-            gap_aux = _safe_float(r.get("rmse_aux_blocked5")) - _safe_float(r.get("rmse_primary_time"))
+            gap_sec = _safe_float(r.get("rmse_secondary_group")) - _safe_float(
+                r.get("rmse_primary_time")
+            )
+            gap_aux = _safe_float(r.get("rmse_aux_blocked5")) - _safe_float(
+                r.get("rmse_primary_time")
+            )
             split_std = _safe_float(r.get("rmse_split_std"))
             dist_ratio = _safe_float(r.get("q99_test_over_oof"))
-            public_heur = int(str(r.get("track", "")).startswith("direct_tweedie_scale") or str(r.get("track", "")) == "blend" or str(r.get("cv_scheme", "")) == "random_kfold")
+            public_heur = int(
+                str(r.get("track", "")).startswith("direct_tweedie_scale")
+                or str(r.get("track", "")) == "blend"
+                or str(r.get("cv_scheme", "")) == "random_kfold"
+            )
             row = {
                 "candidate_id": str(r.get("candidate_id")),
                 "track": str(r.get("track", "")),
@@ -1072,24 +1245,43 @@ def classify_gap_cause_dualtrack(
                     or (np.isfinite(gap_aux) and gap_aux > 1.0)
                     or (np.isfinite(split_std) and split_std > 1.2)
                 ),
-                "ood_risk_flag": int(np.isfinite(dist_ratio) and (dist_ratio < 0.85 or dist_ratio > 1.15)),
+                "ood_risk_flag": int(
+                    np.isfinite(dist_ratio) and (dist_ratio < 0.85 or dist_ratio > 1.15)
+                ),
                 "tail_undercoverage_flag": int(np.isfinite(q99) and q99 < 0.50),
                 "tail_overcorrection_flag": int(np.isfinite(q99) and q99 > 1.20),
                 "public_lb_heuristic_flag": public_heur,
                 "evidence_summary": "; ".join(
-                    [f"{k}={_safe_float(r.get(k)):.3f}" for k in ["rmse_primary_time", "rmse_secondary_group", "rmse_aux_blocked5", "q99_ratio_pos"] if np.isfinite(_safe_float(r.get(k)))]
+                    [
+                        f"{k}={_safe_float(r.get(k)):.3f}"
+                        for k in [
+                            "rmse_primary_time",
+                            "rmse_secondary_group",
+                            "rmse_aux_blocked5",
+                            "q99_ratio_pos",
+                        ]
+                        if np.isfinite(_safe_float(r.get(k)))
+                    ]
                 ),
             }
             row["kaggle_gap_hypothesis"] = _classify_gap_hypothesis_from_flags(row)
             rows.append(row)
 
-    diag_df = pd.DataFrame(rows).drop_duplicates(subset=["candidate_id", "track"], keep="last") if rows else pd.DataFrame()
+    diag_df = (
+        pd.DataFrame(rows).drop_duplicates(subset=["candidate_id", "track"], keep="last")
+        if rows
+        else pd.DataFrame()
+    )
     summary = {
         "kaggle_public_rmse_user": float(kaggle_public_rmse_user),
         "note_metric_non_comparable": True,
         "n_candidates_analyzed": int(len(diag_df)),
-        "dominant_hypothesis_counts": diag_df["kaggle_gap_hypothesis"].value_counts().to_dict() if not diag_df.empty else {},
-        "dominant_hypothesis_top_run": (str(diag_df.iloc[0]["kaggle_gap_hypothesis"]) if not diag_df.empty else None),
+        "dominant_hypothesis_counts": diag_df["kaggle_gap_hypothesis"].value_counts().to_dict()
+        if not diag_df.empty
+        else {},
+        "dominant_hypothesis_top_run": (
+            str(diag_df.iloc[0]["kaggle_gap_hypothesis"]) if not diag_df.empty else None
+        ),
         "initial_working_hypothesis": "Mixte (OOD + queue)",
         "overfitting_cv_proven": False,
     }
@@ -1098,31 +1290,81 @@ def classify_gap_cause_dualtrack(
 
 def _compute_selection_score_quick_dualtrack(d: pd.DataFrame) -> pd.DataFrame:
     out = d.copy()
-    for c in ["rmse_primary_time", "rmse_secondary_group", "rmse_aux_blocked5", "rmse_local", "q99_ratio_pos", "distribution_alignment_penalty", "shakeup_std_gap", "distribution_collapse_flag"]:
+    for c in [
+        "rmse_primary_time",
+        "rmse_secondary_group",
+        "rmse_aux_blocked5",
+        "rmse_local",
+        "q99_ratio_pos",
+        "distribution_alignment_penalty",
+        "shakeup_std_gap",
+        "distribution_collapse_flag",
+    ]:
         if c not in out.columns:
             out[c] = np.nan
-    out["rmse_gap_secondary_pos"] = np.maximum(pd.to_numeric(out["rmse_secondary_group"], errors="coerce") - pd.to_numeric(out["rmse_primary_time"], errors="coerce"), 0.0)
-    out["rmse_gap_aux_pos"] = np.maximum(pd.to_numeric(out["rmse_aux_blocked5"], errors="coerce") - pd.to_numeric(out["rmse_primary_time"], errors="coerce"), 0.0)
+    out["rmse_gap_secondary_pos"] = np.maximum(
+        pd.to_numeric(out["rmse_secondary_group"], errors="coerce")
+        - pd.to_numeric(out["rmse_primary_time"], errors="coerce"),
+        0.0,
+    )
+    out["rmse_gap_aux_pos"] = np.maximum(
+        pd.to_numeric(out["rmse_aux_blocked5"], errors="coerce")
+        - pd.to_numeric(out["rmse_primary_time"], errors="coerce"),
+        0.0,
+    )
     q99 = pd.to_numeric(out["q99_ratio_pos"], errors="coerce")
     out["tail_penalty"] = 20.0 * (q99 - 1.0).abs()
-    out["distribution_alignment_penalty"] = pd.to_numeric(out["distribution_alignment_penalty"], errors="coerce").fillna(0.0)
+    out["distribution_alignment_penalty"] = pd.to_numeric(
+        out["distribution_alignment_penalty"], errors="coerce"
+    ).fillna(0.0)
     out["shakeup_penalty"] = pd.to_numeric(out["shakeup_std_gap"], errors="coerce").fillna(0.0)
-    base_rmse = pd.to_numeric(out["rmse_primary_time"], errors="coerce").fillna(pd.to_numeric(out["rmse_local"], errors="coerce")).fillna(1e9)
-    out["selection_score_dualtrack"] = base_rmse + 0.5 * out["rmse_gap_secondary_pos"] + 0.5 * out["rmse_gap_aux_pos"] + out["tail_penalty"] + out["distribution_alignment_penalty"] + out["shakeup_penalty"]
-    out["has_robust_cv"] = out[["rmse_primary_time", "rmse_secondary_group", "rmse_aux_blocked5"]].notna().sum(axis=1) >= 2
-    out["cv_instability_flag"] = ((out["rmse_gap_secondary_pos"] > 1.0) | (out["rmse_gap_aux_pos"] > 1.0) | (pd.to_numeric(out.get("rmse_split_std", np.nan), errors="coerce") > 1.2)).fillna(False).astype(int)
+    base_rmse = (
+        pd.to_numeric(out["rmse_primary_time"], errors="coerce")
+        .fillna(pd.to_numeric(out["rmse_local"], errors="coerce"))
+        .fillna(1e9)
+    )
+    out["selection_score_dualtrack"] = (
+        base_rmse
+        + 0.5 * out["rmse_gap_secondary_pos"]
+        + 0.5 * out["rmse_gap_aux_pos"]
+        + out["tail_penalty"]
+        + out["distribution_alignment_penalty"]
+        + out["shakeup_penalty"]
+    )
+    out["has_robust_cv"] = (
+        out[["rmse_primary_time", "rmse_secondary_group", "rmse_aux_blocked5"]].notna().sum(axis=1)
+        >= 2
+    )
+    out["cv_instability_flag"] = (
+        (
+            (out["rmse_gap_secondary_pos"] > 1.0)
+            | (out["rmse_gap_aux_pos"] > 1.0)
+            | (pd.to_numeric(out.get("rmse_split_std", np.nan), errors="coerce") > 1.2)
+        )
+        .fillna(False)
+        .astype(int)
+    )
     out["tail_undercoverage_flag"] = (q99 < 0.50).fillna(False).astype(int)
     out["tail_overcorrection_flag"] = (q99 > 1.20).fillna(False).astype(int)
-    out["distribution_collapse_flag"] = pd.to_numeric(out["distribution_collapse_flag"], errors="coerce").fillna(0.0)
-    out["public_lb_heuristic_flag"] = out["track"].astype(str).isin(["direct_tweedie_scale", "blend"]).astype(int)
-    out["passes_robust_guardrails"] = out["has_robust_cv"] & (out["cv_instability_flag"] == 0) & (out["tail_overcorrection_flag"] == 0) & (out["distribution_collapse_flag"] <= 0)
+    out["distribution_collapse_flag"] = pd.to_numeric(
+        out["distribution_collapse_flag"], errors="coerce"
+    ).fillna(0.0)
+    out["public_lb_heuristic_flag"] = (
+        out["track"].astype(str).isin(["direct_tweedie_scale", "blend"]).astype(int)
+    )
+    out["passes_robust_guardrails"] = (
+        out["has_robust_cv"]
+        & (out["cv_instability_flag"] == 0)
+        & (out["tail_overcorrection_flag"] == 0)
+        & (out["distribution_collapse_flag"] <= 0)
+    )
     return out
 
 
 def select_dualtrack_submissions(
     candidates_df: pd.DataFrame,
     *,
-    baseline_submission_df: Optional[pd.DataFrame] = None,
+    baseline_submission_df: pd.DataFrame | None = None,
     baseline_name: str = "baseline_existing",
     id_col: str = "index",
 ) -> pd.DataFrame:
@@ -1138,7 +1380,12 @@ def select_dualtrack_submissions(
                     "selection_status": "selected_robust",
                     "risk_tag": "fallback",
                     "submission_source": baseline_name,
-                    "pred_test_array": np.maximum(pd.to_numeric(baseline_submission_df["pred"], errors="coerce").fillna(0.0).to_numpy(dtype=float), 0.0),
+                    "pred_test_array": np.maximum(
+                        pd.to_numeric(baseline_submission_df["pred"], errors="coerce")
+                        .fillna(0.0)
+                        .to_numpy(dtype=float),
+                        0.0,
+                    ),
                     "id_col": id_col,
                 }
             ]
@@ -1148,11 +1395,32 @@ def select_dualtrack_submissions(
     robust_pool = d[d["passes_robust_guardrails"]].copy()
     if robust_pool.empty:
         robust_pool = d[(d["has_robust_cv"]) & (d["cv_instability_flag"] == 0)].copy()
-    robust_row = robust_pool.sort_values(["selection_score_dualtrack", "rmse_primary_time"], na_position="last").iloc[0].to_dict() if not robust_pool.empty else None
+    robust_row = (
+        robust_pool.sort_values(
+            ["selection_score_dualtrack", "rmse_primary_time"], na_position="last"
+        )
+        .iloc[0]
+        .to_dict()
+        if not robust_pool.empty
+        else None
+    )
 
     challenger_pool = d.copy()
-    challenger_pool["_lb_pref"] = challenger_pool["track"].astype(str).map({"blend": 0, "direct_tweedie_scale": 1, "direct_tweedie_randomkfold": 2}).fillna(3)
-    challenger_row = challenger_pool.sort_values(["_lb_pref", "selection_score_dualtrack", "rmse_local"], na_position="last").iloc[0].to_dict() if not challenger_pool.empty else None
+    challenger_pool["_lb_pref"] = (
+        challenger_pool["track"]
+        .astype(str)
+        .map({"blend": 0, "direct_tweedie_scale": 1, "direct_tweedie_randomkfold": 2})
+        .fillna(3)
+    )
+    challenger_row = (
+        challenger_pool.sort_values(
+            ["_lb_pref", "selection_score_dualtrack", "rmse_local"], na_position="last"
+        )
+        .iloc[0]
+        .to_dict()
+        if not challenger_pool.empty
+        else None
+    )
 
     out_rows: list[dict[str, Any]] = []
     if robust_row is not None:
@@ -1170,7 +1438,12 @@ def select_dualtrack_submissions(
                 "selection_status": "selected_robust",
                 "risk_tag": "fallback",
                 "submission_source": baseline_name,
-                "pred_test_array": np.maximum(pd.to_numeric(baseline_submission_df["pred"], errors="coerce").fillna(0.0).to_numpy(dtype=float), 0.0),
+                "pred_test_array": np.maximum(
+                    pd.to_numeric(baseline_submission_df["pred"], errors="coerce")
+                    .fillna(0.0)
+                    .to_numpy(dtype=float),
+                    0.0,
+                ),
                 "id_col": id_col,
             }
         )
@@ -1178,9 +1451,15 @@ def select_dualtrack_submissions(
     if challenger_row is not None:
         challenger_row["role"] = "lb_challenger"
         challenger_row["selection_status"] = "selected_challenger"
-        challenger_row["risk_tag"] = "public_private_risk" if int(challenger_row.get("public_lb_heuristic_flag", 0)) == 1 else "challenger"
+        challenger_row["risk_tag"] = (
+            "public_private_risk"
+            if int(challenger_row.get("public_lb_heuristic_flag", 0)) == 1
+            else "challenger"
+        )
         challenger_row["id_col"] = id_col
-        if not out_rows or str(out_rows[0].get("candidate_id")) != str(challenger_row["candidate_id"]):
+        if not out_rows or str(out_rows[0].get("candidate_id")) != str(
+            challenger_row["candidate_id"]
+        ):
             out_rows.append(challenger_row)
     return pd.DataFrame(out_rows)
 
@@ -1190,15 +1469,21 @@ def save_submission(
     *,
     id_col: str,
     target_col: str,
-    preds: np.ndarray,
+    preds: FloatArray,
     out_path: str | Path,
-    sample_submission_df: Optional[pd.DataFrame] = None,
+    sample_submission_df: pd.DataFrame | None = None,
 ) -> Path:
     pred = np.maximum(np.asarray(preds, dtype=float), 0.0)
     sub = pd.DataFrame({id_col: test_df[id_col].to_numpy(), target_col: pred})
-    if sample_submission_df is not None and not sample_submission_df.empty and id_col in sample_submission_df.columns:
+    if (
+        sample_submission_df is not None
+        and not sample_submission_df.empty
+        and id_col in sample_submission_df.columns
+    ):
         sub = sample_submission_df[[id_col]].merge(sub, on=id_col, how="left")
-        sub[target_col] = pd.to_numeric(sub[target_col], errors="coerce").fillna(0.0).clip(lower=0.0)
+        sub[target_col] = (
+            pd.to_numeric(sub[target_col], errors="coerce").fillna(0.0).clip(lower=0.0)
+        )
     p = Path(out_path)
     v2.ensure_dir(p.parent)
     sub.to_csv(p, index=False)
@@ -1229,8 +1514,12 @@ def _submission_distribution_rows(selection_df: pd.DataFrame) -> pd.DataFrame:
             arr = np.asarray(pred, dtype=float)
             if arr.size == 0:
                 continue
-            audit = v2.compute_prediction_distribution_audit(arr, run_id=str(r.get("candidate_id")), split="test", sample="test")
-            rows.append({"role": str(r.get("role")), "candidate_id": str(r.get("candidate_id")), **audit})
+            audit = v2.compute_prediction_distribution_audit(
+                arr, run_id=str(r.get("candidate_id")), split="test", sample="test"
+            )
+            rows.append(
+                {"role": str(r.get("role")), "candidate_id": str(r.get("candidate_id")), **audit}
+            )
         except Exception:
             continue
     return pd.DataFrame(rows)
@@ -1239,8 +1528,8 @@ def _submission_distribution_rows(selection_df: pd.DataFrame) -> pd.DataFrame:
 def build_oof_compare_bridge(
     *,
     ctx: Mapping[str, object],
-    direct_random_result: Optional[Mapping[str, Any]],
-    direct_v2_payloads: Optional[Mapping[str, Any]],
+    direct_random_result: Mapping[str, Any] | None,
+    direct_v2_payloads: Mapping[object, Any] | None,
     out_dir: str | Path,
 ) -> pd.DataFrame:
     out_frames: list[pd.DataFrame] = []
@@ -1257,34 +1546,52 @@ def build_oof_compare_bridge(
                 & (v1_oof["split"].astype(str) == "primary_time")
                 & (v1_oof["engine"].astype(str) == str(best.get("engine")))
                 & (v1_oof["config_id"].astype(str) == str(best.get("config_id")))
-                & (v1_oof["seed"].astype(float).astype(int) == int(float(best.get("seed"))))
+                & (v1_oof["seed"].astype(float).astype(int) == int(_safe_float(best.get("seed"))))
                 & (v1_oof["severity_mode"].astype(str) == str(best.get("severity_mode")))
                 & (v1_oof["calibration"].astype(str) == str(best.get("calibration")))
             ][["row_idx", "y_sev", "pred_prime"]].drop_duplicates(subset=["row_idx"])
             if not d.empty:
-                out_frames.append(d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_v1_best"}))
+                out_frames.append(
+                    d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_v1_best"})
+                )
 
     if not v2_oof.empty and not v2_sel.empty and "run_id" in v2_sel.columns:
         rid = str(v2_sel.iloc[0]["run_id"])
-        d = v2_oof[(v2_oof["is_test"] == 0) & (v2_oof["split"].astype(str) == "primary_time") & (v2_oof["run_id"].astype(str) == rid)][["row_idx", "y_sev", "pred_prime"]].drop_duplicates(subset=["row_idx"])
+        d = v2_oof[
+            (v2_oof["is_test"] == 0)
+            & (v2_oof["split"].astype(str) == "primary_time")
+            & (v2_oof["run_id"].astype(str) == rid)
+        ][["row_idx", "y_sev", "pred_prime"]].drop_duplicates(subset=["row_idx"])
         if not d.empty:
-            out_frames.append(d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_v2_selected"}))
+            out_frames.append(
+                d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_v2_selected"})
+            )
 
     if direct_random_result and direct_random_result.get("best_payload"):
         d = direct_random_result["best_payload"]["oof_df"].copy()
         if not d.empty:
             d = d[["row_idx", "y_sev", "pred_prime"]].drop_duplicates(subset=["row_idx"])
-            out_frames.append(d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_direct_random_best"}))
+            out_frames.append(
+                d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_direct_random_best"})
+            )
 
-    if direct_v2_payloads and direct_random_result and direct_random_result.get("best_row") is not None:
+    if (
+        direct_v2_payloads
+        and direct_random_result
+        and direct_random_result.get("best_row") is not None
+    ):
         pval = float(direct_random_result["best_row"]["variance_power"])
         payload = direct_v2_payloads.get((pval, "primary_time"))
         if payload:
             d = payload["pred_df"]
             if isinstance(d, pd.DataFrame) and not d.empty:
-                d = d[d["is_test"] == 0][["row_idx", "y_sev", "pred_prime"]].drop_duplicates(subset=["row_idx"])
+                d = d[d["is_test"] == 0][["row_idx", "y_sev", "pred_prime"]].drop_duplicates(
+                    subset=["row_idx"]
+                )
                 if not d.empty:
-                    out_frames.append(d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_direct_primary"}))
+                    out_frames.append(
+                        d.rename(columns={"y_sev": "y_true", "pred_prime": "pred_direct_primary"})
+                    )
 
     if not out_frames:
         return pd.DataFrame()
@@ -1300,8 +1607,8 @@ def build_oof_compare_bridge(
 def _maybe_run_shakeup_from_candidate(
     *,
     candidate_row: Mapping[str, Any],
-    direct_random_result: Optional[Mapping[str, Any]],
-    direct_v2_payloads: Optional[Mapping[str, Any]],
+    direct_random_result: Mapping[str, Any] | None,
+    direct_v2_payloads: Mapping[object, Any] | None,
     n_sim: int = 300,
     seed: int = 42,
 ) -> pd.DataFrame:
@@ -1339,10 +1646,10 @@ def materialize_dualtrack_outputs(
     test_df: pd.DataFrame,
     id_col: str,
     target_col: str,
-    sample_submission_df: Optional[pd.DataFrame],
+    sample_submission_df: pd.DataFrame | None,
     selected_df: pd.DataFrame,
-    direct_random_result: Optional[Mapping[str, Any]] = None,
-    direct_v2_payloads: Optional[Mapping[str, Any]] = None,
+    direct_random_result: Mapping[str, Any] | None = None,
+    direct_v2_payloads: Mapping[object, Any] | None = None,
     run_shakeup_quick: bool = True,
     n_sim_shakeup: int = 300,
     seed: int = 42,
@@ -1364,7 +1671,11 @@ def materialize_dualtrack_outputs(
         if preds is None:
             continue
         preds_arr = np.maximum(np.asarray(preds, dtype=float), 0.0)
-        filename = "submission_v2_3_robust.csv" if role == "robust" else "submission_v2_3_lb_challenger.csv"
+        filename = (
+            "submission_v2_3_robust.csv"
+            if role == "robust"
+            else "submission_v2_3_lb_challenger.csv"
+        )
         if len(preds_arr) != len(test_df):
             # fallback strictness: if misaligned, skip writing and keep trace in selected_df
             continue
@@ -1422,17 +1733,35 @@ def write_submission_decision_report(
     lines.append("## 1) Contexte")
     lines.append(f"- Kaggle public (utilisateur): ~{float(kaggle_public_rmse_user):.3f}")
     lines.append("- OOF local et Kaggle public ne sont pas directement comparables.")
-    lines.append("- Ce cycle compare un track robuste V2 et un track direct Tweedie CatBoost (random KFold + scale/blend).")
+    lines.append(
+        "- Ce cycle compare un track robuste V2 et un track direct Tweedie CatBoost (random KFold + scale/blend)."
+    )
     lines.append("")
     lines.append("## 2) Diagnostic du gap (resume)")
-    lines.append(f"- Hypothese dominante (dual-track): {diagnosis_summary.get('dominant_hypothesis_top_run')}")
+    lines.append(
+        f"- Hypothese dominante (dual-track): {diagnosis_summary.get('dominant_hypothesis_top_run')}"
+    )
     lines.append(f"- Comptage hypotheses: {diagnosis_summary.get('dominant_hypothesis_counts')}")
     lines.append("- Overfitting CV: non conclu sans preuve inter-splits.")
     lines.append("- Public LB peut reagir positivement a un scaling global sans garantie privee.")
     lines.append("")
     lines.append("## 3) Bridge V1 / V2 / V2.2 (local)")
     if bridge_summary_df is not None and not bridge_summary_df.empty:
-        cols = [c for c in ["model_version", "track", "run_id", "rmse_primary_time", "rmse_secondary_group", "rmse_aux_blocked5", "q95_ratio_pos", "q99_ratio_pos", "rmse_prime_top1pct"] if c in bridge_summary_df.columns]
+        cols = [
+            c
+            for c in [
+                "model_version",
+                "track",
+                "run_id",
+                "rmse_primary_time",
+                "rmse_secondary_group",
+                "rmse_aux_blocked5",
+                "q95_ratio_pos",
+                "q99_ratio_pos",
+                "rmse_prime_top1pct",
+            ]
+            if c in bridge_summary_df.columns
+        ]
         lines.append("")
         lines.append(bridge_summary_df[cols].to_markdown(index=False))
         lines.append("")
@@ -1460,17 +1789,37 @@ def write_submission_decision_report(
     lines.append("")
     if selected_df is not None and not selected_df.empty:
         lines.append("## 6) Candidats selectionnes")
-        show_cols = [c for c in ["role", "candidate_id", "track", "risk_tag", "rmse_primary_time", "rmse_secondary_group", "rmse_aux_blocked5", "q99_ratio_pos", "selection_score_dualtrack"] if c in selected_df.columns]
+        show_cols = [
+            c
+            for c in [
+                "role",
+                "candidate_id",
+                "track",
+                "risk_tag",
+                "rmse_primary_time",
+                "rmse_secondary_group",
+                "rmse_aux_blocked5",
+                "q99_ratio_pos",
+                "selection_score_dualtrack",
+            ]
+            if c in selected_df.columns
+        ]
         lines.append("")
         lines.append(selected_df[show_cols].to_markdown(index=False))
         lines.append("")
     lines.append("## 7) Interpretation du test `p=1.2 x1.3`")
-    lines.append("- Le gain public peut venir d'un meilleur alignement de distribution/queue et/ou d'un tuning public-LB opportuniste.")
-    lines.append("- Le notebook compare random KFold et splits robustes (`primary_time`, `secondary_group`, `aux_blocked5`) pour qualifier ce risque.")
+    lines.append(
+        "- Le gain public peut venir d'un meilleur alignement de distribution/queue et/ou d'un tuning public-LB opportuniste."
+    )
+    lines.append(
+        "- Le notebook compare random KFold et splits robustes (`primary_time`, `secondary_group`, `aux_blocked5`) pour qualifier ce risque."
+    )
     lines.append("")
     lines.append("## 8) Notes")
     lines.append("- Cycle quick (1-2h): comparatif cible, pas tuning exhaustif.")
-    lines.append("- Aucune modification des fichiers existants; outputs ecrits sous `artifacts/v2_3_dualtrack_quick/`.")
+    lines.append(
+        "- Aucune modification des fichiers existants; outputs ecrits sous `artifacts/v2_3_dualtrack_quick/`."
+    )
     lines.append("")
 
     path = out / "submission_decision_v2_3_dualtrack.md"
@@ -1478,7 +1827,7 @@ def write_submission_decision_report(
     return path
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return dict(_train_run(config_path))

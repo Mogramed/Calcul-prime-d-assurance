@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, mean_squared_error, roc_auc_score
 from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import OrdinalEncoder
+
+from insurance_pricing._typing import (
+    FloatArray,
+    IntArray,
+    ModelKwargs,
+    SplitIndices,
+    as_float_array,
+)
 
 TARGET_FREQ_COL = "nombre_sinistres"
 TARGET_SEV_COL = "montant_sinistre"
@@ -28,17 +37,17 @@ class DatasetBundle:
     X_test: pd.DataFrame
     y_freq: pd.Series
     y_sev: pd.Series
-    feature_cols: List[str]
-    cat_cols: List[str]
-    num_cols: List[str]
+    feature_cols: list[str]
+    cat_cols: list[str]
+    num_cols: list[str]
 
 
 class OrdinalFrameEncoder:
     def __init__(self, cat_cols: Sequence[str]):
         self.cat_cols = list(cat_cols)
-        self.encoder: Optional[OrdinalEncoder] = None
+        self.encoder: OrdinalEncoder | None = None
 
-    def fit(self, X: pd.DataFrame) -> "OrdinalFrameEncoder":
+    def fit(self, X: pd.DataFrame) -> OrdinalFrameEncoder:
         if not self.cat_cols:
             return self
         self.encoder = OrdinalEncoder(
@@ -71,18 +80,18 @@ def save_json(data: Mapping[str, Any], path: str | Path) -> None:
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def load_json(path: str | Path) -> Dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+def load_json(path: str | Path) -> dict[str, Any]:
+    return dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-def load_train_test(data_dir: str | Path = "data") -> Tuple[pd.DataFrame, pd.DataFrame]:
+def load_train_test(data_dir: str | Path = "data") -> tuple[pd.DataFrame, pd.DataFrame]:
     base = Path(data_dir)
     train = pd.read_csv(base / "train.csv")
     test = pd.read_csv(base / "test.csv")
     return train, test
 
 
-def build_targets(train: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
+def build_targets(train: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     y_sev = train[TARGET_SEV_COL].astype(float).rename("y_sev")
     y_freq = (y_sev > 0).astype(int).rename("y_freq")
     return y_freq, y_sev
@@ -140,9 +149,7 @@ def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
         out["prix_par_kg"] = out["prix_vehicule"] / out["poids_vehicule"].replace(0, np.nan)
 
     if {"din_vehicule", "cylindre_vehicule"}.issubset(out.columns):
-        out["din_par_cylindre"] = (
-            out["din_vehicule"] / out["cylindre_vehicule"].replace(0, np.nan)
-        )
+        out["din_par_cylindre"] = out["din_vehicule"] / out["cylindre_vehicule"].replace(0, np.nan)
 
     out = _add_binary_indicators(out)
 
@@ -191,10 +198,10 @@ def build_primary_time_folds(
     *,
     n_blocks: int = 5,
     index_col: str = INDEX_COL,
-) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, SplitIndices]:
     order = np.argsort(train[index_col].to_numpy())
     blocks = np.array_split(order, n_blocks)
-    folds: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+    folds: dict[int, SplitIndices] = {}
     for fold in range(1, n_blocks):
         tr = np.concatenate(blocks[:fold]).astype(int)
         va = blocks[fold].astype(int)
@@ -207,22 +214,22 @@ def build_secondary_group_folds(
     *,
     n_splits: int = 5,
     group_col: str = "id_client",
-) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
+) -> dict[int, SplitIndices]:
     gkf = GroupKFold(n_splits=n_splits)
     groups = train[group_col].to_numpy()
-    out: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+    out: dict[int, SplitIndices] = {}
     for i, (tr, va) in enumerate(gkf.split(train, groups=groups), start=1):
         out[i] = (tr.astype(int), va.astype(int))
     return out
 
 
 def validate_folds_disjoint(
-    folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     *,
     check_full_coverage: bool = False,
-    n_rows: Optional[int] = None,
+    n_rows: int | None = None,
 ) -> None:
-    valid_union: List[int] = []
+    valid_union: list[int] = []
     for fold, (tr, va) in folds.items():
         inter = set(map(int, tr)).intersection(set(map(int, va)))
         if inter:
@@ -238,12 +245,12 @@ def validate_folds_disjoint(
 
 
 def folds_to_frame(
-    folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     *,
     split_name: str,
     n_rows: int,
 ) -> pd.DataFrame:
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for fold, (tr, va) in folds.items():
         rows.extend(
             {"split": split_name, "fold_id": int(fold), "row_idx": int(i), "role": "train"}
@@ -261,45 +268,45 @@ def folds_to_frame(
 def export_fold_artifacts(
     *,
     train: pd.DataFrame,
-    primary_folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
-    secondary_folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    primary_folds: Mapping[int, SplitIndices],
+    secondary_folds: Mapping[int, SplitIndices],
     output_dir: str | Path = "artifacts",
 ) -> None:
     out = ensure_dir(output_dir)
-    folds_to_frame(
-        primary_folds, split_name="primary_time", n_rows=len(train)
-    ).to_parquet(out / "folds_primary.parquet", index=False)
-    folds_to_frame(
-        secondary_folds, split_name="secondary_group", n_rows=len(train)
-    ).to_parquet(out / "folds_secondary.parquet", index=False)
+    folds_to_frame(primary_folds, split_name="primary_time", n_rows=len(train)).to_parquet(
+        out / "folds_primary.parquet", index=False
+    )
+    folds_to_frame(secondary_folds, split_name="secondary_group", n_rows=len(train)).to_parquet(
+        out / "folds_secondary.parquet", index=False
+    )
 
 
-def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+def rmse(y_true: FloatArray, y_pred: FloatArray) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 
-def _safe_auc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+def _safe_auc(y_true: IntArray, y_prob: FloatArray) -> float:
     if len(np.unique(y_true)) < 2:
         return float("nan")
     return float(roc_auc_score(y_true, y_prob))
 
 
-def make_tail_weights(y_pos: np.ndarray) -> np.ndarray:
+def make_tail_weights(y_pos: FloatArray) -> FloatArray:
     y = np.asarray(y_pos, dtype=float)
     ref = max(float(np.nanpercentile(y, 50)), 1.0)
     w = np.sqrt((y + 1.0) / (ref + 1.0))
     q90 = float(np.nanpercentile(y, 90))
     w[y >= q90] *= 1.5
-    return np.clip(w, 1.0, 8.0)
+    return as_float_array(np.clip(w, 1.0, 8.0))
 
 
 def compute_metric_row(
     *,
-    y_freq_true: np.ndarray,
-    y_sev_true: np.ndarray,
-    pred_freq: np.ndarray,
-    pred_sev: np.ndarray,
-) -> Dict[str, float]:
+    y_freq_true: IntArray,
+    y_sev_true: FloatArray,
+    pred_freq: FloatArray,
+    pred_sev: FloatArray,
+) -> dict[str, float]:
     pred_freq = np.nan_to_num(np.asarray(pred_freq, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
     pred_sev = np.nan_to_num(np.asarray(pred_sev, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
     y_freq_true = np.asarray(y_freq_true, dtype=int)
@@ -318,14 +325,18 @@ def compute_metric_row(
     }
 
 
-def _severity_fallback(y_sev_tr: np.ndarray, n_va: int, n_te: int) -> Tuple[np.ndarray, np.ndarray]:
+def _severity_fallback(y_sev_tr: FloatArray, n_va: int, n_te: int) -> tuple[FloatArray, FloatArray]:
     pos = np.asarray(y_sev_tr, dtype=float)
     pos = pos[pos > 0]
     base = float(np.nanmean(pos)) if len(pos) else 0.0
     return np.full(n_va, base, dtype=float), np.full(n_te, base, dtype=float)
 
 
-def fit_calibrator(probs: np.ndarray, y_true: np.ndarray, method: str):
+def fit_calibrator(
+    probs: FloatArray,
+    y_true: IntArray,
+    method: str,
+) -> IsotonicRegression | LogisticRegression | None:
     m = method.lower()
     p = np.asarray(probs, dtype=float)
     y = np.asarray(y_true, dtype=int)
@@ -342,25 +353,29 @@ def fit_calibrator(probs: np.ndarray, y_true: np.ndarray, method: str):
     raise ValueError(f"Unknown calibration method: {method}")
 
 
-def apply_calibrator(model, probs: np.ndarray, method: str) -> np.ndarray:
+def apply_calibrator(
+    model: IsotonicRegression | LogisticRegression | None,
+    probs: FloatArray,
+    method: str,
+) -> FloatArray:
     m = method.lower()
     p = np.asarray(probs, dtype=float)
     if m == "none" or model is None:
         return p
     if m == "isotonic":
-        return model.transform(p)
+        return as_float_array(model.transform(p))
     if m == "platt":
-        return model.predict_proba(p.reshape(-1, 1))[:, 1]
+        return as_float_array(model.predict_proba(p.reshape(-1, 1))[:, 1])
     raise ValueError(f"Unknown calibration method: {method}")
 
 
 def crossfit_calibrate_oof(
     *,
-    probs: np.ndarray,
-    y_true: np.ndarray,
-    fold_assign: np.ndarray,
+    probs: FloatArray,
+    y_true: FloatArray,
+    fold_assign: FloatArray,
     method: str,
-) -> np.ndarray:
+) -> FloatArray:
     m = method.lower()
     p = np.asarray(probs, dtype=float)
     y = np.asarray(y_true, dtype=int)
@@ -368,7 +383,7 @@ def crossfit_calibrate_oof(
     if m == "none":
         return p.copy()
 
-    out = np.full_like(p, np.nan, dtype=float)
+    out = as_float_array(np.full_like(p, np.nan, dtype=float))
     valid = ~np.isnan(folds)
     unique_folds = sorted(set(int(f) for f in folds[valid]))
     for f in unique_folds:
@@ -382,28 +397,28 @@ def crossfit_calibrate_oof(
     out[~valid] = p[~valid]
     missing = np.isnan(out) & valid
     out[missing] = p[missing]
-    return out
+    return as_float_array(out)
 
 
 def _fit_catboost(
     *,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
     cat_idx = [X_tr.columns.get_loc(c) for c in cat_cols]
-    f_params = {
+    f_params: ModelKwargs = {
         "loss_function": "Logloss",
         "eval_metric": "Logloss",
         "iterations": 1200,
@@ -415,7 +430,7 @@ def _fit_catboost(
     }
     f_params.update(freq_params)
 
-    s_params = {
+    s_params: ModelKwargs = {
         "loss_function": "RMSE",
         "eval_metric": "RMSE",
         "iterations": 1800,
@@ -453,31 +468,39 @@ def _fit_catboost(
     z_te = reg.predict(Pool(X_te, cat_features=cat_idx))
     z_tr = reg.predict(Pool(X_tr.loc[pos], cat_features=cat_idx))
     resid = y_log - z_tr
-    smear = float(np.average(np.exp(resid), weights=w)) if w is not None else float(np.mean(np.exp(resid)))
+    smear = (
+        float(np.average(np.exp(resid), weights=w))
+        if w is not None
+        else float(np.mean(np.exp(resid)))
+    )
     if not np.isfinite(smear) or smear <= 0:
         smear = 1.0
     m_va = np.maximum(smear * np.exp(z_va) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-    m_va = np.nan_to_num(m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
-    m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+    m_va = np.nan_to_num(
+        m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
+    m_te = np.nan_to_num(
+        m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
     return p_va, m_va, p_te, m_te
 
 
 def _fit_lgbm(
     *,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     from lightgbm import LGBMClassifier, LGBMRegressor
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_tr)
@@ -485,7 +508,7 @@ def _fit_lgbm(
     Xva = enc.transform(X_va)
     Xte = enc.transform(X_te)
 
-    f_params = {
+    f_params: ModelKwargs = {
         "objective": "binary",
         "n_estimators": 2000,
         "learning_rate": 0.03,
@@ -497,7 +520,7 @@ def _fit_lgbm(
     }
     f_params.update(freq_params)
 
-    s_params = {
+    s_params: ModelKwargs = {
         "objective": "rmse",
         "n_estimators": 2500,
         "learning_rate": 0.03,
@@ -528,31 +551,39 @@ def _fit_lgbm(
     z_te = reg.predict(Xte)
     z_tr = reg.predict(Xtr.loc[pos])
     resid = y_log - z_tr
-    smear = float(np.average(np.exp(resid), weights=w)) if w is not None else float(np.mean(np.exp(resid)))
+    smear = (
+        float(np.average(np.exp(resid), weights=w))
+        if w is not None
+        else float(np.mean(np.exp(resid)))
+    )
     if not np.isfinite(smear) or smear <= 0:
         smear = 1.0
     m_va = np.maximum(smear * np.exp(z_va) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-    m_va = np.nan_to_num(m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
-    m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+    m_va = np.nan_to_num(
+        m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
+    m_te = np.nan_to_num(
+        m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
     return p_va, m_va, p_te, m_te
 
 
 def _fit_xgb(
     *,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     from xgboost import XGBClassifier, XGBRegressor
 
     enc = OrdinalFrameEncoder(cat_cols).fit(X_tr)
@@ -560,7 +591,7 @@ def _fit_xgb(
     Xva = enc.transform(X_va)
     Xte = enc.transform(X_te)
 
-    f_params = {
+    f_params: ModelKwargs = {
         "objective": "binary:logistic",
         "eval_metric": "logloss",
         "n_estimators": 1800,
@@ -574,7 +605,7 @@ def _fit_xgb(
     }
     f_params.update(freq_params)
 
-    s_params = {
+    s_params: ModelKwargs = {
         "objective": "reg:squarederror",
         "eval_metric": "rmse",
         "n_estimators": 2200,
@@ -607,13 +638,21 @@ def _fit_xgb(
     z_te = reg.predict(Xte)
     z_tr = reg.predict(Xtr.loc[pos])
     resid = y_log - z_tr
-    smear = float(np.average(np.exp(resid), weights=w)) if w is not None else float(np.mean(np.exp(resid)))
+    smear = (
+        float(np.average(np.exp(resid), weights=w))
+        if w is not None
+        else float(np.mean(np.exp(resid)))
+    )
     if not np.isfinite(smear) or smear <= 0:
         smear = 1.0
     m_va = np.maximum(smear * np.exp(z_va) - 1.0, 0.0)
     m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-    m_va = np.nan_to_num(m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
-    m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+    m_va = np.nan_to_num(
+        m_va, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
+    m_te = np.nan_to_num(
+        m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+    )
     return p_va, m_va, p_te, m_te
 
 
@@ -621,18 +660,18 @@ def fit_predict_two_part(
     *,
     engine: str,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     e = engine.lower()
     if e == "catboost":
         return _fit_catboost(
@@ -686,15 +725,15 @@ def fit_full_two_part_predict(
     *,
     engine: str,
     X_train: pd.DataFrame,
-    y_freq_train: np.ndarray,
-    y_sev_train: np.ndarray,
+    y_freq_train: IntArray,
+    y_sev_train: FloatArray,
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray]:
     """Train on full train and return (test_freq_raw, test_sev)."""
     e = engine.lower()
 
@@ -702,7 +741,7 @@ def fit_full_two_part_predict(
         from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 
         cat_idx = [X_train.columns.get_loc(c) for c in cat_cols]
-        fp = {
+        cat_freq_params: ModelKwargs = {
             "loss_function": "Logloss",
             "eval_metric": "Logloss",
             "iterations": 1200,
@@ -712,8 +751,8 @@ def fit_full_two_part_predict(
             "random_seed": seed,
             "verbose": False,
         }
-        fp.update(freq_params)
-        sp = {
+        cat_freq_params.update(freq_params)
+        cat_sev_params: ModelKwargs = {
             "loss_function": "RMSE",
             "eval_metric": "RMSE",
             "iterations": 1800,
@@ -723,9 +762,9 @@ def fit_full_two_part_predict(
             "random_seed": seed,
             "verbose": False,
         }
-        sp.update(sev_params)
+        cat_sev_params.update(sev_params)
 
-        clf = CatBoostClassifier(**fp)
+        clf = CatBoostClassifier(**cat_freq_params)
         clf.fit(Pool(X_train, y_freq_train, cat_features=cat_idx))
         p_te = clf.predict_proba(Pool(X_test, cat_features=cat_idx))[:, 1]
 
@@ -736,7 +775,7 @@ def fit_full_two_part_predict(
         y_pos = y_sev_train[pos]
         y_log = np.log1p(y_pos)
         w = make_tail_weights(y_pos) if severity_mode == "weighted_tail" else None
-        reg = CatBoostRegressor(**sp)
+        reg = CatBoostRegressor(**cat_sev_params)
         reg.fit(Pool(X_train.loc[pos], y_log, cat_features=cat_idx, weight=w))
         z_te = reg.predict(Pool(X_test, cat_features=cat_idx))
         z_tr = reg.predict(Pool(X_train.loc[pos], cat_features=cat_idx))
@@ -749,7 +788,9 @@ def fit_full_two_part_predict(
         if not np.isfinite(smear) or smear <= 0:
             smear = 1.0
         m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-        m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+        m_te = np.nan_to_num(
+            m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+        )
         return p_te, m_te
 
     if e in {"lightgbm", "xgboost"}:
@@ -763,7 +804,7 @@ def fit_full_two_part_predict(
         Xte = enc.transform(X_test)
 
         if e == "lightgbm":
-            fp = {
+            lgb_freq_params: ModelKwargs = {
                 "objective": "binary",
                 "n_estimators": 2000,
                 "learning_rate": 0.03,
@@ -773,7 +814,7 @@ def fit_full_two_part_predict(
                 "random_state": seed,
                 "n_jobs": -1,
             }
-            sp = {
+            lgb_sev_params: ModelKwargs = {
                 "objective": "rmse",
                 "n_estimators": 2500,
                 "learning_rate": 0.03,
@@ -783,12 +824,12 @@ def fit_full_two_part_predict(
                 "random_state": seed,
                 "n_jobs": -1,
             }
-            fp.update(freq_params)
-            sp.update(sev_params)
-            clf = LGBMClassifier(**fp)
-            reg = LGBMRegressor(**sp)
+            lgb_freq_params.update(freq_params)
+            lgb_sev_params.update(sev_params)
+            clf = LGBMClassifier(**lgb_freq_params)
+            reg = LGBMRegressor(**lgb_sev_params)
         else:
-            fp = {
+            xgb_freq_params: ModelKwargs = {
                 "objective": "binary:logistic",
                 "eval_metric": "logloss",
                 "n_estimators": 1800,
@@ -800,7 +841,7 @@ def fit_full_two_part_predict(
                 "n_jobs": -1,
                 "tree_method": "hist",
             }
-            sp = {
+            xgb_sev_params: ModelKwargs = {
                 "objective": "reg:squarederror",
                 "eval_metric": "rmse",
                 "n_estimators": 2200,
@@ -812,10 +853,10 @@ def fit_full_two_part_predict(
                 "n_jobs": -1,
                 "tree_method": "hist",
             }
-            fp.update(freq_params)
-            sp.update(sev_params)
-            clf = XGBClassifier(**fp)
-            reg = XGBRegressor(**sp)
+            xgb_freq_params.update(freq_params)
+            xgb_sev_params.update(sev_params)
+            clf = XGBClassifier(**xgb_freq_params)
+            reg = XGBRegressor(**xgb_sev_params)
 
         if e == "xgboost":
             clf.fit(Xtr, y_freq_train, verbose=False)
@@ -845,7 +886,9 @@ def fit_full_two_part_predict(
         if not np.isfinite(smear) or smear <= 0:
             smear = 1.0
         m_te = np.maximum(smear * np.exp(z_te) - 1.0, 0.0)
-        m_te = np.nan_to_num(m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0)
+        m_te = np.nan_to_num(
+            m_te, nan=float(np.nanmean(y_pos) if len(y_pos) else 0.0), posinf=0.0, neginf=0.0
+        )
         return p_te, m_te
 
     raise ValueError(f"Unsupported engine: {engine}")
@@ -859,7 +902,7 @@ def run_cv_experiment(
     X: pd.DataFrame,
     y_freq: pd.Series,
     y_sev: pd.Series,
-    folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -867,7 +910,7 @@ def run_cv_experiment(
     calibration_methods: Sequence[str],
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     n = len(X)
     fold_assign = np.full(n, np.nan)
     oof_freq = np.full(n, np.nan)
@@ -875,9 +918,9 @@ def run_cv_experiment(
     y_freq_np = y_freq.to_numpy(dtype=int)
     y_sev_np = y_sev.to_numpy(dtype=float)
 
-    test_freq_parts: List[np.ndarray] = []
-    test_sev_parts: List[np.ndarray] = []
-    fold_rows: List[Dict[str, Any]] = []
+    test_freq_parts: list[FloatArray] = []
+    test_sev_parts: list[FloatArray] = []
+    fold_rows: list[dict[str, Any]] = []
 
     for fold_id, (tr, va) in folds.items():
         p_va, m_va, p_te, m_te = fit_predict_two_part(
@@ -923,11 +966,13 @@ def run_cv_experiment(
     valid = ~np.isnan(oof_freq)
     test_freq_mean = np.nanmean(np.vstack(test_freq_parts), axis=0)
     test_sev_mean = np.nanmean(np.vstack(test_sev_parts), axis=0)
-    run_rows: List[Dict[str, Any]] = []
-    pred_frames: List[pd.DataFrame] = []
+    run_rows: list[dict[str, Any]] = []
+    pred_frames: list[pd.DataFrame] = []
 
     for calib in calibration_methods:
         c = calib.lower()
+        oof_freq_cal: FloatArray
+        test_freq_cal: FloatArray
         if c == "none":
             oof_freq_cal = oof_freq.copy()
             test_freq_cal = test_freq_mean.copy()
@@ -1012,7 +1057,7 @@ def run_cv_experiment(
     )
 
 
-def optimize_non_negative_weights(pred_matrix: np.ndarray, y_true: np.ndarray) -> np.ndarray:
+def optimize_non_negative_weights(pred_matrix: FloatArray, y_true: FloatArray) -> FloatArray:
     p = np.asarray(pred_matrix, dtype=float)
     y = np.asarray(y_true, dtype=float)
     n_models = p.shape[1]
@@ -1020,20 +1065,20 @@ def optimize_non_negative_weights(pred_matrix: np.ndarray, y_true: np.ndarray) -
     bounds = [(0.0, 1.0)] * n_models
     constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
 
-    def objective(w: np.ndarray) -> float:
+    def objective(w: FloatArray) -> float:
         return rmse(y, p @ w)
 
     r = minimize(objective, x0=x0, bounds=bounds, constraints=constraints)
     if not r.success:
-        return x0
+        return as_float_array(x0)
     w = np.clip(r.x, 0.0, 1.0)
     s = w.sum()
-    return x0 if s <= 0 else w / s
+    return as_float_array(x0 if s <= 0 else w / s)
 
 
 def simulate_public_private_shakeup(
-    y_true: np.ndarray,
-    pred: np.ndarray,
+    y_true: FloatArray,
+    pred: FloatArray,
     *,
     n_sim: int = 2000,
     public_ratio: float = 1.0 / 3.0,
@@ -1045,7 +1090,7 @@ def simulate_public_private_shakeup(
     n = len(y)
     n_pub = int(round(n * public_ratio))
     idx = np.arange(n)
-    rows: List[Dict[str, float]] = []
+    rows: list[dict[str, float]] = []
     for s in range(n_sim):
         rng.shuffle(idx)
         pub = idx[:n_pub]
@@ -1063,13 +1108,15 @@ def simulate_public_private_shakeup(
     return pd.DataFrame(rows)
 
 
-def build_submission(index_series: pd.Series, pred: np.ndarray) -> pd.DataFrame:
-    sub = pd.DataFrame({"index": index_series.astype(int).to_numpy(), "pred": np.asarray(pred, dtype=float)})
+def build_submission(index_series: pd.Series, pred: FloatArray) -> pd.DataFrame:
+    sub = pd.DataFrame(
+        {"index": index_series.astype(int).to_numpy(), "pred": np.asarray(pred, dtype=float)}
+    )
     sub["pred"] = sub["pred"].clip(lower=0.0)
     return sub
 
 
-COARSE_CONFIGS: Dict[str, List[Dict[str, Any]]] = {
+COARSE_CONFIGS: dict[str, list[dict[str, Any]]] = {
     "catboost": [
         {
             "config_id": "cb_c1",
@@ -1129,17 +1176,17 @@ def pick_top_configs(
     *,
     split_name: str = "primary_time",
     top_k_per_engine: int = 2,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     rr = run_registry.copy()
     rr = rr[(rr["level"] == "run") & (rr["split"] == split_name)]
     rr = rr.sort_values(["engine", "rmse_prime", "brier_freq"])
-    out: Dict[str, List[str]] = {}
+    out: dict[str, list[str]] = {}
     for engine, g in rr.groupby("engine"):
         out[engine] = g["config_id"].drop_duplicates().head(top_k_per_engine).tolist()
     return out
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return dict(_train_run(config_path))

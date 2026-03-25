@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -10,7 +11,9 @@ import pandas as pd
 def train_main() -> None:
     from insurance_pricing.workflows import train_run
 
-    parser = argparse.ArgumentParser(description="Train insurance pricing models and save artifacts.")
+    parser = argparse.ArgumentParser(
+        description="Train insurance pricing models and save artifacts."
+    )
     parser.add_argument("--config", required=True, help="Path to the training JSON config file.")
     args = parser.parse_args()
     print(json.dumps(train_run(args.config), indent=2, ensure_ascii=False))
@@ -20,7 +23,9 @@ def evaluate_main() -> None:
     from insurance_pricing.workflows import evaluate_run
 
     parser = argparse.ArgumentParser(description="Evaluate a saved run on train and test data.")
-    parser.add_argument("--run-id", required=True, help="Model run_id from artifacts/models/registry.csv.")
+    parser.add_argument(
+        "--run-id", required=True, help="Model run_id from artifacts/models/registry.csv."
+    )
     args = parser.parse_args()
     print(json.dumps(evaluate_run(args.run_id), indent=2, ensure_ascii=False))
 
@@ -28,7 +33,9 @@ def evaluate_main() -> None:
 def predict_main() -> None:
     from insurance_pricing.workflows import predict_from_run
 
-    parser = argparse.ArgumentParser(description="Predict frequency, severity, and prime from a saved run.")
+    parser = argparse.ArgumentParser(
+        description="Predict frequency, severity, and prime from a saved run."
+    )
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--input", required=True, help="Input CSV path.")
     parser.add_argument("--output", required=True, help="Output CSV path.")
@@ -64,7 +71,7 @@ def serve_api_main() -> None:
 
     parser = argparse.ArgumentParser(description="Serve the Insurance Pricing FastAPI application.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")))
     parser.add_argument("--reload", action="store_true")
     args = parser.parse_args()
 
@@ -74,4 +81,6 @@ def serve_api_main() -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )

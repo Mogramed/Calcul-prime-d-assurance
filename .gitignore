@@ -1,6 +1,8 @@
 **/__pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
 # Runtime logs/caches
 catboost_info/
@@ -27,3 +29,5 @@ artifacts/**
 .DS_Store
 Thumbs.db
 .env
+web/node_modules/
+web/.next/

@@ -1,23 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from insurance_pricing.data.io import ensure_dir
-from insurance_pricing.data.schema import DatasetBundle, INDEX_COL
+from insurance_pricing._typing import FloatArray, IntArray, SplitIndices, as_float_array
+from insurance_pricing.data.schema import DatasetBundle
 from insurance_pricing.evaluation.diagnostics import (
     build_prediction_distribution_table,
-    compute_prediction_distribution_audit,
 )
-from insurance_pricing.evaluation.metrics import compute_metric_row, rmse
+from insurance_pricing.evaluation.metrics import compute_metric_row
 from insurance_pricing.features.target_encoding import _add_fold_target_encoding
-from insurance_pricing.models.calibration import (
-    apply_calibrator,
-    crossfit_calibrate_oof,
-    fit_calibrator,
-)
 from insurance_pricing.legacy.engines.catboost_impl import (
     _fit_catboost,
     _fit_catboost_fold_v2,
@@ -27,12 +22,16 @@ from insurance_pricing.legacy.engines.lightgbm_impl import (
     _fit_lgbm_fold_v2,
 )
 from insurance_pricing.legacy.engines.xgboost_impl import _fit_xgb, _fit_xgb_fold_v2
+from insurance_pricing.models.calibration import (
+    apply_calibrator,
+    crossfit_calibrate_oof,
+    fit_calibrator,
+)
 from insurance_pricing.models.tail import (
     apply_tail_mapper,
     crossfit_tail_mapper_oof,
     fit_tail_mapper,
 )
-from insurance_pricing.training.selection import optimize_non_negative_weights
 
 
 def make_run_id(df: pd.DataFrame) -> pd.Series:
@@ -85,7 +84,7 @@ def make_run_id(df: pd.DataFrame) -> pd.Series:
 def _attach_run_health_columns(
     run_df: pd.DataFrame,
     pred_df: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     if run_df.empty:
         return run_df, pd.DataFrame()
     rr = run_df.copy()
@@ -108,18 +107,24 @@ def _attach_run_health_columns(
         .pivot_table(index="run_id", columns="split", values="rmse_prime", aggfunc="mean")
         .rename_axis(None, axis=1)
     )
-    rmse_primary = piv_rmse["primary_time"] if "primary_time" in piv_rmse.columns else pd.Series(dtype=float)
-    rmse_secondary = piv_rmse["secondary_group"] if "secondary_group" in piv_rmse.columns else pd.Series(dtype=float)
-    rmse_aux = piv_rmse["aux_blocked5"] if "aux_blocked5" in piv_rmse.columns else pd.Series(dtype=float)
+    rmse_primary = (
+        piv_rmse["primary_time"] if "primary_time" in piv_rmse.columns else pd.Series(dtype=float)
+    )
+    rmse_secondary = (
+        piv_rmse["secondary_group"]
+        if "secondary_group" in piv_rmse.columns
+        else pd.Series(dtype=float)
+    )
+    rmse_aux = (
+        piv_rmse["aux_blocked5"] if "aux_blocked5" in piv_rmse.columns else pd.Series(dtype=float)
+    )
     gap_secondary = (rmse_secondary - rmse_primary).to_dict()
     gap_aux = (rmse_aux - rmse_primary).to_dict()
 
     dist_test = dist[dist["sample"] == "test"].copy()
     dist_oof = dist[dist["sample"] == "oof"].copy()
     q99_oof_primary = (
-        dist_oof[dist_oof["split"] == "primary_time"]
-        .set_index("run_id")["pred_q99"]
-        .to_dict()
+        dist_oof[dist_oof["split"] == "primary_time"].set_index("run_id")["pred_q99"].to_dict()
     )
     test_stats = (
         dist_test.set_index(["run_id", "split"])[
@@ -148,7 +153,9 @@ def _attach_run_health_columns(
         axis=1,
     )
     rr["pred_q99_oof_primary"] = rr["run_id"].map(q99_oof_primary).astype(float)
-    rr["q99_test_over_oof_primary"] = rr["pred_q99_test"] / rr["pred_q99_oof_primary"].clip(lower=1e-9)
+    rr["q99_test_over_oof_primary"] = rr["pred_q99_test"] / rr["pred_q99_oof_primary"].clip(
+        lower=1e-9
+    )
     rr["distribution_collapse_flag"] = rr.apply(
         lambda r: int(
             (
@@ -162,7 +169,8 @@ def _attach_run_health_columns(
             )
             or (
                 (r["run_id"], r["split"]) in test_stats.index
-                and int(test_stats.loc[(r["run_id"], r["split"]), "distribution_collapse_flag"]) == 1
+                and int(test_stats.loc[(r["run_id"], r["split"]), "distribution_collapse_flag"])
+                == 1
             )
         ),
         axis=1,
@@ -179,22 +187,23 @@ def _attach_run_health_columns(
     )
     return rr, dist
 
+
 def fit_predict_two_part(
     *,
     engine: str,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
     severity_mode: str,
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     e = engine.lower()
     if e == "catboost":
         return _fit_catboost(
@@ -243,6 +252,7 @@ def fit_predict_two_part(
         )
     raise ValueError(f"Unsupported engine: {engine}")
 
+
 def run_cv_experiment(
     *,
     split_name: str,
@@ -251,7 +261,7 @@ def run_cv_experiment(
     X: pd.DataFrame,
     y_freq: pd.Series,
     y_sev: pd.Series,
-    folds: Mapping[int, Tuple[np.ndarray, np.ndarray]],
+    folds: Mapping[int, SplitIndices],
     X_test: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -259,17 +269,17 @@ def run_cv_experiment(
     calibration_methods: Sequence[str],
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     n = len(X)
-    fold_assign = np.full(n, np.nan)
-    oof_freq = np.full(n, np.nan)
-    oof_sev = np.full(n, np.nan)
+    fold_assign = as_float_array(np.full(n, np.nan))
+    oof_freq = as_float_array(np.full(n, np.nan))
+    oof_sev = as_float_array(np.full(n, np.nan))
     y_freq_np = y_freq.to_numpy(dtype=int)
     y_sev_np = y_sev.to_numpy(dtype=float)
 
-    test_freq_parts: List[np.ndarray] = []
-    test_sev_parts: List[np.ndarray] = []
-    fold_rows: List[Dict[str, Any]] = []
+    test_freq_parts: list[FloatArray] = []
+    test_sev_parts: list[FloatArray] = []
+    fold_rows: list[dict[str, Any]] = []
 
     for fold_id, (tr, va) in folds.items():
         p_va, m_va, p_te, m_te = fit_predict_two_part(
@@ -315,8 +325,8 @@ def run_cv_experiment(
     valid = ~np.isnan(oof_freq)
     test_freq_mean = np.nanmean(np.vstack(test_freq_parts), axis=0)
     test_sev_mean = np.nanmean(np.vstack(test_sev_parts), axis=0)
-    run_rows: List[Dict[str, Any]] = []
-    pred_frames: List[pd.DataFrame] = []
+    run_rows: list[dict[str, Any]] = []
+    pred_frames: list[pd.DataFrame] = []
 
     for calib in calibration_methods:
         c = calib.lower()
@@ -403,16 +413,17 @@ def run_cv_experiment(
         pd.concat(pred_frames, ignore_index=True),
     )
 
+
 def _fit_predict_fold_v2(
     *,
     engine: str,
     family: str,
     X_tr: pd.DataFrame,
-    y_freq_tr: np.ndarray,
-    y_sev_tr: np.ndarray,
+    y_freq_tr: IntArray,
+    y_sev_tr: FloatArray,
     X_va: pd.DataFrame,
-    y_freq_va: np.ndarray,
-    y_sev_va: np.ndarray,
+    y_freq_va: IntArray,
+    y_sev_va: FloatArray,
     X_te: pd.DataFrame,
     cat_cols: Sequence[str],
     seed: int,
@@ -421,7 +432,7 @@ def _fit_predict_fold_v2(
     freq_params: Mapping[str, Any],
     sev_params: Mapping[str, Any],
     direct_params: Mapping[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
     e = engine.lower()
     if e == "catboost":
         return _fit_catboost_fold_v2(
@@ -479,12 +490,13 @@ def _fit_predict_fold_v2(
         )
     raise ValueError(f"Unsupported engine: {engine}")
 
+
 def _run_benchmark_single(
     spec: Mapping[str, Any],
     bundle: DatasetBundle,
-    splits: Mapping[str, Mapping[int, Tuple[np.ndarray, np.ndarray]]],
+    splits: Mapping[str, Mapping[int, SplitIndices]],
     seed: int,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     feature_set = str(spec.get("feature_set", "base_v2"))
     engine = str(spec.get("engine", "catboost")).lower()
     family = str(spec.get("family", "two_part_classic")).lower()
@@ -511,20 +523,20 @@ def _run_benchmark_single(
     n = len(X)
     n_test = len(X_test)
 
-    all_fold_rows: List[pd.DataFrame] = []
-    all_run_rows: List[pd.DataFrame] = []
-    all_pred_rows: List[pd.DataFrame] = []
+    all_fold_rows: list[pd.DataFrame] = []
+    all_run_rows: list[pd.DataFrame] = []
+    all_pred_rows: list[pd.DataFrame] = []
 
     for split_name in split_names:
         folds = splits[split_name]
-        fold_assign = np.full(n, np.nan)
-        oof_freq = np.full(n, np.nan)
-        oof_sev = np.full(n, np.nan)
-        oof_prime = np.full(n, np.nan)
-        test_freq_parts: List[np.ndarray] = []
-        test_sev_parts: List[np.ndarray] = []
-        test_prime_parts: List[np.ndarray] = []
-        fold_records: List[Dict[str, Any]] = []
+        fold_assign = as_float_array(np.full(n, np.nan))
+        oof_freq = as_float_array(np.full(n, np.nan))
+        oof_sev = as_float_array(np.full(n, np.nan))
+        oof_prime = as_float_array(np.full(n, np.nan))
+        test_freq_parts: list[FloatArray] = []
+        test_sev_parts: list[FloatArray] = []
+        test_prime_parts: list[FloatArray] = []
+        fold_records: list[dict[str, Any]] = []
 
         for fold_id, (tr_idx, va_idx) in folds.items():
             X_tr = X.iloc[tr_idx].copy()
@@ -741,12 +753,13 @@ def _run_benchmark_single(
     run_df, _ = _attach_run_health_columns(run_df, pred_df)
     return fold_df, run_df, pred_df
 
+
 def run_benchmark(
     spec: Mapping[str, Any],
     bundle: DatasetBundle | Mapping[str, DatasetBundle],
-    splits: Mapping[str, Mapping[int, Tuple[np.ndarray, np.ndarray]]],
+    splits: Mapping[str, Mapping[int, SplitIndices]],
     seed: int,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if isinstance(bundle, Mapping):
         fs_all = list(bundle.keys())
         fs_requested = list(spec.get("feature_sets", fs_all))
@@ -754,13 +767,15 @@ def run_benchmark(
         if not fs_requested:
             raise ValueError("No valid feature_set requested in spec['feature_sets'].")
 
-        all_folds: List[pd.DataFrame] = []
-        all_runs: List[pd.DataFrame] = []
-        all_preds: List[pd.DataFrame] = []
+        all_folds: list[pd.DataFrame] = []
+        all_runs: list[pd.DataFrame] = []
+        all_preds: list[pd.DataFrame] = []
         for fs in fs_requested:
             sp = dict(spec)
             sp["feature_set"] = fs
-            f_df, r_df, p_df = _run_benchmark_single(sp, bundle=bundle[fs], splits=splits, seed=seed)
+            f_df, r_df, p_df = _run_benchmark_single(
+                sp, bundle=bundle[fs], splits=splits, seed=seed
+            )
             all_folds.append(f_df)
             all_runs.append(r_df)
             all_preds.append(p_df)
@@ -770,4 +785,3 @@ def run_benchmark(
         return fold_df, run_df, pred_df
 
     return _run_benchmark_single(spec=spec, bundle=bundle, splits=splits, seed=seed)
-

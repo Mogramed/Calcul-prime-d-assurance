@@ -1,0 +1,270 @@
+name: CI and Docker Publish
+
+on:
+  push:
+    branches: ["main", "test/dockerhub-push"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
+  INSURANCE_PRICING_RUN_ID: base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
+  INSURANCE_PRICING_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@127.0.0.1:54329/insurance_pricing
+  INSURANCE_PRICING_TEST_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@127.0.0.1:54329/insurance_pricing
+  INSURANCE_PRICING_CONTAINER_DATABASE_URL: postgresql+psycopg://insurance_pricing:insurance_pricing@host.docker.internal:54329/insurance_pricing
+  DOCKERHUB_API_IMAGE_NAME: calcul-prime-assurance
+  DOCKERHUB_WEB_IMAGE_NAME: nova-assurances-web
+
+jobs:
+  quality-and-tests:
+    name: Quality and Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: insurance_pricing
+          POSTGRES_USER: insurance_pricing
+          POSTGRES_PASSWORD: insurance_pricing
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U insurance_pricing -d insurance_pricing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --all-groups --frozen
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm install
+
+      - name: Generate frontend SDK
+        working-directory: web
+        run: npm run codegen
+
+      - name: Run frontend lint
+        working-directory: web
+        run: npm run lint
+
+      - name: Run frontend typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+
+      - name: Run Ruff
+        run: uv run ruff check src tests scripts
+
+      - name: Run MyPy
+        run: uv run mypy
+
+      - name: Apply Alembic migrations
+        run: uv run alembic upgrade head
+
+      - name: Run unit tests
+        run: uv run pytest -m "not integration"
+
+      - name: Run integration tests
+        run: uv run pytest -m integration
+
+  docker-smoke:
+    name: Docker Smoke Test
+    needs: quality-and-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: insurance_pricing
+          POSTGRES_USER: insurance_pricing
+          POSTGRES_PASSWORD: insurance_pricing
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U insurance_pricing -d insurance_pricing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for validation
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: insurance-pricing:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Apply Alembic migrations with the container image
+        run: >
+          docker run --rm
+          --add-host=host.docker.internal:host-gateway
+          -e INSURANCE_PRICING_DATABASE_URL=${{ env.INSURANCE_PRICING_CONTAINER_DATABASE_URL }}
+          insurance-pricing:ci
+          uv run --no-sync alembic upgrade head
+
+      - name: Start API container
+        run: >
+          docker run -d --name insurance-pricing-api
+          --add-host=host.docker.internal:host-gateway
+          -p 8000:8000
+          -e INSURANCE_PRICING_RUN_ID=${{ env.INSURANCE_PRICING_RUN_ID }}
+          -e INSURANCE_PRICING_DATABASE_URL=${{ env.INSURANCE_PRICING_CONTAINER_DATABASE_URL }}
+          insurance-pricing:ci
+
+      - name: Smoke test API readiness
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/ready >ready.json; then
+              cat ready.json
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs insurance-pricing-api
+          exit 1
+
+      - name: Stop API container
+        if: always()
+        run: |
+          docker logs insurance-pricing-api || true
+          docker rm -f insurance-pricing-api || true
+
+  publish-docker:
+    name: Publish Docker images to Docker Hub
+    if: github.event_name == 'push'
+    needs:
+      - quality-and-tests
+      - docker-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute Docker Hub image tags
+        id: image-tags
+        shell: bash
+        run: |
+          api_repo="${{ secrets.DOCKERHUB_USERNAME }}/${DOCKERHUB_API_IMAGE_NAME}"
+          web_repo="${{ secrets.DOCKERHUB_USERNAME }}/${DOCKERHUB_WEB_IMAGE_NAME}"
+          short_sha="${GITHUB_SHA::12}"
+          branch_tag="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | tr '/_' '--')"
+
+          {
+            echo "api_tags<<EOF"
+            echo "$api_repo:sha-$short_sha"
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              echo "$api_repo:${GITHUB_REF#refs/tags/}"
+            elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+              echo "$api_repo:latest"
+            else
+              echo "$api_repo:$branch_tag"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "web_tags<<EOF"
+            echo "$web_repo:sha-$short_sha"
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              echo "$web_repo:${GITHUB_REF#refs/tags/}"
+            elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+              echo "$web_repo:latest"
+            else
+              echo "$web_repo:$branch_tag"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image-tags.outputs.api_tags }}
+          cache-from: type=gha,scope=api-image
+          cache-to: type=gha,mode=max,scope=api-image
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          push: true
+          tags: ${{ steps.image-tags.outputs.web_tags }}
+          cache-from: type=gha,scope=web-image
+          cache-to: type=gha,mode=max,scope=web-image
+
+      - name: Summarize Docker Hub publication
+        shell: bash
+        run: |
+          {
+            echo "### Docker Hub Publication"
+            echo
+            echo "- API image tags:"
+            while IFS= read -r tag; do
+              [[ -n "$tag" ]] && echo "  - \`$tag\`"
+            done <<< "${{ steps.image-tags.outputs.api_tags }}"
+            echo "- Web image tags:"
+            while IFS= read -r tag; do
+              [[ -n "$tag" ]] && echo "  - \`$tag\`"
+            done <<< "${{ steps.image-tags.outputs.web_tags }}"
+          } >> "$GITHUB_STEP_SUMMARY"

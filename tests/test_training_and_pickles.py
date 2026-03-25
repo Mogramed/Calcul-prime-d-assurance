@@ -27,7 +27,11 @@ def test_train_produces_pickles(tmp_path: Path):
             "group_col": "id_client",
             "split_names": ["primary_time"],
         },
-        "freq": {"engine": "catboost", "calibration": "none", "params": {"iterations": 20, "depth": 4}},
+        "freq": {
+            "engine": "catboost",
+            "calibration": "none",
+            "params": {"iterations": 20, "depth": 4},
+        },
         "sev": {
             "engine": "catboost",
             "family": "two_part_tweedie",

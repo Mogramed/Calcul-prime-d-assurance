@@ -1,17 +1,30 @@
-from fastapi import APIRouter, Body, Depends
+from __future__ import annotations
 
-from insurance_pricing.api.dependencies import get_prediction_service
+from collections.abc import Mapping, Sequence
+from time import perf_counter
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, Request
+from fastapi.concurrency import run_in_threadpool
+
+from insurance_pricing.api.audit import (
+    AuditStore,
+    PredictionAuditRecord,
+    PredictionOutputRecord,
+    hash_payload,
+)
+from insurance_pricing.api.dependencies import get_audit_store, get_prediction_service
 from insurance_pricing.api.schemas import (
     BATCH_PREDICTION_EXAMPLE,
+    SINGLE_PREDICTION_EXAMPLE,
     FrequencyPredictionBatchResponse,
     FrequencyPredictionResponse,
-    PredictionFieldDescriptor,
     PredictionBatchInput,
+    PredictionFieldDescriptor,
+    PredictionInput,
     PredictionSchemaResponse,
     PrimePredictionBatchResponse,
     PrimePredictionResponse,
-    PredictionInput,
-    SINGLE_PREDICTION_EXAMPLE,
     SeverityPredictionBatchResponse,
     SeverityPredictionResponse,
 )
@@ -19,7 +32,7 @@ from insurance_pricing.api.service import PredictionService
 
 router = APIRouter(tags=["predict"])
 
-PREDICTION_ERROR_RESPONSES = {
+PREDICTION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: {
         "description": (
             "Payload validation failed. The request must match the raw business fields expected by "
@@ -32,10 +45,13 @@ PREDICTION_ERROR_RESPONSES = {
             "loaded artifact integrity."
         )
     },
+    503: {
+        "description": "Prediction persistence is unavailable because PostgreSQL is not ready.",
+    },
 }
 
 
-def _schema_type(schema: dict) -> str:
+def _schema_type(schema: dict[str, Any]) -> str:
     if "type" in schema:
         schema_type = schema["type"]
         if isinstance(schema_type, list):
@@ -44,6 +60,60 @@ def _schema_type(schema: dict) -> str:
     if "anyOf" in schema:
         return " | ".join(_schema_type(item) for item in schema["anyOf"])
     return "object"
+
+
+def _mark_request(request: Request, *, endpoint_kind: str, record_count: int) -> None:
+    request.state.endpoint_kind = endpoint_kind
+    request.state.record_count = record_count
+
+
+def _latency_ms(request: Request) -> float:
+    started_at = getattr(request.state, "started_at", perf_counter())
+    return round((perf_counter() - started_at) * 1000.0, 2)
+
+
+def _build_prediction_outputs(
+    predictions: Sequence[Mapping[str, Any]],
+) -> list[PredictionOutputRecord]:
+    return [
+        PredictionOutputRecord(
+            record_position=position,
+            input_index=prediction.get("index"),
+            frequency_prediction=_as_float(prediction.get("frequency_prediction")),
+            severity_prediction=_as_float(prediction.get("severity_prediction")),
+            prime_prediction=_as_float(prediction.get("prime_prediction")),
+        )
+        for position, prediction in enumerate(predictions)
+    ]
+
+
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+async def _persist_prediction_audit(
+    *,
+    request: Request,
+    audit_store: AuditStore,
+    service: PredictionService,
+    payload: Mapping[str, Any],
+    predictions: Sequence[Mapping[str, Any]],
+    status_code: int = 200,
+) -> None:
+    await audit_store.persist_prediction(
+        PredictionAuditRecord(
+            request_id=request.state.request_id,
+            endpoint=request.url.path,
+            run_id=service.run_id,
+            record_count=len(predictions),
+            payload_hash=hash_payload(payload),
+            status_code=status_code,
+            latency_ms=_latency_ms(request),
+            outputs=_build_prediction_outputs(predictions),
+        )
+    )
 
 
 @router.get(
@@ -98,7 +168,8 @@ def get_prediction_schema() -> PredictionSchemaResponse:
     response_description="Frequency prediction for a single insurance record.",
     responses=PREDICTION_ERROR_RESPONSES,
 )
-def predict_frequency(
+async def predict_frequency(
+    request: Request,
     payload: PredictionInput = Body(
         description=(
             "Raw business-facing fields for one insurance contract. The optional `index` field is "
@@ -112,8 +183,18 @@ def predict_frequency(
         },
     ),
     service: PredictionService = Depends(get_prediction_service),
+    audit_store: AuditStore = Depends(get_audit_store),
 ) -> FrequencyPredictionResponse:
-    prediction = service.predict_frequency_record(payload.model_dump(mode="python"))
+    _mark_request(request, endpoint_kind="frequency", record_count=1)
+    payload_obj = payload.model_dump(mode="python")
+    prediction = await run_in_threadpool(service.predict_frequency_record, payload_obj)
+    await _persist_prediction_audit(
+        request=request,
+        audit_store=audit_store,
+        service=service,
+        payload=payload_obj,
+        predictions=[prediction],
+    )
     return FrequencyPredictionResponse(**prediction)
 
 
@@ -130,7 +211,8 @@ def predict_frequency(
     response_description="Frequency predictions for multiple insurance records.",
     responses=PREDICTION_ERROR_RESPONSES,
 )
-def predict_frequency_batch(
+async def predict_frequency_batch(
+    request: Request,
     payload: PredictionBatchInput = Body(
         description=(
             "Batch scoring payload for frequency inference. Input order is preserved in the "
@@ -144,9 +226,18 @@ def predict_frequency_batch(
         },
     ),
     service: PredictionService = Depends(get_prediction_service),
+    audit_store: AuditStore = Depends(get_audit_store),
 ) -> FrequencyPredictionBatchResponse:
-    predictions = service.predict_frequency_records(
-        [record.model_dump(mode="python") for record in payload.records]
+    _mark_request(request, endpoint_kind="frequency", record_count=len(payload.records))
+    payload_obj = payload.model_dump(mode="python")
+    record_payloads = [record.model_dump(mode="python") for record in payload.records]
+    predictions = await run_in_threadpool(service.predict_frequency_records, record_payloads)
+    await _persist_prediction_audit(
+        request=request,
+        audit_store=audit_store,
+        service=service,
+        payload=payload_obj,
+        predictions=predictions,
     )
     return FrequencyPredictionBatchResponse(
         run_id=service.run_id,
@@ -169,7 +260,8 @@ def predict_frequency_batch(
     response_description="Severity prediction for a single insurance record.",
     responses=PREDICTION_ERROR_RESPONSES,
 )
-def predict_severity(
+async def predict_severity(
+    request: Request,
     payload: PredictionInput = Body(
         description=(
             "Raw business-facing fields for one insurance contract. The payload structure is the "
@@ -183,8 +275,18 @@ def predict_severity(
         },
     ),
     service: PredictionService = Depends(get_prediction_service),
+    audit_store: AuditStore = Depends(get_audit_store),
 ) -> SeverityPredictionResponse:
-    prediction = service.predict_severity_record(payload.model_dump(mode="python"))
+    _mark_request(request, endpoint_kind="severity", record_count=1)
+    payload_obj = payload.model_dump(mode="python")
+    prediction = await run_in_threadpool(service.predict_severity_record, payload_obj)
+    await _persist_prediction_audit(
+        request=request,
+        audit_store=audit_store,
+        service=service,
+        payload=payload_obj,
+        predictions=[prediction],
+    )
     return SeverityPredictionResponse(**prediction)
 
 
@@ -201,7 +303,8 @@ def predict_severity(
     response_description="Severity predictions for multiple insurance records.",
     responses=PREDICTION_ERROR_RESPONSES,
 )
-def predict_severity_batch(
+async def predict_severity_batch(
+    request: Request,
     payload: PredictionBatchInput = Body(
         description=(
             "Batch scoring payload for severity inference. Each input record produces exactly one "
@@ -215,9 +318,18 @@ def predict_severity_batch(
         },
     ),
     service: PredictionService = Depends(get_prediction_service),
+    audit_store: AuditStore = Depends(get_audit_store),
 ) -> SeverityPredictionBatchResponse:
-    predictions = service.predict_severity_records(
-        [record.model_dump(mode="python") for record in payload.records]
+    _mark_request(request, endpoint_kind="severity", record_count=len(payload.records))
+    payload_obj = payload.model_dump(mode="python")
+    record_payloads = [record.model_dump(mode="python") for record in payload.records]
+    predictions = await run_in_threadpool(service.predict_severity_records, record_payloads)
+    await _persist_prediction_audit(
+        request=request,
+        audit_store=audit_store,
+        service=service,
+        payload=payload_obj,
+        predictions=predictions,
     )
     return SeverityPredictionBatchResponse(
         run_id=service.run_id,
@@ -240,7 +352,8 @@ def predict_severity_batch(
     response_description="Frequency, severity, and premium predictions for a single insurance record.",
     responses=PREDICTION_ERROR_RESPONSES,
 )
-def predict_prime(
+async def predict_prime(
+    request: Request,
     payload: PredictionInput = Body(
         description=(
             "Raw business-facing fields for one insurance contract. The server computes engineered "
@@ -254,8 +367,18 @@ def predict_prime(
         },
     ),
     service: PredictionService = Depends(get_prediction_service),
+    audit_store: AuditStore = Depends(get_audit_store),
 ) -> PrimePredictionResponse:
-    prediction = service.predict_record(payload.model_dump(mode="python"))
+    _mark_request(request, endpoint_kind="prime", record_count=1)
+    payload_obj = payload.model_dump(mode="python")
+    prediction = await run_in_threadpool(service.predict_record, payload_obj)
+    await _persist_prediction_audit(
+        request=request,
+        audit_store=audit_store,
+        service=service,
+        payload=payload_obj,
+        predictions=[prediction],
+    )
     return PrimePredictionResponse(**prediction)
 
 
@@ -272,7 +395,8 @@ def predict_prime(
     response_description="Frequency, severity, and premium predictions for multiple insurance records.",
     responses=PREDICTION_ERROR_RESPONSES,
 )
-def predict_prime_batch(
+async def predict_prime_batch(
+    request: Request,
     payload: PredictionBatchInput = Body(
         description=(
             "Batch scoring payload for full premium inference. This endpoint is designed for bulk "
@@ -286,9 +410,18 @@ def predict_prime_batch(
         },
     ),
     service: PredictionService = Depends(get_prediction_service),
+    audit_store: AuditStore = Depends(get_audit_store),
 ) -> PrimePredictionBatchResponse:
-    predictions = service.predict_records(
-        [record.model_dump(mode="python") for record in payload.records]
+    _mark_request(request, endpoint_kind="prime", record_count=len(payload.records))
+    payload_obj = payload.model_dump(mode="python")
+    record_payloads = [record.model_dump(mode="python") for record in payload.records]
+    predictions = await run_in_threadpool(service.predict_records, record_payloads)
+    await _persist_prediction_audit(
+        request=request,
+        audit_store=audit_store,
+        service=service,
+        payload=payload_obj,
+        predictions=predictions,
     )
     return PrimePredictionBatchResponse(
         run_id=service.run_id,

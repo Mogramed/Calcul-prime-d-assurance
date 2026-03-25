@@ -1,27 +1,30 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from insurance_pricing import training as v2
+from insurance_pricing._typing import FloatArray
 
 from . import gap_diagnosis_impl as w22
 from . import tail_recovery_impl as tr
 from .common import (
     safe_read_csv as _safe_read_csv,
+)
+from .common import (
     safe_read_json as _safe_read_json,
 )
-
 
 ARTIFACT_V24_DIR = Path("artifacts") / "v2_4_tail_recovery"
 ARTIFACT_V241_DIR = Path("artifacts") / "v2_4_1_tail_recovery"
 
 
 def ensure_v241_dir(root: str | Path = ".") -> Path:
-    return v2.ensure_dir(Path(root) / ARTIFACT_V241_DIR)
+    return Path(v2.ensure_dir(Path(root) / ARTIFACT_V241_DIR))
 
 
 def _coerce_num(df: pd.DataFrame, col: str, fill: float = np.nan) -> pd.Series:
@@ -70,7 +73,7 @@ def load_v24_outputs(root: str | Path = ".") -> dict[str, Any]:
             "base_v24": base,
         }
     )
-    return ctx
+    return dict(ctx)
 
 
 def mark_identity_and_duplicate_candidates(
@@ -115,7 +118,10 @@ def mark_identity_and_duplicate_candidates(
     d["is_duplicate_candidate"] = 0
     d["duplicate_of"] = ""
 
-    baseline_vals = {c: float(pd.to_numeric(pd.Series([baseline_row[c]]), errors="coerce").iloc[0]) for c in metric_cols}
+    baseline_vals = {
+        c: float(pd.to_numeric(pd.Series([baseline_row[c]]), errors="coerce").iloc[0])
+        for c in metric_cols
+    }
 
     # First pass identity
     for idx, row in d.iterrows():
@@ -155,9 +161,11 @@ def mark_identity_and_duplicate_candidates(
             d.at[idx, "identity_reason"] = reason
 
     # Duplicate detection by metric signature, then optional pred-store arrays
-    seen_signatures: Dict[tuple, str] = {}
-    seen_arrays: Dict[str, np.ndarray] = {}
-    order = d.sort_values(["is_identity_candidate", "rmse_prime"], na_position="last").index.tolist()
+    seen_signatures: dict[tuple[Any, ...], str] = {}
+    seen_arrays: dict[str, FloatArray] = {}
+    order = d.sort_values(
+        ["is_identity_candidate", "rmse_prime"], na_position="last"
+    ).index.tolist()
     for idx in order:
         row = d.loc[idx]
         cid = str(row["candidate_id"])
@@ -224,7 +232,9 @@ def compute_tail_guardrails(
         baseline_id = str(b["candidate_id"])
 
     rmse_baseline = float(pd.to_numeric(pd.Series([b.get("rmse_prime")]), errors="coerce").iloc[0])
-    top1_baseline = float(pd.to_numeric(pd.Series([b.get("rmse_prime_top1pct")]), errors="coerce").iloc[0])
+    top1_baseline = float(
+        pd.to_numeric(pd.Series([b.get("rmse_prime_top1pct")]), errors="coerce").iloc[0]
+    )
 
     d["baseline_id"] = baseline_id
     d["rmse_baseline"] = rmse_baseline
@@ -237,10 +247,14 @@ def compute_tail_guardrails(
     d["meets_gap_aux"] = (_coerce_num(d, "rmse_gap_aux", fill=0.0) <= 1.0).astype(int)
     d["meets_q99_low"] = (_coerce_num(d, "q99_ratio_pos") >= q99_low).astype(int)
     d["meets_q99_high"] = (_coerce_num(d, "q99_ratio_pos") <= q99_high).astype(int)
-    d["meets_dist_penalty"] = (_coerce_num(d, "distribution_alignment_penalty", fill=np.inf) <= 3.0).astype(int)
+    d["meets_dist_penalty"] = (
+        _coerce_num(d, "distribution_alignment_penalty", fill=np.inf) <= 3.0
+    ).astype(int)
     d["meets_tail_over"] = (_coerce_num(d, "tail_overcorrection_flag", fill=0.0) == 0.0).astype(int)
     d["meets_not_identity"] = (_coerce_num(d, "is_identity_candidate", fill=0.0) == 0.0).astype(int)
-    d["meets_not_duplicate"] = (_coerce_num(d, "is_duplicate_candidate", fill=0.0) == 0.0).astype(int)
+    d["meets_not_duplicate"] = (_coerce_num(d, "is_duplicate_candidate", fill=0.0) == 0.0).astype(
+        int
+    )
 
     guard_cols = [
         "meets_rmse_tol",
@@ -291,7 +305,9 @@ def compute_selection_score_v241(df: pd.DataFrame) -> pd.DataFrame:
             b = d[d["candidate_id"].astype(str) == "baseline_identity"].iloc[0]
         else:
             b = d.sort_values("rmse_prime", na_position="last").iloc[0]
-        d["top1pct_baseline"] = float(pd.to_numeric(pd.Series([b.get("rmse_prime_top1pct")]), errors="coerce").iloc[0])
+        d["top1pct_baseline"] = float(
+            pd.to_numeric(pd.Series([b.get("rmse_prime_top1pct")]), errors="coerce").iloc[0]
+        )
 
     rmse_prime = _coerce_num(d, "rmse_prime", fill=1e9)
     rmse_top1 = _coerce_num(d, "rmse_prime_top1pct", fill=np.inf)
@@ -304,11 +320,7 @@ def compute_selection_score_v241(df: pd.DataFrame) -> pd.DataFrame:
     q99_term = np.abs(q99 - 0.575)
 
     d["selection_score_v241"] = (
-        rmse_prime
-        + 0.25 * top1_term
-        + 0.25 * split_std
-        + 0.20 * dist_pen
-        + 3.0 * q99_term
+        rmse_prime + 0.25 * top1_term + 0.25 * split_std + 0.20 * dist_pen + 3.0 * q99_term
     )
     return d
 
@@ -322,7 +334,9 @@ def select_robust_and_challenger_v241(df_guarded: pd.DataFrame) -> pd.DataFrame:
         baseline = d[d["candidate_id"].astype(str) == "baseline_identity"].iloc[0]
     else:
         baseline = d.sort_values("rmse_prime", na_position="last").iloc[0]
-    rmse_baseline = float(pd.to_numeric(pd.Series([baseline.get("rmse_prime")]), errors="coerce").iloc[0])
+    rmse_baseline = float(
+        pd.to_numeric(pd.Series([baseline.get("rmse_prime")]), errors="coerce").iloc[0]
+    )
 
     sort_cols = ["selection_score_v241", "rmse_prime"]
     for c in sort_cols:
@@ -348,11 +362,15 @@ def select_robust_and_challenger_v241(df_guarded: pd.DataFrame) -> pd.DataFrame:
         & (_coerce_num(challenger_pool, "q99_ratio_pos", fill=0.0) >= 0.45)
     ].copy()
     if "tail_overcorrection_flag" in challenger_pool.columns:
-        challenger_pool = challenger_pool[_coerce_num(challenger_pool, "tail_overcorrection_flag", fill=0.0) == 0.0]
+        challenger_pool = challenger_pool[
+            _coerce_num(challenger_pool, "tail_overcorrection_flag", fill=0.0) == 0.0
+        ]
 
     challenger_row = None
     if not challenger_pool.empty:
-        challenger_pool["tail_strength_rank"] = -_coerce_num(challenger_pool, "q99_ratio_pos", fill=0.0)
+        challenger_pool["tail_strength_rank"] = -_coerce_num(
+            challenger_pool, "q99_ratio_pos", fill=0.0
+        )
         challenger_pool = challenger_pool.sort_values(
             ["tail_strength_rank", "rmse_prime", "selection_score_v241"],
             na_position="last",
@@ -406,13 +424,21 @@ def _run_one_phase_b_variant(
     )
 
     train_raw, test_raw = v2.load_train_test(Path(ctx.get("root", ".")) / "data")
-    feature_sets = v2.prepare_feature_sets(train_raw, test_raw, rare_min_count=30, drop_identifiers=True)
-    splits = v2.build_split_registry(train_raw, n_blocks_time=5, n_splits_group=5, group_col="id_client")
+    feature_sets = v2.prepare_feature_sets(
+        train_raw, test_raw, rare_min_count=30, drop_identifiers=True
+    )
+    splits = v2.build_split_registry(
+        train_raw, n_blocks_time=5, n_splits_group=5, group_col="id_client"
+    )
 
     _, run_df, pred_df = v2.run_benchmark(spec=spec, bundle=feature_sets, splits=splits, seed=seed)
-    dist_df = v2.build_prediction_distribution_table(pred_df) if not pred_df.empty else pd.DataFrame()
+    dist_df = (
+        v2.build_prediction_distribution_table(pred_df) if not pred_df.empty else pd.DataFrame()
+    )
     scored = (
-        w22.score_quick_runs(run_df, pred_df, dist_df, seed=seed, n_sim_shakeup=0, run_shakeup=False)
+        w22.score_quick_runs(
+            run_df, pred_df, dist_df, seed=seed, n_sim_shakeup=0, run_shakeup=False
+        )
         if not run_df.empty
         else pd.DataFrame()
     )
@@ -441,15 +467,23 @@ def _run_one_phase_b_variant(
                 "phase_b_w_max": float(w_max),
                 "phase_b_threshold_q": float(threshold_q),
                 "rmse_prime": float(r.get("rmse_primary_time", np.nan)),
-                "rmse_gap_secondary": float(r.get("rmse_secondary_group", np.nan)) - float(r.get("rmse_primary_time", np.nan)),
-                "rmse_gap_aux": float(r.get("rmse_aux_blocked5", np.nan)) - float(r.get("rmse_primary_time", np.nan)),
+                "rmse_gap_secondary": float(r.get("rmse_secondary_group", np.nan))
+                - float(r.get("rmse_primary_time", np.nan)),
+                "rmse_gap_aux": float(r.get("rmse_aux_blocked5", np.nan))
+                - float(r.get("rmse_primary_time", np.nan)),
                 "rmse_split_std": float(r.get("rmse_split_std", np.nan)),
                 "rmse_prime_top1pct": float(r.get("rmse_prime_top1pct", np.nan)),
                 "q95_ratio_pos": float(r.get("q95_ratio_pos", np.nan)),
                 "q99_ratio_pos": float(r.get("q99_ratio_pos", np.nan)),
-                "distribution_alignment_penalty": float(r.get("distribution_alignment_penalty", np.nan)),
-                "tail_overcorrection_flag": int(float(r.get("q99_ratio_pos", np.nan)) > 0.85) if np.isfinite(float(r.get("q99_ratio_pos", np.nan))) else 0,
-                "tail_undercoverage_flag": int(float(r.get("q99_ratio_pos", np.nan)) < 0.10) if np.isfinite(float(r.get("q99_ratio_pos", np.nan))) else 1,
+                "distribution_alignment_penalty": float(
+                    r.get("distribution_alignment_penalty", np.nan)
+                ),
+                "tail_overcorrection_flag": int(float(r.get("q99_ratio_pos", np.nan)) > 0.85)
+                if np.isfinite(float(r.get("q99_ratio_pos", np.nan)))
+                else 0,
+                "tail_undercoverage_flag": int(float(r.get("q99_ratio_pos", np.nan)) < 0.10)
+                if np.isfinite(float(r.get("q99_ratio_pos", np.nan)))
+                else 1,
                 "is_identity_candidate": 0,
                 "is_duplicate_candidate": 0,
                 "phase_b_generated_from_benchmark": 1,
@@ -465,12 +499,17 @@ def run_phase_b_if_needed(
     trigger_no_candidate: bool = True,
 ) -> pd.DataFrame:
     guarded = pd.DataFrame(ctx.get("guarded_candidates_v241", pd.DataFrame()))
-    if trigger_no_candidate and not guarded.empty:
-        if (guarded.get("hard_admissible", pd.Series(dtype=float)).fillna(0).astype(int) == 1).any():
-            return pd.DataFrame()
+    if (
+        trigger_no_candidate
+        and not guarded.empty
+        and (
+            guarded.get("hard_admissible", pd.Series(dtype=float)).fillna(0).astype(int) == 1
+        ).any()
+    ):
+        return pd.DataFrame()
 
     # Two variants max, as requested.
-    variants = [
+    variants: list[dict[str, float | str]] = [
         {"beta": 0.5, "w_max": 10.0, "threshold_q": 0.90, "feature_set": "base_v2"},
         {"beta": 1.0, "w_max": 10.0, "threshold_q": 0.90, "feature_set": "robust_v2"},
     ]
@@ -503,11 +542,15 @@ def materialize_submissions_v241(
     transform_store: Mapping[str, Any],
     *,
     out_dir: str | Path = ARTIFACT_V241_DIR,
-    base_run_row: Optional[Mapping[str, Any]] = None,
+    base_run_row: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    out = v2.ensure_dir(out_dir)
+    out = Path(v2.ensure_dir(out_dir))
     if selected_df is None or selected_df.empty:
-        return {"submission_paths": {}, "pred_audits": pd.DataFrame(), "generated_rows": pd.DataFrame()}
+        return {
+            "submission_paths": {},
+            "pred_audits": pd.DataFrame(),
+            "generated_rows": pd.DataFrame(),
+        }
 
     if base_run_row is None:
         base = ctx.get("base_v24", {})
@@ -516,7 +559,7 @@ def materialize_submissions_v241(
         raise ValueError("base_run_row is required to materialize submissions.")
 
     base_payload = None
-    submission_paths: Dict[str, Path] = {}
+    submission_paths: dict[str, Path] = {}
     pred_audits: list[dict[str, Any]] = []
     generated_rows: list[dict[str, Any]] = []
 
@@ -548,7 +591,9 @@ def materialize_submissions_v241(
             fname = f"submission_v2_4_1_{role}.csv"
 
         path = out / fname
-        sub = v2.build_submission(pd.Series(test_index), np.maximum(np.asarray(pred, dtype=float), 0.0))
+        sub = v2.build_submission(
+            pd.Series(test_index), np.maximum(np.asarray(pred, dtype=float), 0.0)
+        )
         sub.to_csv(path, index=False)
         submission_paths[role] = path
 
@@ -556,7 +601,9 @@ def materialize_submissions_v241(
             {
                 "role": role,
                 "candidate_id": cid,
-                **v2.compute_prediction_distribution_audit(pred, run_id=cid, split="test", sample="test"),
+                **v2.compute_prediction_distribution_audit(
+                    pred, run_id=cid, split="test", sample="test"
+                ),
             }
         )
         generated_rows.append(
@@ -593,7 +640,7 @@ def write_decision_report_v241(
     selected_df: pd.DataFrame,
     out_dir: str | Path = ARTIFACT_V241_DIR,
 ) -> Path:
-    out = v2.ensure_dir(out_dir)
+    out = Path(v2.ensure_dir(out_dir))
     lines: list[str] = []
     lines.append("# Submission decision V2.4.1 Tail Selection Fix")
     lines.append("")
@@ -627,14 +674,33 @@ def write_decision_report_v241(
         ]
         if cols:
             lines.append("")
-            lines.append(candidates_df[cols].sort_values(["hard_admissible", "selection_score_v241"], ascending=[False, True], na_position="last").to_markdown(index=False))
+            lines.append(
+                candidates_df[cols]
+                .sort_values(
+                    ["hard_admissible", "selection_score_v241"],
+                    ascending=[False, True],
+                    na_position="last",
+                )
+                .to_markdown(index=False)
+            )
             lines.append("")
     else:
         lines.append("- No candidates available.")
         lines.append("")
     lines.append("## 4) Pareto front")
     if pareto_df is not None and not pareto_df.empty:
-        cols = [c for c in ["candidate_id", "candidate_family", "rmse_prime", "q99_ratio_pos", "rmse_split_std", "rmse_prime_top1pct"] if c in pareto_df.columns]
+        cols = [
+            c
+            for c in [
+                "candidate_id",
+                "candidate_family",
+                "rmse_prime",
+                "q99_ratio_pos",
+                "rmse_split_std",
+                "rmse_prime_top1pct",
+            ]
+            if c in pareto_df.columns
+        ]
         lines.append("")
         lines.append(pareto_df[cols].to_markdown(index=False))
         lines.append("")
@@ -643,7 +709,20 @@ def write_decision_report_v241(
         lines.append("")
     lines.append("## 5) Final selection")
     if selected_df is not None and not selected_df.empty:
-        cols = [c for c in ["role", "candidate_id", "candidate_family", "risk_tag", "selection_reason", "rmse_prime", "q99_ratio_pos", "selection_score_v241"] if c in selected_df.columns]
+        cols = [
+            c
+            for c in [
+                "role",
+                "candidate_id",
+                "candidate_family",
+                "risk_tag",
+                "selection_reason",
+                "rmse_prime",
+                "q99_ratio_pos",
+                "selection_score_v241",
+            ]
+            if c in selected_df.columns
+        ]
         lines.append("")
         lines.append(selected_df[cols].to_markdown(index=False))
         lines.append("")
@@ -674,20 +753,30 @@ def run_v241_cycle(
     candidates = ctx.get("tail_candidates_multi_v24", pd.DataFrame()).copy()
     transform_store = ctx.get("tail_transform_store_v24", {})
     marked = mark_identity_and_duplicate_candidates(candidates, transform_store, tol=1e-10)
-    guarded = compute_tail_guardrails(marked, baseline_id="baseline_identity", rmse_tol=0.15, q99_low=0.45, q99_high=0.70)
+    guarded = compute_tail_guardrails(
+        marked, baseline_id="baseline_identity", rmse_tol=0.15, q99_low=0.45, q99_high=0.70
+    )
     scored = compute_selection_score_v241(guarded)
     scored["phase_source"] = "phase_a"
 
     ctx["guarded_candidates_v241"] = scored
     phase_b_df = pd.DataFrame()
     if run_phase_b_if_missing:
-        phase_b_df = run_phase_b_if_needed(ctx, base.get("base_run_row", {}), trigger_no_candidate=True)
+        phase_b_df = run_phase_b_if_needed(
+            ctx, base.get("base_run_row", {}), trigger_no_candidate=True
+        )
         if not phase_b_df.empty:
             phase_b_df = compute_tail_guardrails(
                 phase_b_df,
-                baseline_id=str(scored.loc[scored["candidate_id"].astype(str) == "baseline_identity", "candidate_id"].iloc[0])
+                baseline_id=str(
+                    scored.loc[
+                        scored["candidate_id"].astype(str) == "baseline_identity", "candidate_id"
+                    ].iloc[0]
+                )
                 if (scored["candidate_id"].astype(str) == "baseline_identity").any()
-                else str(scored.sort_values("rmse_prime", na_position="last").iloc[0]["candidate_id"]),
+                else str(
+                    scored.sort_values("rmse_prime", na_position="last").iloc[0]["candidate_id"]
+                ),
                 rmse_tol=0.15,
                 q99_low=0.45,
                 q99_high=0.70,
@@ -695,20 +784,36 @@ def run_v241_cycle(
             phase_b_df = compute_selection_score_v241(phase_b_df)
             phase_b_df["phase_source"] = "phase_b"
 
-    all_candidates = pd.concat([scored, phase_b_df], ignore_index=True, sort=False) if not phase_b_df.empty else scored.copy()
+    all_candidates = (
+        pd.concat([scored, phase_b_df], ignore_index=True, sort=False)
+        if not phase_b_df.empty
+        else scored.copy()
+    )
     all_candidates = all_candidates.drop_duplicates(subset=["candidate_id"], keep="last")
     selected = select_robust_and_challenger_v241(all_candidates)
 
     role_map = selected.set_index("candidate_id")["role"].to_dict() if not selected.empty else {}
-    all_candidates["selection_status"] = all_candidates["candidate_id"].map(role_map).fillna("rejected")
+    all_candidates["selection_status"] = (
+        all_candidates["candidate_id"].map(role_map).fillna("rejected")
+    )
     pareto = tr.build_tail_pareto_front(all_candidates)
 
     # Save table artifacts
-    tr._drop_array_cols_for_csv(all_candidates).to_csv(out_dir / "tail_candidates_registry_v2_4_1.csv", index=False)
-    tr._drop_array_cols_for_csv(pareto).to_csv(out_dir / "tail_pareto_front_v2_4_1.csv", index=False)
-    tr._drop_array_cols_for_csv(all_candidates).to_csv(out_dir / "tail_selection_report_v2_4_1.csv", index=False)
+    tr._drop_array_cols_for_csv(all_candidates).to_csv(
+        out_dir / "tail_candidates_registry_v2_4_1.csv", index=False
+    )
+    tr._drop_array_cols_for_csv(pareto).to_csv(
+        out_dir / "tail_pareto_front_v2_4_1.csv", index=False
+    )
+    tr._drop_array_cols_for_csv(all_candidates).to_csv(
+        out_dir / "tail_selection_report_v2_4_1.csv", index=False
+    )
 
-    outputs = {"submission_paths": {}, "pred_audits": pd.DataFrame(), "generated_rows": pd.DataFrame()}
+    outputs = {
+        "submission_paths": {},
+        "pred_audits": pd.DataFrame(),
+        "generated_rows": pd.DataFrame(),
+    }
     if materialize_submissions:
         outputs = materialize_submissions_v241(
             ctx,
@@ -751,7 +856,7 @@ __all__ = [
 ]
 
 
-def train_run(config_path: str) -> dict:
+def train_run(config_path: str) -> dict[str, Any]:
     from insurance_pricing import train_run as _train_run
 
-    return _train_run(config_path)
+    return dict(_train_run(config_path))

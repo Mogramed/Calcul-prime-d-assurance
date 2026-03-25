@@ -37,4 +37,3 @@ def save_submission_from_run(run_id: str, test_df: pd.DataFrame, output_path: st
     sub = build_submission_from_run(run_id, test_df)
     sub.to_csv(out, index=False)
     return out
-

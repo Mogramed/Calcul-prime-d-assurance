@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from insurance_pricing._typing import FloatArray, as_float_array
 from insurance_pricing.models.calibration import apply_calibrator
 from insurance_pricing.models.frequency import FrequencyModel
 from insurance_pricing.models.severity import SeverityModel
@@ -17,8 +18,8 @@ class PrimeModel:
     freq_model: FrequencyModel
     sev_model: SeverityModel
     calibration_method: str = "none"
-    calibrator: Optional[Any] = None
-    tail_mapper: Optional[dict[str, Any]] = None
+    calibrator: Any | None = None
+    tail_mapper: dict[str, Any] | None = None
     non_negative: bool = True
 
     def predict_components(self, raw_df: pd.DataFrame) -> pd.DataFrame:
@@ -39,6 +40,5 @@ class PrimeModel:
             }
         )
 
-    def predict_prime(self, raw_df: pd.DataFrame) -> np.ndarray:
-        return self.predict_components(raw_df)["pred_prime"].to_numpy(dtype=float)
-
+    def predict_prime(self, raw_df: pd.DataFrame) -> FloatArray:
+        return as_float_array(self.predict_components(raw_df)["pred_prime"].to_numpy(dtype=float))

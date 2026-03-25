@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from insurance_pricing._typing import FloatArray, as_float_array
 
 
 def safe_read_csv(path: str | Path) -> pd.DataFrame:
@@ -29,12 +31,12 @@ def safe_read_parquet(path: str | Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def safe_read_json(path: str | Path, default: Optional[dict] = None) -> dict[str, Any]:
+def safe_read_json(path: str | Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
     p = Path(path)
     if not p.exists():
         return {} if default is None else dict(default)
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return dict(json.loads(p.read_text(encoding="utf-8")))
     except Exception:
         return {} if default is None else dict(default)
 
@@ -48,9 +50,9 @@ def safe_float(x: Any, default: float = float("nan")) -> float:
         return default
 
 
-def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    y = np.asarray(y_true, dtype=float)
-    p = np.asarray(y_pred, dtype=float)
+def rmse(y_true: FloatArray, y_pred: FloatArray) -> float:
+    y = as_float_array(y_true)
+    p = as_float_array(y_pred)
     mask = np.isfinite(y) & np.isfinite(p)
     if not np.any(mask):
         return float("nan")

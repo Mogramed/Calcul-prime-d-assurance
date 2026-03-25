@@ -5,6 +5,7 @@ import pandas as pd
 
 from .quality import _role_guess
 
+
 def build_data_dictionary(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
     cols = sorted(set(train.columns).union(set(test.columns)))
     rows = []
@@ -26,13 +27,18 @@ def build_data_dictionary(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFra
                 "nunique_test": int(te_s.nunique(dropna=False)) if te_present else np.nan,
                 "missing_rate_train": float(tr_s.isna().mean()) if tr_present else np.nan,
                 "missing_rate_test": float(te_s.isna().mean()) if te_present else np.nan,
-                "sample_values_train": " | ".join(map(str, tr_s.dropna().astype(str).head(3).tolist()))
+                "sample_values_train": " | ".join(
+                    map(str, tr_s.dropna().astype(str).head(3).tolist())
+                )
                 if tr_present
                 else "",
-                "role_guess": _role_guess(c, dtype_train or dtype_test or "unknown", tr_present, te_present),
+                "role_guess": _role_guess(
+                    c, dtype_train or dtype_test or "unknown", tr_present, te_present
+                ),
             }
         )
     return pd.DataFrame(rows).sort_values(["role_guess", "column"]).reset_index(drop=True)
+
 
 def classify_columns(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
     df = build_data_dictionary(train, test).copy()
@@ -44,4 +50,3 @@ def classify_columns(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
         pd.to_numeric(df["nunique_train"], errors="coerce").fillna(0) >= 100
     ).astype(int)
     return df
-

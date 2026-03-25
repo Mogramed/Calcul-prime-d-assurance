@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Mapping, Tuple
+from collections.abc import Mapping
+from typing import Any, cast
 
 import pandas as pd
 
+from insurance_pricing._typing import SplitIndices
 from insurance_pricing.legacy import training_benchmark_impl as _impl
 
 
@@ -15,10 +17,10 @@ def run_benchmark(
     spec: Mapping[str, Any],
     *,
     bundle: Any,
-    splits: Mapping[str, Mapping[int, tuple]],
+    splits: Mapping[str, Mapping[int, SplitIndices]],
     seed: int,
     collect_predictions: bool = True,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     _ = collect_predictions  # Compatibility arg kept for notebook/API stability.
     return _impl.run_benchmark(
         spec=spec,
@@ -28,8 +30,8 @@ def run_benchmark(
     )
 
 
-def _fit_predict_fold_v2(*args: Any, **kwargs: Any) -> tuple:
-    return _impl._fit_predict_fold_v2(*args, **kwargs)
+def _fit_predict_fold_v2(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+    return cast(tuple[Any, ...], _impl._fit_predict_fold_v2(*args, **kwargs))
 
 
 def __getattr__(name: str) -> Any:

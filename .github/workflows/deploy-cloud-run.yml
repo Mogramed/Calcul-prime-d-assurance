@@ -1,0 +1,390 @@
+name: Deploy to Cloud Run
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI and Docker Publish"]
+    types: [completed]
+
+concurrency:
+  group: deploy-cloud-run-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  GCP_ARTIFACT_REGISTRY_LOCATION: ${{ vars.GCP_ARTIFACT_REGISTRY_LOCATION || vars.GCP_REGION }}
+  GCP_ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.GCP_ARTIFACT_REGISTRY_REPOSITORY }}
+  GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+  GCP_DEPLOYER_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+  CLOUD_RUN_API_SERVICE: ${{ vars.CLOUD_RUN_API_SERVICE }}
+  CLOUD_RUN_WEB_SERVICE: ${{ vars.CLOUD_RUN_WEB_SERVICE }}
+  CLOUD_RUN_MIGRATION_JOB: ${{ vars.CLOUD_RUN_MIGRATION_JOB }}
+  CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}
+  INSURANCE_PRICING_RUN_ID: ${{ vars.INSURANCE_PRICING_RUN_ID }}
+  INSURANCE_PRICING_ADMIN_EMAILS: ${{ vars.INSURANCE_PRICING_ADMIN_EMAILS }}
+  INSURANCE_PRICING_SESSION_TTL_HOURS: ${{ vars.INSURANCE_PRICING_SESSION_TTL_HOURS || '720' }}
+  ENABLE_CLOUD_RUN_SMOKE_TEST: ${{ vars.ENABLE_CLOUD_RUN_SMOKE_TEST || 'false' }}
+  CLOUD_RUN_API_IMAGE_NAME: ${{ vars.CLOUD_RUN_API_IMAGE_NAME || 'insurance-pricing-api' }}
+  CLOUD_RUN_WEB_IMAGE_NAME: ${{ vars.CLOUD_RUN_WEB_IMAGE_NAME || 'nova-assurances-web' }}
+  CLOUD_RUN_API_CPU: ${{ vars.CLOUD_RUN_API_CPU || '1' }}
+  CLOUD_RUN_API_MEMORY: ${{ vars.CLOUD_RUN_API_MEMORY || '512Mi' }}
+  CLOUD_RUN_API_TIMEOUT: ${{ vars.CLOUD_RUN_API_TIMEOUT || '300' }}
+  CLOUD_RUN_API_CONCURRENCY: ${{ vars.CLOUD_RUN_API_CONCURRENCY || '10' }}
+  CLOUD_RUN_API_MIN_INSTANCES: ${{ vars.CLOUD_RUN_API_MIN_INSTANCES || '0' }}
+  CLOUD_RUN_API_MAX_INSTANCES: ${{ vars.CLOUD_RUN_API_MAX_INSTANCES || '1' }}
+  CLOUD_RUN_WEB_CPU: ${{ vars.CLOUD_RUN_WEB_CPU || '1' }}
+  CLOUD_RUN_WEB_MEMORY: ${{ vars.CLOUD_RUN_WEB_MEMORY || '512Mi' }}
+  CLOUD_RUN_WEB_TIMEOUT: ${{ vars.CLOUD_RUN_WEB_TIMEOUT || '300' }}
+  CLOUD_RUN_WEB_CONCURRENCY: ${{ vars.CLOUD_RUN_WEB_CONCURRENCY || '10' }}
+  CLOUD_RUN_WEB_MIN_INSTANCES: ${{ vars.CLOUD_RUN_WEB_MIN_INSTANCES || '0' }}
+  CLOUD_RUN_WEB_MAX_INSTANCES: ${{ vars.CLOUD_RUN_WEB_MAX_INSTANCES || '2' }}
+  CLOUD_RUN_JOB_CPU: ${{ vars.CLOUD_RUN_JOB_CPU || '1' }}
+  CLOUD_RUN_JOB_MEMORY: ${{ vars.CLOUD_RUN_JOB_MEMORY || '512Mi' }}
+  CLOUD_RUN_JOB_TIMEOUT: ${{ vars.CLOUD_RUN_JOB_TIMEOUT || '600s' }}
+
+jobs:
+  deploy:
+    name: Build and Deploy Cloud Run
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        vars.ENABLE_CLOUD_RUN_DEPLOY == 'true'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          missing=()
+          required_vars=(
+            GCP_PROJECT_ID
+            GCP_REGION
+            GCP_ARTIFACT_REGISTRY_LOCATION
+            GCP_ARTIFACT_REGISTRY_REPOSITORY
+            GCP_WORKLOAD_IDENTITY_PROVIDER
+            GCP_DEPLOYER_SERVICE_ACCOUNT
+            CLOUD_RUN_API_SERVICE
+            CLOUD_RUN_WEB_SERVICE
+            CLOUD_RUN_MIGRATION_JOB
+            CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT
+            INSURANCE_PRICING_RUN_ID
+          )
+
+          for var_name in "${required_vars[@]}"; do
+            if [[ -z "${!var_name}" ]]; then
+              missing+=("${var_name}")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required GitHub repository variables:\n' >&2
+            printf ' - %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+
+      - name: Validate GitHub Actions secrets
+        shell: bash
+        env:
+          INSURANCE_PRICING_DATABASE_URL: ${{ secrets.INSURANCE_PRICING_DATABASE_URL }}
+        run: |
+          if [[ -z "${INSURANCE_PRICING_DATABASE_URL}" ]]; then
+            echo "Missing required GitHub Actions secret: INSURANCE_PRICING_DATABASE_URL" >&2
+            exit 1
+          fi
+
+      - name: Validate smoke test credentials
+        if: env.ENABLE_CLOUD_RUN_SMOKE_TEST == 'true'
+        shell: bash
+        env:
+          CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL: ${{ vars.CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL }}
+          CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD: ${{ secrets.CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD }}
+        run: |
+          if [[ -n "${CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL}" && -z "${CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD}" ]]; then
+            echo "CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD is missing." >&2
+            echo "Create it in GitHub > Settings > Secrets and variables > Actions > Secrets." >&2
+            echo "This workflow reads CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL from Repository variables" >&2
+            echo "and CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD from Repository secrets." >&2
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          version: ">= 416.0.0"
+
+      - name: Ensure Artifact Registry repository exists
+        shell: bash
+        run: |
+          if gcloud artifacts repositories describe "${GCP_ARTIFACT_REGISTRY_REPOSITORY}" \
+            --location "${GCP_ARTIFACT_REGISTRY_LOCATION}" \
+            --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+            echo "Artifact Registry repository '${GCP_ARTIFACT_REGISTRY_REPOSITORY}' already exists."
+            exit 0
+          fi
+
+          echo "Artifact Registry repository '${GCP_ARTIFACT_REGISTRY_REPOSITORY}' was not found. Creating it now..."
+
+          if ! gcloud artifacts repositories create "${GCP_ARTIFACT_REGISTRY_REPOSITORY}" \
+            --location "${GCP_ARTIFACT_REGISTRY_LOCATION}" \
+            --project "${GCP_PROJECT_ID}" \
+            --repository-format docker \
+            --description "Nova Assurances images"; then
+            echo "Unable to create Artifact Registry repository '${GCP_ARTIFACT_REGISTRY_REPOSITORY}'." >&2
+            echo "For the first deployment, grant ${GCP_DEPLOYER_SERVICE_ACCOUNT} the role roles/artifactregistry.admin or create the repository manually." >&2
+            exit 1
+          fi
+
+      - name: Configure Docker for Artifact Registry
+        run: >
+          gcloud auth configure-docker
+          "${GCP_ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev"
+          --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata
+        id: image
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          short_sha="${DEPLOY_SHA::12}"
+          registry_host="${GCP_ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev"
+
+          api_image_uri="${registry_host}/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REGISTRY_REPOSITORY}/${CLOUD_RUN_API_IMAGE_NAME}:sha-${short_sha}"
+          api_latest_uri="${registry_host}/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REGISTRY_REPOSITORY}/${CLOUD_RUN_API_IMAGE_NAME}:latest"
+
+          web_image_uri="${registry_host}/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REGISTRY_REPOSITORY}/${CLOUD_RUN_WEB_IMAGE_NAME}:sha-${short_sha}"
+          web_latest_uri="${registry_host}/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REGISTRY_REPOSITORY}/${CLOUD_RUN_WEB_IMAGE_NAME}:latest"
+
+          echo "deploy_sha=${DEPLOY_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
+          echo "api_image_uri=${api_image_uri}" >> "${GITHUB_OUTPUT}"
+          echo "api_latest_uri=${api_latest_uri}" >> "${GITHUB_OUTPUT}"
+          echo "web_image_uri=${web_image_uri}" >> "${GITHUB_OUTPUT}"
+          echo "web_latest_uri=${web_latest_uri}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.api_image_uri }}
+            ${{ steps.image.outputs.api_latest_uri }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.web_image_uri }}
+            ${{ steps.image.outputs.web_latest_uri }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy Cloud Run migration job
+        shell: bash
+        env:
+          API_IMAGE_URI: ${{ steps.image.outputs.api_image_uri }}
+          SHORT_SHA: ${{ steps.image.outputs.short_sha }}
+          INSURANCE_PRICING_DATABASE_URL: ${{ secrets.INSURANCE_PRICING_DATABASE_URL }}
+        run: |
+          gcloud run jobs deploy "${CLOUD_RUN_MIGRATION_JOB}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${API_IMAGE_URI}" \
+            --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
+            --set-env-vars "INSURANCE_PRICING_RUN_ID=${INSURANCE_PRICING_RUN_ID},INSURANCE_PRICING_DATABASE_URL=${INSURANCE_PRICING_DATABASE_URL},INSURANCE_PRICING_LOG_LEVEL=INFO,INSURANCE_PRICING_LOG_JSON=true" \
+            --command uv \
+            --args run,--no-sync,alembic,upgrade,head \
+            --cpu "${CLOUD_RUN_JOB_CPU}" \
+            --memory "${CLOUD_RUN_JOB_MEMORY}" \
+            --max-retries 0 \
+            --tasks 1 \
+            --task-timeout "${CLOUD_RUN_JOB_TIMEOUT}" \
+            --labels "managed-by=github-actions,commit-sha=${SHORT_SHA}" \
+            --quiet
+
+      - name: Execute Alembic migration job
+        run: >
+          gcloud run jobs execute "${CLOUD_RUN_MIGRATION_JOB}"
+          --project "${GCP_PROJECT_ID}"
+          --region "${GCP_REGION}"
+          --wait
+          --quiet
+
+      - name: Deploy public API service
+        shell: bash
+        env:
+          API_IMAGE_URI: ${{ steps.image.outputs.api_image_uri }}
+          SHORT_SHA: ${{ steps.image.outputs.short_sha }}
+          INSURANCE_PRICING_DATABASE_URL: ${{ secrets.INSURANCE_PRICING_DATABASE_URL }}
+        run: |
+          gcloud run deploy "${CLOUD_RUN_API_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${API_IMAGE_URI}" \
+            --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
+            --set-env-vars "INSURANCE_PRICING_RUN_ID=${INSURANCE_PRICING_RUN_ID},INSURANCE_PRICING_DATABASE_URL=${INSURANCE_PRICING_DATABASE_URL},INSURANCE_PRICING_LOG_LEVEL=INFO,INSURANCE_PRICING_LOG_JSON=true,INSURANCE_PRICING_CORS_ALLOWED_ORIGINS=,INSURANCE_PRICING_ADMIN_EMAILS=${INSURANCE_PRICING_ADMIN_EMAILS},INSURANCE_PRICING_SESSION_TTL_HOURS=${INSURANCE_PRICING_SESSION_TTL_HOURS}" \
+            --cpu "${CLOUD_RUN_API_CPU}" \
+            --memory "${CLOUD_RUN_API_MEMORY}" \
+            --concurrency "${CLOUD_RUN_API_CONCURRENCY}" \
+            --min-instances "${CLOUD_RUN_API_MIN_INSTANCES}" \
+            --max-instances "${CLOUD_RUN_API_MAX_INSTANCES}" \
+            --timeout "${CLOUD_RUN_API_TIMEOUT}" \
+            --labels "managed-by=github-actions,commit-sha=${SHORT_SHA}" \
+            --allow-unauthenticated \
+            --quiet
+
+      - name: Grant web runtime access to the API
+        run: >
+          gcloud run services add-iam-policy-binding "${CLOUD_RUN_API_SERVICE}"
+          --project "${GCP_PROJECT_ID}"
+          --region "${GCP_REGION}"
+          --member "serviceAccount:${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}"
+          --role roles/run.invoker
+          --quiet
+
+      - name: Resolve API URL
+        id: api-url
+        shell: bash
+        run: |
+          api_url="$(
+            gcloud run services describe "${CLOUD_RUN_API_SERVICE}" \
+              --project "${GCP_PROJECT_ID}" \
+              --region "${GCP_REGION}" \
+              --format='value(status.url)'
+          )"
+
+          echo "api_url=${api_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy public web service
+        shell: bash
+        env:
+          API_URL: ${{ steps.api-url.outputs.api_url }}
+          SHORT_SHA: ${{ steps.image.outputs.short_sha }}
+          WEB_IMAGE_URI: ${{ steps.image.outputs.web_image_uri }}
+        run: |
+          gcloud run deploy "${CLOUD_RUN_WEB_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${WEB_IMAGE_URI}" \
+            --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
+            --set-env-vars "API_BASE_URL=${API_URL},API_AUDIENCE=${API_URL},COOKIE_SECURE=true" \
+            --cpu "${CLOUD_RUN_WEB_CPU}" \
+            --memory "${CLOUD_RUN_WEB_MEMORY}" \
+            --concurrency "${CLOUD_RUN_WEB_CONCURRENCY}" \
+            --min-instances "${CLOUD_RUN_WEB_MIN_INSTANCES}" \
+            --max-instances "${CLOUD_RUN_WEB_MAX_INSTANCES}" \
+            --timeout "${CLOUD_RUN_WEB_TIMEOUT}" \
+            --labels "managed-by=github-actions,commit-sha=${SHORT_SHA}" \
+            --allow-unauthenticated \
+            --quiet
+
+      - name: Resolve web URL
+        id: web-url
+        shell: bash
+        run: |
+          web_url="$(
+            gcloud run services describe "${CLOUD_RUN_WEB_SERVICE}" \
+              --project "${GCP_PROJECT_ID}" \
+              --region "${GCP_REGION}" \
+              --format='value(status.url)'
+          )"
+
+          echo "web_url=${web_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Python for smoke test
+        if: env.ENABLE_CLOUD_RUN_SMOKE_TEST == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install smoke test dependency
+        if: env.ENABLE_CLOUD_RUN_SMOKE_TEST == 'true'
+        run: python -m pip install httpx
+
+      - name: Run post-deploy smoke test
+        if: env.ENABLE_CLOUD_RUN_SMOKE_TEST == 'true'
+        shell: bash
+        env:
+          WEB_URL: ${{ steps.web-url.outputs.web_url }}
+          CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL: ${{ vars.CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL }}
+          CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD: ${{ secrets.CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD }}
+        run: |
+          args=(
+            scripts/smoke_web_app.py
+            --base-url "${WEB_URL}"
+          )
+
+          if [[ -n "${CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL}" ]]; then
+            if [[ -z "${CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD}" ]]; then
+              echo "CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD is required when CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL is set." >&2
+              exit 1
+            fi
+
+            args+=(
+              --admin-email "${CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL}"
+              --admin-password "${CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD}"
+              --admin-register-if-missing
+            )
+          fi
+
+          python "${args[@]}"
+
+      - name: Summarize deployment
+        shell: bash
+        env:
+          API_IMAGE_URI: ${{ steps.image.outputs.api_image_uri }}
+          WEB_IMAGE_URI: ${{ steps.image.outputs.web_image_uri }}
+          DEPLOY_SHA: ${{ steps.image.outputs.deploy_sha }}
+          API_URL: ${{ steps.api-url.outputs.api_url }}
+          WEB_URL: ${{ steps.web-url.outputs.web_url }}
+        run: |
+          {
+            echo "### Cloud Run Deployment"
+            echo
+            echo "- Web service: \`${CLOUD_RUN_WEB_SERVICE}\`"
+            echo "- Web URL: ${WEB_URL}"
+            echo "- Web image: \`${WEB_IMAGE_URI}\`"
+            echo "- API service: \`${CLOUD_RUN_API_SERVICE}\`"
+            echo "- API URL: ${API_URL}"
+            echo "- API image: \`${API_IMAGE_URI}\`"
+            echo "- Commit: \`${DEPLOY_SHA}\`"
+            if [[ "${ENABLE_CLOUD_RUN_SMOKE_TEST}" == "true" ]]; then
+              echo "- Smoke test: enabled"
+            else
+              echo "- Smoke test: disabled"
+            fi
+            echo
+            echo "The web service is public. The API service is public too, so Swagger and direct API access stay available on the Cloud Run URL."
+          } >> "${GITHUB_STEP_SUMMARY}"

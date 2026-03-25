@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -13,9 +13,13 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from insurance_pricing._typing import FloatArray, as_float_array
 from insurance_pricing.data.schema import TARGET_SEV_COL
 
-def compute_segment_target_tables(train: pd.DataFrame, segment_cols: list[str]) -> dict[str, pd.DataFrame]:
+
+def compute_segment_target_tables(
+    train: pd.DataFrame, segment_cols: list[str]
+) -> dict[str, pd.DataFrame]:
     out: dict[str, pd.DataFrame] = {}
     if TARGET_SEV_COL not in train.columns:
         return out
@@ -32,10 +36,22 @@ def compute_segment_target_tables(train: pd.DataFrame, segment_cols: list[str]) 
             .agg(
                 n=("_y_sev", "size"),
                 claim_rate=("_y_freq", "mean"),
-                severity_mean_pos=("_y_sev", lambda s: float(np.mean(s[s > 0])) if (s > 0).any() else np.nan),
-                severity_median_pos=("_y_sev", lambda s: float(np.median(s[s > 0])) if (s > 0).any() else np.nan),
-                severity_q95_pos=("_y_sev", lambda s: float(np.quantile(s[s > 0], 0.95)) if (s > 0).any() else np.nan),
-                severity_q99_pos=("_y_sev", lambda s: float(np.quantile(s[s > 0], 0.99)) if (s > 0).any() else np.nan),
+                severity_mean_pos=(
+                    "_y_sev",
+                    lambda s: float(np.mean(s[s > 0])) if (s > 0).any() else np.nan,
+                ),
+                severity_median_pos=(
+                    "_y_sev",
+                    lambda s: float(np.median(s[s > 0])) if (s > 0).any() else np.nan,
+                ),
+                severity_q95_pos=(
+                    "_y_sev",
+                    lambda s: float(np.quantile(s[s > 0], 0.95)) if (s > 0).any() else np.nan,
+                ),
+                severity_q99_pos=(
+                    "_y_sev",
+                    lambda s: float(np.quantile(s[s > 0], 0.99)) if (s > 0).any() else np.nan,
+                ),
                 pure_premium_obs=("_y_sev", "mean"),
             )
             .reset_index()
@@ -44,6 +60,7 @@ def compute_segment_target_tables(train: pd.DataFrame, segment_cols: list[str]) 
         grp.insert(0, "segment_col", c)
         out[c] = grp.sort_values("pure_premium_obs", ascending=False).reset_index(drop=True)
     return out
+
 
 def sample_for_exploration(
     df: pd.DataFrame,
@@ -71,11 +88,12 @@ def sample_for_exploration(
         out = out.sample(n=n, random_state=seed)
     return out.copy()
 
+
 def _prepare_mixed_matrix(
     df: pd.DataFrame,
     num_cols: Sequence[str],
     cat_cols: Sequence[str],
-) -> tuple[np.ndarray, list[str]]:
+) -> tuple[FloatArray, list[str]]:
     num = [c for c in num_cols if c in df.columns]
     cat = [c for c in cat_cols if c in df.columns]
     transformers = []
@@ -106,7 +124,7 @@ def _prepare_mixed_matrix(
             )
         )
     if not transformers:
-        return np.empty((len(df), 0)), []
+        return as_float_array(np.empty((len(df), 0))), []
     ct = ColumnTransformer(transformers=transformers, remainder="drop")
     X = ct.fit_transform(df)
     feat_names = []
@@ -114,18 +132,19 @@ def _prepare_mixed_matrix(
         feat_names = list(ct.get_feature_names_out())
     except Exception:
         feat_names = [f"x{i}" for i in range(X.shape[1])]
-    return np.asarray(X, dtype=float), feat_names
+    return as_float_array(X), feat_names
+
 
 def compute_gower_like_distance_sample(
     df: pd.DataFrame,
     num_cols: list[str],
     cat_cols: list[str],
-) -> np.ndarray:
+) -> FloatArray:
     num = [c for c in num_cols if c in df.columns]
     cat = [c for c in cat_cols if c in df.columns]
     n = len(df)
     if n == 0:
-        return np.zeros((0, 0), dtype=float)
+        return as_float_array(np.zeros((0, 0), dtype=float))
 
     parts = []
     if num:
@@ -152,10 +171,11 @@ def compute_gower_like_distance_sample(
         parts.append(cat_dist)
 
     if not parts:
-        return np.zeros((n, n), dtype=float)
-    D = np.mean(parts, axis=0)
+        return as_float_array(np.zeros((n, n), dtype=float))
+    D = as_float_array(np.mean(parts, axis=0))
     np.fill_diagonal(D, 0.0)
     return D
+
 
 def fit_mixed_embedding_proxy(
     df: pd.DataFrame,
@@ -165,14 +185,21 @@ def fit_mixed_embedding_proxy(
 ) -> pd.DataFrame:
     X, feat_names = _prepare_mixed_matrix(df, num_cols=num_cols, cat_cols=cat_cols)
     if X.shape[1] == 0:
-        return pd.DataFrame({"comp_1": np.zeros(len(df)), "comp_2": np.zeros(len(df))}, index=df.index)
-    reducer = TruncatedSVD(n_components=n_components, random_state=42) if X.shape[1] > 50 else PCA(n_components=n_components, random_state=42)
+        return pd.DataFrame(
+            {"comp_1": np.zeros(len(df)), "comp_2": np.zeros(len(df))}, index=df.index
+        )
+    reducer = (
+        TruncatedSVD(n_components=n_components, random_state=42)
+        if X.shape[1] > 50
+        else PCA(n_components=n_components, random_state=42)
+    )
     comps = reducer.fit_transform(X)
-    cols = [f"comp_{i+1}" for i in range(comps.shape[1])]
+    cols = [f"comp_{i + 1}" for i in range(comps.shape[1])]
     out = pd.DataFrame(comps, index=df.index, columns=cols)
     for i in range(n_components - comps.shape[1]):
         out[f"comp_{comps.shape[1] + i + 1}"] = 0.0
-    return out[[f"comp_{i+1}" for i in range(n_components)]]
+    return out[[f"comp_{i + 1}" for i in range(n_components)]]
+
 
 def fit_kmeans_exploration(
     df: pd.DataFrame,
@@ -190,9 +217,11 @@ def fit_kmeans_exploration(
     out["cluster"] = labels
     return out
 
-def compute_linkage_from_distance(distance_matrix: np.ndarray, method: str = "average") -> np.ndarray:
-    if distance_matrix.shape[0] < 2:
-        return np.zeros((0, 4))
-    condensed = squareform(distance_matrix, checks=False)
-    return linkage(condensed, method=method)
 
+def compute_linkage_from_distance(
+    distance_matrix: FloatArray, method: str = "average"
+) -> FloatArray:
+    if distance_matrix.shape[0] < 2:
+        return as_float_array(np.zeros((0, 4), dtype=float))
+    condensed = squareform(distance_matrix, checks=False)
+    return as_float_array(linkage(condensed, method=method))

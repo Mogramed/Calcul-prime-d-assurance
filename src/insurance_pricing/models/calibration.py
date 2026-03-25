@@ -4,8 +4,12 @@ from typing import Any
 
 import numpy as np
 
+from insurance_pricing._typing import FloatArray, IntArray, as_float_array, as_int_array
 
-def _resolve_fit_inputs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, str]:
+
+def _resolve_fit_inputs(
+    args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> tuple[FloatArray, IntArray, str]:
     method = kwargs.get("method")
     if "p_pred" in kwargs and "y_true" in kwargs:
         probs = kwargs["p_pred"]
@@ -18,13 +22,15 @@ def _resolve_fit_inputs(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[
     elif len(args) >= 2:
         probs, y_true = args[0], args[1]
     else:
-        raise TypeError("fit_calibrator expects (probs, y_true, method) or keywords y_true=, p_pred=, method=.")
+        raise TypeError(
+            "fit_calibrator expects (probs, y_true, method) or keywords y_true=, p_pred=, method=."
+        )
     if method is None:
         raise TypeError("fit_calibrator requires `method`.")
-    return np.asarray(probs, dtype=float), np.asarray(y_true, dtype=int), str(method)
+    return as_float_array(probs), as_int_array(y_true), str(method)
 
 
-def fit_calibrator(*args: Any, **kwargs: Any):
+def fit_calibrator(*args: Any, **kwargs: Any) -> Any | None:
     probs, y_true, method = _resolve_fit_inputs(args, kwargs)
     m = method.lower()
     if m == "none":
@@ -44,7 +50,9 @@ def fit_calibrator(*args: Any, **kwargs: Any):
     raise ValueError(f"Unknown calibration method: {method}")
 
 
-def _resolve_apply_inputs(model: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[np.ndarray, str]:
+def _resolve_apply_inputs(
+    model: Any, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> tuple[FloatArray, str]:
     method = kwargs.get("method")
     if "p_pred" in kwargs:
         probs = kwargs["p_pred"]
@@ -55,34 +63,37 @@ def _resolve_apply_inputs(model: Any, args: tuple[Any, ...], kwargs: dict[str, A
     elif len(args) == 1:
         probs = args[0]
     else:
-        raise TypeError("apply_calibrator expects (model, probs, method) or keywords p_pred=, method=.")
+        raise TypeError(
+            "apply_calibrator expects (model, probs, method) or keywords p_pred=, method=."
+        )
     if method is None:
         raise TypeError("apply_calibrator requires `method`.")
-    return np.asarray(probs, dtype=float), str(method)
+    return as_float_array(probs), str(method)
 
 
-def apply_calibrator(model, *args: Any, **kwargs: Any) -> np.ndarray:
+def apply_calibrator(model: Any, *args: Any, **kwargs: Any) -> FloatArray:
     probs, method = _resolve_apply_inputs(model, args, kwargs)
     m = method.lower()
     if m == "none" or model is None:
         return probs
     if m == "isotonic":
-        return model.transform(probs)
+        return as_float_array(model.transform(probs))
     if m == "platt":
-        return model.predict_proba(probs.reshape(-1, 1))[:, 1]
+        return as_float_array(model.predict_proba(probs.reshape(-1, 1))[:, 1])
     raise ValueError(f"Unknown calibration method: {method}")
+
 
 def crossfit_calibrate_oof(
     *,
-    probs: np.ndarray,
-    y_true: np.ndarray,
-    fold_assign: np.ndarray,
+    probs: FloatArray,
+    y_true: IntArray,
+    fold_assign: FloatArray,
     method: str,
-) -> np.ndarray:
+) -> FloatArray:
     m = method.lower()
-    p = np.asarray(probs, dtype=float)
-    y = np.asarray(y_true, dtype=int)
-    folds = np.asarray(fold_assign, dtype=float)
+    p = as_float_array(probs)
+    y = as_int_array(y_true)
+    folds = as_float_array(fold_assign)
     if m == "none":
         return p.copy()
 
@@ -100,5 +111,4 @@ def crossfit_calibrate_oof(
     out[~valid] = p[~valid]
     missing = np.isnan(out) & valid
     out[missing] = p[missing]
-    return out
-
+    return as_float_array(out)
