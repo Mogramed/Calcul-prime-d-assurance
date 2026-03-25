@@ -70,29 +70,409 @@ flowchart LR
     CI --> CR["Cloud Run"]
     CR --> W
     CR --> API
-Repository structurePathRolesrc/insurance_pricing/Main Python packagesrc/insurance_pricing/api/FastAPI API, auth, quotes, admin, persistencesrc/insurance_pricing/training/Training configs and orchestrationsrc/insurance_pricing/models/Frequency, severity, premium, and calibration modelssrc/insurance_pricing/evaluation/Metrics and diagnosticssrc/insurance_pricing/inference/Offline prediction and submissionsrc/insurance_pricing/runtime/Bundle persistence and DS exportssrc/insurance_pricing/workflows.pyStable Python facadeweb/Product Next.js frontendscripts/Utility tools, OpenAPI exports, smoke testtests/Unit and integration testsalembic/PostgreSQL migrations.github/workflows/CI, Docker publishing, Cloud Run deploymentdocs/GitHub / Cloud Run deployment documentationTech stackBackend and data sciencePython 3.13uv for dependency managementPandas, NumPy, scikit-learn, CatBoostFastAPI + UvicornSQLAlchemy + Psycopg + AlembicArgon2 for password hashingReportLab for PDF generationFrontendNext.js 16React 19TypeScriptReact Hook Form + ZodTanStack QueryTailwind CSSOpenAPI client generated with @hey-api/openapi-tsOpsDocker / Docker ComposeGitHub ActionsDocker HubGoogle Cloud RunNeon PostgreSQLBusiness workflows1. TrainingThe Python package allows training a pricing run from a JSON configuration file.Typical workflow:load datasetsbuild splits and verify their integritybenchmark multiple models / settingsselect the best runtrain the final modelssave the bundle in artifacts/models/Command:Bashuv run insurance-pricing-train --config configs/<my-run>.json
-2. EvaluationAllows evaluating a saved run on the training / test sets.Bashuv run insurance-pricing-evaluate --run-id <run-id>
-3. Offline predictionAllows scoring a CSV with a given run.Bashuv run insurance-pricing-predict --run-id <run-id> --input data/test.csv --output outputs/predictions.csv
-4. SubmissionAllows building a submission from a run.Bashuv run insurance-pricing-make-submission --run-id <run-id> --output outputs/submission.csv
-FastAPI APIDocumentationWhen the API is running:Swagger UI: /docsReDoc: /redocOpenAPI JSON: /openapi.jsonMain endpointsMetadata and healthGET /GET /versionGET /models/currentGET /healthGET /readyPredictionGET /predict/schemaPOST /predict/frequencyPOST /predict/frequency/batchPOST /predict/severityPOST /predict/severity/batchPOST /predict/primePOST /predict/prime/batchAuthenticationPOST /auth/registerPOST /auth/loginGET /auth/sessionPOST /auth/logoutQuotesPOST /quotesGET /quotesGET /quotes/{quote_id}GET /quotes/{quote_id}/report.pdfAdministrationGET /admin/usersDELETE /admin/users/{user_id}GET /admin/quotesDELETE /admin/quotes/{quote_id}API notesthe API persists errors, sessions, and quotes in PostgreSQLGET /ready verifies model loading and database connectivitythe quote endpoints are used by the Next.js frontend via its /api/* routesin the current state of the project, the Cloud Run API is configured as publicNext.js FrontendThe web/ frontend is the "Nova Assurances" product layer.Client flowpublic landing pageregistration / loginprotected access to quotingquote creationhistory consultationPDF report downloadAdmin flowlogin with an account whose email is listed in INSURANCE_PRICING_ADMIN_EMAILSaccess to /adminaccount consultationsoft deletion of users and quotesFrontend specificsquotes are blocked as long as no session is openthe browser only calls the frontend's same-origin /api/* routessession cookies are managed server-sidethe OpenAPI client is regenerated from web/openapi.jsonSee also: web/README.mdLocal installationPrerequisitesPython 3.13Node.js 22Docker DesktopuvDependency installationBashuv sync --all-groups --frozen
-For the frontend:Bashcd web
+```
+
+## Repository structure
+
+| Path | Role |
+| --- | --- |
+| `src/insurance_pricing/` | Main Python package |
+| `src/insurance_pricing/api/` | FastAPI API, auth, quotes, admin, persistence |
+| `src/insurance_pricing/training/` | Training configs and orchestration |
+| `src/insurance_pricing/models/` | Frequency, severity, premium, and calibration models |
+| `src/insurance_pricing/evaluation/` | Metrics and diagnostics |
+| `src/insurance_pricing/inference/` | Offline prediction and submission |
+| `src/insurance_pricing/runtime/` | Bundle persistence and DS exports |
+| `src/insurance_pricing/workflows.py` | Stable Python facade |
+| `web/` | Product Next.js frontend |
+| `scripts/` | Utility tools, OpenAPI exports, smoke test |
+| `tests/` | Unit and integration tests |
+| `alembic/` | PostgreSQL migrations |
+| `.github/workflows/` | CI, Docker publishing, Cloud Run deployment |
+| `docs/` | GitHub / Cloud Run deployment documentation |
+
+## Tech stack
+
+### Backend and data science
+
+1. Python 3.13
+2. `uv` for dependency management
+3. Pandas, NumPy, scikit-learn, CatBoost
+4. FastAPI + Uvicorn
+5. SQLAlchemy + Psycopg + Alembic
+6. Argon2 for password hashing
+7. ReportLab for PDF generation
+
+### Frontend
+
+1. Next.js 16
+2. React 19
+3. TypeScript
+4. React Hook Form + Zod
+5. TanStack Query
+6. Tailwind CSS
+7. OpenAPI client generated with `@hey-api/openapi-ts`
+
+### Ops
+
+1. Docker / Docker Compose
+2. GitHub Actions
+3. Docker Hub
+4. Google Cloud Run
+5. Neon PostgreSQL
+
+## Business workflows
+
+### 1. Training
+
+The Python package allows training a pricing run from a JSON configuration file.
+
+Typical workflow:
+
+1. load datasets
+2. build splits and verify their integrity
+3. benchmark multiple models / settings
+4. select the best run
+5. train the final models
+6. save the bundle in `artifacts/models/`
+
+Command:
+
+```bash
+uv run insurance-pricing-train --config configs/<my-run>.json
+```
+
+### 2. Evaluation
+
+Allows evaluating a saved run on the training / test sets.
+
+```bash
+uv run insurance-pricing-evaluate --run-id <run-id>
+```
+
+### 3. Offline prediction
+
+Allows scoring a CSV with a given run.
+
+```bash
+uv run insurance-pricing-predict --run-id <run-id> --input data/test.csv --output outputs/predictions.csv
+```
+
+### 4. Submission
+
+Allows building a submission from a run.
+
+```bash
+uv run insurance-pricing-make-submission --run-id <run-id> --output outputs/submission.csv
+```
+
+## FastAPI API
+
+### Documentation
+
+When the API is running:
+
+1. Swagger UI: `/docs`
+2. ReDoc: `/redoc`
+3. OpenAPI JSON: `/openapi.json`
+
+### Main endpoints
+
+#### Metadata and health
+
+1. `GET /`
+2. `GET /version`
+3. `GET /models/current`
+4. `GET /health`
+5. `GET /ready`
+
+#### Prediction
+
+1. `GET /predict/schema`
+2. `POST /predict/frequency`
+3. `POST /predict/frequency/batch`
+4. `POST /predict/severity`
+5. `POST /predict/severity/batch`
+6. `POST /predict/prime`
+7. `POST /predict/prime/batch`
+
+#### Authentication
+
+1. `POST /auth/register`
+2. `POST /auth/login`
+3. `GET /auth/session`
+4. `POST /auth/logout`
+
+#### Quotes
+
+1. `POST /quotes`
+2. `GET /quotes`
+3. `GET /quotes/{quote_id}`
+4. `GET /quotes/{quote_id}/report.pdf`
+
+#### Administration
+
+1. `GET /admin/users`
+2. `DELETE /admin/users/{user_id}`
+3. `GET /admin/quotes`
+4. `DELETE /admin/quotes/{quote_id}`
+
+### API notes
+
+1. the API persists errors, sessions, and quotes in PostgreSQL
+2. `GET /ready` verifies model loading and database connectivity
+3. the quote endpoints are used by the Next.js frontend via its `/api/*` routes
+4. in the current state of the project, the Cloud Run API is configured as public
+
+## Next.js Frontend
+
+The `web/` frontend is the "Nova Assurances" product layer.
+
+### Client flow
+
+1. public landing page
+2. registration / login
+3. protected access to quoting
+4. quote creation
+5. history consultation
+6. PDF report download
+
+### Admin flow
+
+1. login with an account whose email is listed in `INSURANCE_PRICING_ADMIN_EMAILS`
+2. access to `/admin`
+3. account consultation
+4. soft deletion of users and quotes
+
+### Frontend specifics
+
+1. quotes are blocked as long as no session is open
+2. the browser only calls the frontend's same-origin `/api/*` routes
+3. session cookies are managed server-side
+4. the OpenAPI client is regenerated from `web/openapi.json`
+
+See also: [web/README.md](web/README.md)
+
+## Local installation
+
+### Prerequisites
+
+1. Python 3.13
+2. Node.js 22
+3. Docker Desktop
+4. `uv`
+
+### Dependency installation
+
+```bash
+uv sync --all-groups --frozen
+```
+
+For the frontend:
+
+```bash
+cd web
 npm install
 npm run codegen
 npm run catalog:vehicles
-Local startupOption 1 - classic development mode1. Start PostgreSQLBashdocker compose up -d postgres
-2. Apply migrationsBashdocker compose run --rm migrate
-3. Start the APIBashuv run insurance-pricing-api --host 127.0.0.1 --port 8000
-4. Start the frontendBashcd web
+```
+
+## Local startup
+
+### Option 1 - classic development mode
+
+#### 1. Start PostgreSQL
+
+```bash
+docker compose up -d postgres
+```
+
+#### 2. Apply migrations
+
+```bash
+docker compose run --rm migrate
+```
+
+#### 3. Start the API
+
+```bash
+uv run insurance-pricing-api --host 127.0.0.1 --port 8000
+```
+
+#### 4. Start the frontend
+
+```bash
+cd web
 npm run dev
-Option 2 - full stack preview with Docker ComposeBashdocker compose --profile ops up --build postgres migrate api web
-Useful local URLsfrontend: http://127.0.0.1:3000API: http://127.0.0.1:8000Swagger: http://127.0.0.1:8000/docsReDoc: http://127.0.0.1:8000/redocImportant environment variablesBackendVariableRoleINSURANCE_PRICING_RUN_IDmodel bundle to loadINSURANCE_PRICING_DATABASE_URLPostgreSQL URLINSURANCE_PRICING_LOG_LEVELlog levelINSURANCE_PRICING_LOG_JSONJSON logsINSURANCE_PRICING_CORS_ALLOWED_ORIGINSallowed originsINSURANCE_PRICING_ADMIN_EMAILSauthorized admin emailsINSURANCE_PRICING_SESSION_TTL_HOURSsession durationFrontendVariableRoleAPI_BASE_URLupstream API URLAPI_AUDIENCEoptional Cloud Run audienceCOOKIE_SECUREfalse in local HTTP, true in HTTPSExample variables are provided in:.env.exampleweb/.env.exampleTests and qualityMain checksBashuv run ruff check src tests scripts
+```
+
+### Option 2 - full stack preview with Docker Compose
+
+```bash
+docker compose --profile ops up --build postgres migrate api web
+```
+
+### Useful local URLs
+
+1. frontend: `http://127.0.0.1:3000`
+2. API: `http://127.0.0.1:8000`
+3. Swagger: `http://127.0.0.1:8000/docs`
+4. ReDoc: `http://127.0.0.1:8000/redoc`
+
+## Important environment variables
+
+### Backend
+
+| Variable | Role |
+| --- | --- |
+| `INSURANCE_PRICING_RUN_ID` | model bundle to load |
+| `INSURANCE_PRICING_DATABASE_URL` | PostgreSQL URL |
+| `INSURANCE_PRICING_LOG_LEVEL` | log level |
+| `INSURANCE_PRICING_LOG_JSON` | JSON logs |
+| `INSURANCE_PRICING_CORS_ALLOWED_ORIGINS` | allowed origins |
+| `INSURANCE_PRICING_ADMIN_EMAILS` | authorized admin emails |
+| `INSURANCE_PRICING_SESSION_TTL_HOURS` | session duration |
+
+### Frontend
+
+| Variable | Role |
+| --- | --- |
+| `API_BASE_URL` | upstream API URL |
+| `API_AUDIENCE` | optional Cloud Run audience |
+| `COOKIE_SECURE` | `false` in local HTTP, `true` in HTTPS |
+
+Example variables are provided in:
+
+1. [.env.example](.env.example)
+2. [web/.env.example](web/.env.example)
+
+## Tests and quality
+
+### Main checks
+
+```bash
+uv run ruff check src tests scripts
 uv run mypy
 uv run pytest -m "not integration"
 uv run pytest -m integration
-Frontend checksBashcd web
+```
+
+### Frontend checks
+
+```bash
+cd web
 npm run codegen
 npm run lint
 npm run typecheck
 npm run build
-DockerBackend imageThe root Dockerfile builds the API / Python runtime image.Frontend imageweb/Dockerfile builds the production Next.js image.Composedocker-compose.yml orchestrates:postgresmigrateapiwebCI / CDCIThe ci.yml workflow executes:Python and Node installationfrontend OpenAPI client generationfrontend lintfrontend typecheckfrontend buildRuffMyPyAlembic migrationsunit testsintegration testsDocker smoke testDocker Hub image publishingDocker Hub publishingTwo images are published:API: <dockerhub-user>/calcul-prime-assuranceWeb: <dockerhub-user>/nova-assurances-webCloud Run DeploymentThe deploy-cloud-run.yml workflow manages:GCP authentication via Workload Identity FederationArtifact Registry bootstrap if necessaryimage build and pushmigration job deploymentAPI deploymentweb deploymentpost-deployment smoke testIn the current state:nova-web is publicnova-api is publicthe smoke test validates the web flow and authenticationRelated documentation:docs/deploy_cloud_run.mddocs/github_only_deploy.mdWeb smoke testThe smoke_web_app.py script allows validating a web deployment.Example:Bashuv run --group test python scripts/smoke_web_app.py --base-url [https://nova-web-xxxxx.a.run.app](https://nova-web-xxxxx.a.run.app)
-This test notably verifies:landing page renderingprotection of /devis before loginregistrationquote creationhistoryPDF downloadAdditional documentationREADME_architecture.md: architecture / conventions overviewdocs/deploy_cloud_run.md: GCP bootstrap and deploymentdocs/github_only_deploy.md: GitHub-only configurationweb/README.md: frontend detailsProject statusThe project today covers an almost complete cycle:experimentation and model selectionindustrial HTTP exposureclient/admin web applicationpersistence and PDFCI, Docker, Cloud RunIt is therefore suitable for:an end-of-studies projecta full-stack / MLOps portfolio demoa technical base to move towards a more complete product
+```
+
+## Docker
+
+### Backend image
+
+The root `Dockerfile` builds the API / Python runtime image.
+
+### Frontend image
+
+`web/Dockerfile` builds the production Next.js image.
+
+### Compose
+
+`docker-compose.yml` orchestrates:
+
+1. `postgres`
+2. `migrate`
+3. `api`
+4. `web`
+
+## CI / CD
+
+### CI
+
+The [ci.yml](.github/workflows/ci.yml) workflow executes:
+
+1. Python and Node installation
+2. frontend OpenAPI client generation
+3. frontend lint
+4. frontend typecheck
+5. frontend build
+6. Ruff
+7. MyPy
+8. Alembic migrations
+9. unit tests
+10. integration tests
+11. Docker smoke test
+12. Docker Hub image publishing
+
+### Docker Hub publishing
+
+Two images are published:
+
+1. API: `<dockerhub-user>/calcul-prime-assurance`
+2. Web: `<dockerhub-user>/nova-assurances-web`
+
+### Cloud Run Deployment
+
+The [deploy-cloud-run.yml](.github/workflows/deploy-cloud-run.yml) workflow manages:
+
+1. GCP authentication via Workload Identity Federation
+2. Artifact Registry bootstrap if necessary
+3. image build and push
+4. migration job deployment
+5. API deployment
+6. web deployment
+7. post-deployment smoke test
+
+In the current state:
+
+1. `nova-web` is public
+2. `nova-api` is public
+3. the smoke test validates the web flow and authentication
+
+Related documentation:
+
+1. [docs/deploy_cloud_run.md](docs/deploy_cloud_run.md)
+2. [docs/github_only_deploy.md](docs/github_only_deploy.md)
+
+## Web smoke test
+
+The [smoke_web_app.py](scripts/smoke_web_app.py) script allows validating a web deployment.
+
+Example:
+
+```bash
+uv run --group test python scripts/smoke_web_app.py --base-url [https://nova-web-xxxxx.a.run.app](https://nova-web-xxxxx.a.run.app)
+```
+
+This test notably verifies:
+
+1. landing page rendering
+2. protection of `/devis` before login
+3. registration
+4. quote creation
+5. history
+6. PDF download
+
+## Additional documentation
+
+1. [README_architecture.md](README_architecture.md): architecture / conventions overview
+2. [docs/deploy_cloud_run.md](docs/deploy_cloud_run.md): GCP bootstrap and deployment
+3. [docs/github_only_deploy.md](docs/github_only_deploy.md): GitHub-only configuration
+4. [web/README.md](web/README.md): frontend details
+
+## Project status
+
+The project today covers an almost complete cycle:
+
+1. experimentation and model selection
+2. industrial HTTP exposure
+3. client/admin web application
+4. persistence and PDF
+5. CI, Docker, Cloud Run
+
+It is therefore suitable for:
+
+1. an end-of-studies project
+2. a full-stack / MLOps portfolio demo
+3. a technical base to move towards a more complete product
