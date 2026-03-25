@@ -470,9 +470,3 @@ The project today covers an almost complete cycle:
 3. client/admin web application
 4. persistence and PDF
 5. CI, Docker, Cloud Run
-
-It is therefore suitable for:
-
-1. an end-of-studies project
-2. a full-stack / MLOps portfolio demo
-3. a technical base to move towards a more complete product
