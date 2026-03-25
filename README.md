@@ -1,72 +1,70 @@
 # Nova Assurances - Insurance Pricing Platform
 
-Projet complet de tarification d'assurance auto couvrant :
+Complete auto insurance pricing project covering:
 
-1. un package Python de data science pour l'entrainement, l'evaluation et l'inference
-2. une API FastAPI de prediction et de gestion des devis
-3. un frontend Next.js oriente produit pour les clients et les administrateurs
-4. une couche de persistance PostgreSQL avec migrations Alembic
-5. une CI GitHub Actions, des images Docker, et un deploiement Cloud Run
+1. a Python data science package for training, evaluation, and inference
+2. a FastAPI API for prediction and quote management
+3. a product-oriented Next.js frontend for clients and administrators
+4. a PostgreSQL persistence layer with Alembic migrations
+5. a GitHub Actions CI, Docker images, and Cloud Run deployment
 
-Le projet a evolue d'un socle modele/benchmark vers une application web complete nommee
-`Nova Assurances`, avec authentification, historique de devis, generation de PDF, espace admin et
-deploiement cloud.
+The project has evolved from a model/benchmark foundation to a complete web application named `Nova Assurances`, featuring authentication, quote history, PDF generation, an admin area, and cloud deployment.
 
-## Vue d'ensemble
+## Overview
 
-### Ce que fait le projet
+### What the project does
 
-Le moteur de pricing calcule une prime auto a partir de donnees metier brutes. Il expose :
+The pricing engine calculates an auto premium from raw business data. It exposes:
 
-1. des workflows Python pour entrainer et comparer des modeles
-2. des endpoints HTTP pour scorer un dossier en frequence, severite, ou prime finale
-3. un site client pour creer un devis, consulter son historique et telecharger un PDF
-4. des fonctionnalites admin pour superviser les comptes et moderer les devis
+1. Python workflows to train and compare models
+2. HTTP endpoints to score a record for frequency, severity, or final premium
+3. a client website to create a quote, view its history, and download a PDF
+4. admin features to monitor accounts and moderate quotes
 
-### Fonctionnalites principales
+### Main features
 
 #### Data science
 
-1. chargement et preparation des datasets d'apprentissage et de test
-2. construction de features et schemas de colonnes
-3. benchmark multi-splits et selection du meilleur run
-4. persistance de bundles de modeles dans `artifacts/`
-5. prediction offline et generation de soumissions
+1. loading and preparation of training and test datasets
+2. feature engineering and column schemas
+3. multi-split benchmark and best run selection
+4. persistence of model bundles in `artifacts/`
+5. offline prediction and submission generation
 
 #### Backend API
 
-1. endpoints de prediction unitaires et batch
-2. endpoints de devis persistants
-3. authentification par email + mot de passe
-4. generation de PDF pour chaque devis
-5. endpoints admin pour la gestion des comptes et devis
-6. logs structures, readiness checks et persistance PostgreSQL
+1. unitary and batch prediction endpoints
+2. persistent quote endpoints
+3. email + password authentication
+4. PDF generation for each quote
+5. admin endpoints for account and quote management
+6. structured logs, readiness checks, and PostgreSQL persistence
 
-#### Frontend produit
+#### Product frontend
 
-1. landing page client "Nova Assurances"
-2. parcours devis guide
-3. connexion obligatoire avant creation ou consultation d'un devis
-4. espace client et historique des devis
-5. console admin reservee aux comptes admin
+1. "Nova Assurances" client landing page
+2. guided quote flow
+3. mandatory login before creating or viewing a quote
+4. client area and quote history
+5. admin console reserved for admin accounts
 
 #### DevOps
 
-1. CI Python + frontend dans GitHub Actions
-2. build et publication Docker Hub
-3. deploiement Cloud Run
-4. smoke test post-deploiement du parcours web
+1. Python + frontend CI in GitHub Actions
+2. Docker Hub build and publish
+3. Cloud Run deployment
+4. post-deployment web flow smoke test
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U["Utilisateur"] --> W["Next.js web app"]
-    W --> BFF["Routes /api/* Next.js"]
+    U["User"] --> W["Next.js web app"]
+    W --> BFF["Next.js /api/* routes"]
     BFF --> API["FastAPI API"]
     API --> DB["PostgreSQL / Neon"]
-    API --> ART["Artifacts modeles"]
-    DS["Workflows Python"] --> ART
+    API --> ART["Model artifacts"]
+    DS["Python workflows"] --> ART
     DS --> DB
     CI["GitHub Actions"] --> DH["Docker Hub"]
     CI --> CR["Cloud Run"]
@@ -74,36 +72,36 @@ flowchart LR
     CR --> API
 ```
 
-## Structure du repository
+## Repository structure
 
-| Chemin | Role |
+| Path | Role |
 | --- | --- |
-| `src/insurance_pricing/` | Package Python principal |
-| `src/insurance_pricing/api/` | API FastAPI, auth, devis, admin, persistance |
-| `src/insurance_pricing/training/` | Configs et orchestration d'entrainement |
-| `src/insurance_pricing/models/` | Modeles frequence, severite, prime, calibration |
-| `src/insurance_pricing/evaluation/` | Metriques et diagnostics |
-| `src/insurance_pricing/inference/` | Prediction offline et soumission |
-| `src/insurance_pricing/runtime/` | Persistance des bundles et exports DS |
-| `src/insurance_pricing/workflows.py` | Facade Python stable |
-| `web/` | Frontend Next.js produit |
-| `scripts/` | Outils utilitaires, exports OpenAPI, smoke test |
-| `tests/` | Tests unitaires et integration |
-| `alembic/` | Migrations PostgreSQL |
-| `.github/workflows/` | CI, publication Docker, deploiement Cloud Run |
-| `docs/` | Documentation de deploiement GitHub / Cloud Run |
+| `src/insurance_pricing/` | Main Python package |
+| `src/insurance_pricing/api/` | FastAPI API, auth, quotes, admin, persistence |
+| `src/insurance_pricing/training/` | Training configs and orchestration |
+| `src/insurance_pricing/models/` | Frequency, severity, premium, and calibration models |
+| `src/insurance_pricing/evaluation/` | Metrics and diagnostics |
+| `src/insurance_pricing/inference/` | Offline prediction and submission |
+| `src/insurance_pricing/runtime/` | Bundle persistence and DS exports |
+| `src/insurance_pricing/workflows.py` | Stable Python facade |
+| `web/` | Product Next.js frontend |
+| `scripts/` | Utility tools, OpenAPI exports, smoke test |
+| `tests/` | Unit and integration tests |
+| `alembic/` | PostgreSQL migrations |
+| `.github/workflows/` | CI, Docker publishing, Cloud Run deployment |
+| `docs/` | GitHub / Cloud Run deployment documentation |
 
-## Stack technique
+## Tech stack
 
-### Backend et data science
+### Backend and data science
 
 1. Python 3.13
-2. `uv` pour la gestion des dependances
+2. `uv` for dependency management
 3. Pandas, NumPy, scikit-learn, CatBoost
 4. FastAPI + Uvicorn
 5. SQLAlchemy + Psycopg + Alembic
-6. Argon2 pour le hash des mots de passe
-7. ReportLab pour la generation PDF
+6. Argon2 for password hashing
+7. ReportLab for PDF generation
 
 ### Frontend
 
@@ -113,7 +111,7 @@ flowchart LR
 4. React Hook Form + Zod
 5. TanStack Query
 6. Tailwind CSS
-7. client OpenAPI genere avec `@hey-api/openapi-ts`
+7. OpenAPI client generated with `@hey-api/openapi-ts`
 
 ### Ops
 
@@ -123,38 +121,38 @@ flowchart LR
 4. Google Cloud Run
 5. Neon PostgreSQL
 
-## Workflows metier
+## Business workflows
 
-### 1. Entrainement
+### 1. Training
 
-Le package Python permet d'entrainer un run de pricing a partir d'un fichier JSON de configuration.
+The Python package allows training a pricing run from a JSON configuration file.
 
-Workflow type :
+Typical workflow:
 
-1. charger les jeux de donnees
-2. construire les splits et verifier leur integrite
-3. benchmarker plusieurs modeles / reglages
-4. selectionner le meilleur run
-5. entrainer les modeles finaux
-6. sauver le bundle dans `artifacts/models/`
+1. load datasets
+2. build splits and verify their integrity
+3. benchmark multiple models / settings
+4. select the best run
+5. train the final models
+6. save the bundle in `artifacts/models/`
 
-Commande :
+Command:
 
 ```bash
-uv run insurance-pricing-train --config configs/<mon-run>.json
+uv run insurance-pricing-train --config configs/<my-run>.json
 ```
 
 ### 2. Evaluation
 
-Permet d'evaluer un run sauvegarde sur les jeux d'apprentissage / test.
+Allows evaluating a saved run on the training / test sets.
 
 ```bash
 uv run insurance-pricing-evaluate --run-id <run-id>
 ```
 
-### 3. Prediction offline
+### 3. Offline prediction
 
-Permet de scorer un CSV avec un run donne.
+Allows scoring a CSV with a given run.
 
 ```bash
 uv run insurance-pricing-predict --run-id <run-id> --input data/test.csv --output outputs/predictions.csv
@@ -162,25 +160,25 @@ uv run insurance-pricing-predict --run-id <run-id> --input data/test.csv --outpu
 
 ### 4. Submission
 
-Permet de construire une soumission a partir d'un run.
+Allows building a submission from a run.
 
 ```bash
 uv run insurance-pricing-make-submission --run-id <run-id> --output outputs/submission.csv
 ```
 
-## API FastAPI
+## FastAPI API
 
 ### Documentation
 
-Quand l'API tourne :
+When the API is running:
 
-1. Swagger UI : `/docs`
-2. ReDoc : `/redoc`
-3. OpenAPI JSON : `/openapi.json`
+1. Swagger UI: `/docs`
+2. ReDoc: `/redoc`
+3. OpenAPI JSON: `/openapi.json`
 
-### Endpoints principaux
+### Main endpoints
 
-#### Metadata et health
+#### Metadata and health
 
 1. `GET /`
 2. `GET /version`
@@ -198,14 +196,14 @@ Quand l'API tourne :
 6. `POST /predict/prime`
 7. `POST /predict/prime/batch`
 
-#### Authentification
+#### Authentication
 
 1. `POST /auth/register`
 2. `POST /auth/login`
 3. `GET /auth/session`
 4. `POST /auth/logout`
 
-#### Devis
+#### Quotes
 
 1. `POST /quotes`
 2. `GET /quotes`
@@ -219,58 +217,58 @@ Quand l'API tourne :
 3. `GET /admin/quotes`
 4. `DELETE /admin/quotes/{quote_id}`
 
-### Notes sur l'API
+### API notes
 
-1. l'API persiste les erreurs, sessions et devis dans PostgreSQL
-2. `GET /ready` verifie le chargement du modele et la connectivite base
-3. les endpoints de devis sont utilises par le frontend Next.js via ses routes `/api/*`
-4. en etat actuel du projet, l'API Cloud Run est configuree comme publique
+1. the API persists errors, sessions, and quotes in PostgreSQL
+2. `GET /ready` verifies model loading and database connectivity
+3. the quote endpoints are used by the Next.js frontend via its `/api/*` routes
+4. in the current state of the project, the Cloud Run API is configured as public
 
-## Frontend Next.js
+## Next.js Frontend
 
-Le frontend `web/` est la couche produit "Nova Assurances".
+The `web/` frontend is the "Nova Assurances" product layer.
 
-### Parcours client
+### Client flow
 
-1. accueil public
-2. inscription / connexion
-3. acces protege au devis
-4. creation d'un devis
-5. consultation de l'historique
-6. telechargement du rapport PDF
+1. public landing page
+2. registration / login
+3. protected access to quoting
+4. quote creation
+5. history consultation
+6. PDF report download
 
-### Parcours admin
+### Admin flow
 
-1. connexion avec un compte dont l'email est liste dans `INSURANCE_PRICING_ADMIN_EMAILS`
-2. acces a `/admin`
-3. consultation des comptes
-4. suppression logique d'utilisateurs et devis
+1. login with an account whose email is listed in `INSURANCE_PRICING_ADMIN_EMAILS`
+2. access to `/admin`
+3. account consultation
+4. soft deletion of users and quotes
 
-### Particularites frontend
+### Frontend specifics
 
-1. les devis sont bloques tant qu'aucune session n'est ouverte
-2. le navigateur appelle uniquement les routes same-origin `/api/*` du frontend
-3. les cookies de session sont geres cote serveur
-4. le client OpenAPI est regenere depuis `web/openapi.json`
+1. quotes are blocked as long as no session is open
+2. the browser only calls the frontend's same-origin `/api/*` routes
+3. session cookies are managed server-side
+4. the OpenAPI client is regenerated from `web/openapi.json`
 
-Voir aussi : [web/README.md](web/README.md)
+See also: [web/README.md](web/README.md)
 
-## Installation locale
+## Local installation
 
-### Prerequis
+### Prerequisites
 
 1. Python 3.13
 2. Node.js 22
 3. Docker Desktop
 4. `uv`
 
-### Installation des dependances
+### Dependency installation
 
 ```bash
 uv sync --all-groups --frozen
 ```
 
-Pour le frontend :
+For the frontend:
 
 ```bash
 cd web
@@ -279,78 +277,78 @@ npm run codegen
 npm run catalog:vehicles
 ```
 
-## Demarrage local
+## Local startup
 
-### Option 1 - mode developpement classique
+### Option 1 - classic development mode
 
-#### 1. Demarrer PostgreSQL
+#### 1. Start PostgreSQL
 
 ```bash
 docker compose up -d postgres
 ```
 
-#### 2. Appliquer les migrations
+#### 2. Apply migrations
 
 ```bash
 docker compose run --rm migrate
 ```
 
-#### 3. Lancer l'API
+#### 3. Start the API
 
 ```bash
 uv run insurance-pricing-api --host 127.0.0.1 --port 8000
 ```
 
-#### 4. Lancer le frontend
+#### 4. Start the frontend
 
 ```bash
 cd web
 npm run dev
 ```
 
-### Option 2 - preview full stack avec Docker Compose
+### Option 2 - full stack preview with Docker Compose
 
 ```bash
 docker compose --profile ops up --build postgres migrate api web
 ```
 
-### URLs utiles en local
+### Useful local URLs
 
-1. frontend : `http://127.0.0.1:3000`
-2. API : `http://127.0.0.1:8000`
-3. Swagger : `http://127.0.0.1:8000/docs`
-4. ReDoc : `http://127.0.0.1:8000/redoc`
+1. frontend: `http://127.0.0.1:3000`
+2. API: `http://127.0.0.1:8000`
+3. Swagger: `http://127.0.0.1:8000/docs`
+4. ReDoc: `http://127.0.0.1:8000/redoc`
 
-## Variables d'environnement importantes
+## Important environment variables
 
 ### Backend
 
 | Variable | Role |
 | --- | --- |
-| `INSURANCE_PRICING_RUN_ID` | bundle modele a charger |
-| `INSURANCE_PRICING_DATABASE_URL` | URL PostgreSQL |
-| `INSURANCE_PRICING_LOG_LEVEL` | niveau de log |
-| `INSURANCE_PRICING_LOG_JSON` | logs JSON |
-| `INSURANCE_PRICING_CORS_ALLOWED_ORIGINS` | origines autorisees |
-| `INSURANCE_PRICING_ADMIN_EMAILS` | emails admin autorises |
-| `INSURANCE_PRICING_SESSION_TTL_HOURS` | duree des sessions |
+| `INSURANCE_PRICING_RUN_ID` | model bundle to load |
+| `INSURANCE_PRICING_DATABASE_URL` | PostgreSQL URL |
+| `INSURANCE_PRICING_LOG_LEVEL` | log level |
+| `INSURANCE_PRICING_LOG_JSON` | JSON logs |
+| `INSURANCE_PRICING_CORS_ALLOWED_ORIGINS` | allowed origins |
+| `INSURANCE_PRICING_ADMIN_EMAILS` | authorized admin emails |
+| `INSURANCE_PRICING_SESSION_TTL_HOURS` | session duration |
 
 ### Frontend
 
 | Variable | Role |
 | --- | --- |
-| `API_BASE_URL` | URL de l'API amont |
-| `API_AUDIENCE` | audience Cloud Run optionnelle |
-| `COOKIE_SECURE` | `false` en local HTTP, `true` en HTTPS |
+| `API_BASE_URL` | upstream API URL |
+| `API_AUDIENCE` | optional Cloud Run audience |
+| `COOKIE_SECURE` | `false` in local HTTP, `true` in HTTPS |
 
-Les exemples de variables sont fournis dans :
+Example variables are provided in:
 
 1. [.env.example](.env.example)
 2. [web/.env.example](web/.env.example)
 
-## Tests et qualite
+## Tests and quality
 
-### Checks principaux
+### Main checks
 
 ```bash
 uv run ruff check src tests scripts
@@ -359,7 +357,7 @@ uv run pytest -m "not integration"
 uv run pytest -m integration
 ```
 
-### Checks frontend
+### Frontend checks
 
 ```bash
 cd web
@@ -371,17 +369,17 @@ npm run build
 
 ## Docker
 
-### Image backend
+### Backend image
 
-Le `Dockerfile` racine construit l'image de l'API / runtime Python.
+The root `Dockerfile` builds the API / Python runtime image.
 
-### Image frontend
+### Frontend image
 
-`web/Dockerfile` construit l'image Next.js de production.
+`web/Dockerfile` builds the production Next.js image.
 
 ### Compose
 
-`docker-compose.yml` orchestre :
+`docker-compose.yml` orchestrates:
 
 1. `postgres`
 2. `migrate`
@@ -392,91 +390,89 @@ Le `Dockerfile` racine construit l'image de l'API / runtime Python.
 
 ### CI
 
-Le workflow [ci.yml](.github/workflows/ci.yml) execute :
+The [ci.yml](.github/workflows/ci.yml) workflow executes:
 
-1. installation Python et Node
-2. generation du client OpenAPI frontend
-3. lint frontend
-4. typecheck frontend
-5. build frontend
+1. Python and Node installation
+2. frontend OpenAPI client generation
+3. frontend lint
+4. frontend typecheck
+5. frontend build
 6. Ruff
 7. MyPy
-8. migrations Alembic
-9. tests unitaires
-10. tests d'integration
-11. smoke Docker
-12. publication des images Docker Hub
+8. Alembic migrations
+9. unit tests
+10. integration tests
+11. Docker smoke test
+12. Docker Hub image publishing
 
-### Publication Docker Hub
+### Docker Hub publishing
 
-Deux images sont publiees :
+Two images are published:
 
-1. API : `<dockerhub-user>/calcul-prime-assurance`
-2. Web : `<dockerhub-user>/nova-assurances-web`
+1. API: `<dockerhub-user>/calcul-prime-assurance`
+2. Web: `<dockerhub-user>/nova-assurances-web`
 
-### Deploiement Cloud Run
+### Cloud Run Deployment
 
-Le workflow [deploy-cloud-run.yml](.github/workflows/deploy-cloud-run.yml)
-gere :
+The [deploy-cloud-run.yml](.github/workflows/deploy-cloud-run.yml) workflow manages:
 
-1. authentification GCP par Workload Identity Federation
-2. bootstrap d'Artifact Registry si necessaire
-3. build et push des images
-4. deploiement du job de migration
-5. deploiement de l'API
-6. deploiement du web
-7. smoke test post-deploiement
+1. GCP authentication via Workload Identity Federation
+2. Artifact Registry bootstrap if necessary
+3. image build and push
+4. migration job deployment
+5. API deployment
+6. web deployment
+7. post-deployment smoke test
 
-En l'etat actuel :
+In the current state:
 
-1. `nova-web` est public
-2. `nova-api` est public
-3. le smoke test valide le parcours web et l'authentification
+1. `nova-web` is public
+2. `nova-api` is public
+3. the smoke test validates the web flow and authentication
 
-Documentation associee :
+Related documentation:
 
 1. [docs/deploy_cloud_run.md](docs/deploy_cloud_run.md)
 2. [docs/github_only_deploy.md](docs/github_only_deploy.md)
 
-## Smoke test web
+## Web smoke test
 
-Le script [smoke_web_app.py](scripts/smoke_web_app.py) permet de valider
-un deploiement web.
+The [smoke_web_app.py](scripts/smoke_web_app.py) script allows validating a web deployment.
 
-Exemple :
+Example:
 
 ```bash
-uv run --group test python scripts/smoke_web_app.py --base-url https://nova-web-xxxxx.a.run.app
+uv run --group test python scripts/smoke_web_app.py --base-url [https://nova-web-xxxxx.a.run.app](https://nova-web-xxxxx.a.run.app)
 ```
 
-Ce test verifie notamment :
+This test notably verifies:
 
-1. le rendu de la landing page
-2. la protection de `/devis` avant connexion
-3. l'inscription
-4. la creation d'un devis
-5. l'historique
-6. le telechargement PDF
+1. landing page rendering
+2. protection of `/devis` before login
+3. registration
+4. quote creation
+5. history
+6. PDF download
 
-## Documentation complementaire
+## Additional documentation
 
-1. [README_architecture.md](README_architecture.md) : vue architecture / conventions
-2. [docs/deploy_cloud_run.md](docs/deploy_cloud_run.md) : bootstrap et deploiement GCP
-3. [docs/github_only_deploy.md](docs/github_only_deploy.md) : configuration GitHub-only
-4. [web/README.md](web/README.md) : details frontend
+1. [README_architecture.md](README_architecture.md): architecture / conventions overview
+2. [docs/deploy_cloud_run.md](docs/deploy_cloud_run.md): GCP bootstrap and deployment
+3. [docs/github_only_deploy.md](docs/github_only_deploy.md): GitHub-only configuration
+4. [web/README.md](web/README.md): frontend details
 
-## Etat du projet
+## Project status
 
-Le projet couvre aujourd'hui un cycle quasi complet :
+The project today covers an almost complete cycle:
 
-1. experimentation et selection de modeles
-2. exposition HTTP industrielle
-3. application web client/admin
-4. persistance et PDF
+1. experimentation and model selection
+2. industrial HTTP exposure
+3. client/admin web application
+4. persistence and PDF
 5. CI, Docker, Cloud Run
 
-Il est donc adapte a :
+It is therefore suitable for:
 
-1. un projet de fin d'etudes
-2. une demo portfolio full-stack / MLOps
-3. une base technique pour aller vers un produit plus complet
+1. an end-of-studies project
+2. a full-stack / MLOps portfolio demo
+3. a technical base to move towards a more complete product
