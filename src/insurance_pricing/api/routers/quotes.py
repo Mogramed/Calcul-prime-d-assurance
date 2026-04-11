@@ -51,7 +51,6 @@ def _quote_response(record: StoredQuoteRecord) -> QuoteResponse:
         input_payload=PredictionInput.model_validate(record.input_payload),
         result=_quote_result(
             {
-                "index": record.input_payload.get("index"),
                 "frequency_prediction": record.frequency_prediction,
                 "severity_prediction": record.severity_prediction,
                 "prime_prediction": record.prime_prediction,
@@ -65,7 +64,6 @@ def _quote_summary_response(record: QuoteSummaryRecord) -> QuoteSummaryResponse:
         id=record.id,
         created_at_utc=record.created_at_utc,
         run_id=record.run_id,
-        index=record.input_index,
         type_contrat=record.type_contrat,
         marque_vehicule=record.marque_vehicule,
         modele_vehicule=record.modele_vehicule,
@@ -248,7 +246,9 @@ async def download_quote_report(
             current_user=current_user,
         )
     except QuoteStoreUnavailableError as exc:
-        raise HTTPException(status_code=503, detail="Quote report generation is unavailable.") from exc
+        raise HTTPException(
+            status_code=503, detail="Quote report generation is unavailable."
+        ) from exc
 
     if quote is None or quote.deleted_at_utc is not None:
         raise HTTPException(status_code=404, detail="Quote not found.")

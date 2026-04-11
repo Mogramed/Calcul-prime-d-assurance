@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from math import isfinite
 from typing import Any
 
 import pandas as pd
 
-from insurance_pricing.data.schema import INDEX_COL
 from insurance_pricing.runtime.persistence import load_model_bundle
 
 
@@ -63,7 +61,7 @@ class PredictionService:
         self, records: Sequence[Mapping[str, Any]]
     ) -> list[dict[str, Any]]:
         return [
-            self._select_fields(prediction, {"index", "frequency_prediction"})
+            self._select_fields(prediction, {"frequency_prediction"})
             for prediction in self._predict_components(records)
         ]
 
@@ -74,7 +72,7 @@ class PredictionService:
         self, records: Sequence[Mapping[str, Any]]
     ) -> list[dict[str, Any]]:
         return [
-            self._select_fields(prediction, {"index", "severity_prediction"})
+            self._select_fields(prediction, {"severity_prediction"})
             for prediction in self._predict_components(records)
         ]
 
@@ -111,30 +109,15 @@ class PredictionService:
     def _predict_components(self, records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         input_df = pd.DataFrame.from_records(records)
         prediction_df = self.prime_model.predict_components(input_df)
-        if INDEX_COL in input_df.columns:
-            prediction_df.insert(0, INDEX_COL, input_df[INDEX_COL].to_numpy())
         return [self._map_prediction(row) for row in prediction_df.to_dict(orient="records")]
 
     def _map_prediction(self, row: Mapping[str, Any]) -> dict[str, Any]:
-        payload = {
+        return {
             "frequency_prediction": float(row["pred_freq"]),
             "severity_prediction": float(row["pred_sev"]),
             "prime_prediction": float(row["pred_prime"]),
         }
-        if INDEX_COL in row and row[INDEX_COL] is not None and not pd.isna(row[INDEX_COL]):
-            payload[INDEX_COL] = self._normalize_index(row[INDEX_COL])
-        return payload
 
     @staticmethod
     def _select_fields(prediction: Mapping[str, Any], allowed_fields: set[str]) -> dict[str, Any]:
         return {key: value for key, value in prediction.items() if key in allowed_fields}
-
-    @staticmethod
-    def _normalize_index(value: Any) -> int:
-        if isinstance(value, bool):
-            raise TypeError("Boolean values are not valid indexes.")
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float) and isfinite(value) and value.is_integer():
-            return int(value)
-        return int(value)

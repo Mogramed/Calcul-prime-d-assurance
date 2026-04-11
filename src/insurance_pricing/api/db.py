@@ -101,7 +101,6 @@ class PredictionOutputRow(Base):
         index=True,
     )
     record_position: Mapped[int] = mapped_column(Integer, nullable=False)
-    input_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     frequency_prediction: Mapped[float | None] = mapped_column(Float, nullable=True)
     severity_prediction: Mapped[float | None] = mapped_column(Float, nullable=True)
     prime_prediction: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -248,7 +247,6 @@ class PostgresAuditStore(AuditStore, QuoteStore, UserStore):
         output_rows = [
             PredictionOutputRow(
                 record_position=output.record_position,
-                input_index=output.input_index,
                 frequency_prediction=output.frequency_prediction,
                 severity_prediction=output.severity_prediction,
                 prime_prediction=output.prime_prediction,
@@ -385,7 +383,9 @@ class PostgresAuditStore(AuditStore, QuoteStore, UserStore):
                 if row is None:
                     return None
                 row.is_active = False
-                await session.execute(delete(AuthSessionRow).where(AuthSessionRow.user_id == user_id))
+                await session.execute(
+                    delete(AuthSessionRow).where(AuthSessionRow.user_id == user_id)
+                )
                 await session.flush()
                 await session.refresh(row)
         except SQLAlchemyError as exc:
@@ -643,7 +643,6 @@ def _quote_summary_from_row(row: QuoteRow) -> QuoteSummaryRecord:
         id=row.id,
         created_at_utc=row.created_at_utc,
         run_id=row.run_id,
-        input_index=_coerce_optional_int(input_payload.get("index")),
         type_contrat=str(input_payload.get("type_contrat", "")),
         marque_vehicule=str(input_payload.get("marque_vehicule", "")),
         modele_vehicule=str(input_payload.get("modele_vehicule", "")),
@@ -667,17 +666,3 @@ def _admin_quote_summary_from_joined_row(
         owner_email=owner_email,
         deleted_at_utc=row.deleted_at_utc,
     )
-
-
-def _coerce_optional_int(value: object) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        return int(value)
-    raise TypeError(f"Unsupported quote index value: {value!r}")

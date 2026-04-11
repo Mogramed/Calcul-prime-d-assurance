@@ -143,7 +143,7 @@ def test_prediction_schema_endpoint(
     assert body["batch_model"] == "InsurancePricingBatchRequest"
     assert body["supports_batch"] is True
     assert "bonus" in body["required_fields"]
-    assert "index" in body["optional_fields"]
+    assert body["optional_fields"] == []
     assert any(field["name"] == "bonus" for field in body["fields"])
 
 
@@ -168,11 +168,11 @@ def test_observability_headers_and_logs_are_added(
 @pytest.mark.parametrize(
     ("path", "expected_fields", "expected_kind"),
     [
-        ("/predict/frequency", {"index", "frequency_prediction"}, "frequency"),
-        ("/predict/severity", {"index", "severity_prediction"}, "severity"),
+        ("/predict/frequency", {"frequency_prediction"}, "frequency"),
+        ("/predict/severity", {"severity_prediction"}, "severity"),
         (
             "/predict/prime",
-            {"index", "frequency_prediction", "severity_prediction", "prime_prediction"},
+            {"frequency_prediction", "severity_prediction", "prime_prediction"},
             "prime",
         ),
     ],
@@ -193,7 +193,6 @@ def test_predict_single_endpoints_persist_audit_record(
 
     body = response.json()
     assert response.status_code == 200
-    assert body["index"] == payload["index"]
     assert set(body) == expected_fields
     assert len(in_memory_audit_store.predictions) == 1
     persisted = in_memory_audit_store.predictions[0]
@@ -202,17 +201,18 @@ def test_predict_single_endpoints_persist_audit_record(
     assert persisted.endpoint == path
     assert persisted.record_count == 1
     assert len(persisted.outputs) == 1
-    assert persisted.outputs[0].input_index == payload["index"]
+    assert persisted.outputs[0].record_position == 0
 
 
 @pytest.mark.parametrize(
-    ("path", "expected_prediction_keys"),
+    ("path", "expected_prediction_keys", "prediction_method_name"),
     [
-        ("/predict/frequency/batch", {"index", "frequency_prediction"}),
-        ("/predict/severity/batch", {"index", "severity_prediction"}),
+        ("/predict/frequency/batch", {"frequency_prediction"}, "predict_frequency_record"),
+        ("/predict/severity/batch", {"severity_prediction"}, "predict_severity_record"),
         (
             "/predict/prime/batch",
-            {"index", "frequency_prediction", "severity_prediction", "prime_prediction"},
+            {"frequency_prediction", "severity_prediction", "prime_prediction"},
+            "predict_record",
         ),
     ],
 )
@@ -222,27 +222,30 @@ def test_predict_batch_endpoints_preserve_order_and_persist_outputs(
     sample_prediction_records: list[dict],
     path: str,
     expected_prediction_keys: set[str],
+    prediction_method_name: str,
 ):
     app = create_app(api_settings, audit_store=in_memory_audit_store)
     payload = {"records": list(reversed(sample_prediction_records))}
 
     with TestClient(app) as client:
         response = client.post(path, json=payload, headers={"X-Request-ID": "batch-request"})
+        prediction_method = getattr(app.state.prediction_service, prediction_method_name)
+        expected_predictions = [prediction_method(record) for record in payload["records"]]
 
     body = response.json()
-    returned_indexes = [prediction["index"] for prediction in body["predictions"]]
-    expected_indexes = [record["index"] for record in payload["records"]]
 
     assert response.status_code == 200
     assert body["run_id"] == api_settings.run_id
     assert body["count"] == len(payload["records"])
-    assert returned_indexes == expected_indexes
+    assert body["predictions"] == expected_predictions
     assert all(set(prediction) == expected_prediction_keys for prediction in body["predictions"])
     assert len(in_memory_audit_store.predictions) == 1
     persisted = in_memory_audit_store.predictions[0]
     assert persisted.request_id == "batch-request"
     assert len(persisted.outputs) == len(payload["records"])
-    assert [output.input_index for output in persisted.outputs] == expected_indexes
+    assert [output.record_position for output in persisted.outputs] == list(
+        range(len(payload["records"]))
+    )
 
 
 @pytest.mark.parametrize(
@@ -309,7 +312,7 @@ def test_create_quote_persists_payload_and_returns_prediction(
     body = response.json()
     assert response.status_code == 200
     assert body["run_id"] == api_settings.run_id
-    assert body["input_payload"]["index"] == sample_prediction_records[0]["index"]
+    assert "index" not in body["input_payload"]
     assert body["result"]["prime_prediction"] is not None
     assert len(in_memory_audit_store.quotes) == 1
 
@@ -553,6 +556,7 @@ def test_authenticated_user_can_download_quote_report(
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"] == "application/pdf"
     assert pdf_response.content.startswith(b"%PDF")
+
 
 def test_admin_can_list_and_moderate_users_and_quotes(
     api_settings: AppSettings,
