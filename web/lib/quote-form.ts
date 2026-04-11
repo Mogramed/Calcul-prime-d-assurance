@@ -447,7 +447,6 @@ export function toPredictionInput(values: QuoteFormValues): PredictionInput {
   const hasSecondDriver = isSecondDriverEnabled(values);
 
   return {
-    index: null,
     bonus: Number(values.bonus),
     type_contrat: values.type_contrat.trim(),
     duree_contrat: parseInteger(values.duree_contrat),

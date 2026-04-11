@@ -11,7 +11,6 @@ type JsonPrimitive = str | int | float | bool | None
 type JsonValue = JsonPrimitive | dict[str, JsonValue] | list[JsonValue]
 
 SINGLE_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
-    "index": 50000,
     "bonus": 0.58,
     "type_contrat": "Maxi",
     "duree_contrat": 1,
@@ -46,7 +45,6 @@ BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
         SINGLE_PREDICTION_EXAMPLE,
         {
             **SINGLE_PREDICTION_EXAMPLE,
-            "index": 50001,
             "bonus": 0.63,
             "code_postal": 75015,
             "marque_vehicule": "PEUGEOT",
@@ -58,17 +56,14 @@ BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
 }
 
 FREQUENCY_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
-    "index": 50000,
     "frequency_prediction": 0.0835,
 }
 
 SEVERITY_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
-    "index": 50000,
     "severity_prediction": 2410.24,
 }
 
 PRIME_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
-    "index": 50000,
     "frequency_prediction": 0.0835,
     "severity_prediction": 2410.24,
     "prime_prediction": 201.25504,
@@ -80,7 +75,6 @@ FREQUENCY_BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "predictions": [
         FREQUENCY_PREDICTION_EXAMPLE,
         {
-            "index": 50001,
             "frequency_prediction": 0.0612,
         },
     ],
@@ -92,7 +86,6 @@ SEVERITY_BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "predictions": [
         SEVERITY_PREDICTION_EXAMPLE,
         {
-            "index": 50001,
             "severity_prediction": 1795.86,
         },
     ],
@@ -104,7 +97,6 @@ PRIME_BATCH_PREDICTION_EXAMPLE: dict[str, JsonValue] = {
     "predictions": [
         PRIME_PREDICTION_EXAMPLE,
         {
-            "index": 50001,
             "frequency_prediction": 0.0612,
             "severity_prediction": 1795.86,
             "prime_prediction": 109.106232,
@@ -181,14 +173,8 @@ PREDICTION_SCHEMA_EXAMPLE: dict[str, JsonValue] = {
         "type_contrat",
         "duree_contrat",
     ],
-    "optional_fields": ["index"],
+    "optional_fields": [],
     "fields": [
-        {
-            "name": "index",
-            "type": "integer | null",
-            "required": False,
-            "description": "Optional correlation identifier echoed back in prediction responses.",
-        },
         {
             "name": "bonus",
             "type": "integer | number",
@@ -212,7 +198,6 @@ QUOTE_SUMMARY_EXAMPLE: dict[str, JsonValue] = {
     "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
     "created_at_utc": "2026-03-23T10:15:00+00:00",
     "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
-    "index": 50000,
     "type_contrat": "Maxi",
     "marque_vehicule": "RENAULT",
     "modele_vehicule": "CLIO",
@@ -264,6 +249,7 @@ ADMIN_QUOTE_LIST_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
     "quotes": [ADMIN_QUOTE_SUMMARY_EXAMPLE],
 }
 
+
 class PredictionInput(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -273,10 +259,6 @@ class PredictionInput(BaseModel):
         },
     )
 
-    index: StrictInt | None = Field(
-        default=None,
-        description="Optional correlation identifier echoed back in prediction responses.",
-    )
     bonus: NumericValue = Field(description="Driver bonus-malus coefficient.")
     type_contrat: StrictStr = Field(description="Insurance contract type.")
     duree_contrat: StrictInt = Field(description="Contract duration.")
@@ -329,10 +311,6 @@ class FrequencyPredictionResponse(BaseModel):
         }
     )
 
-    index: StrictInt | None = Field(
-        default=None,
-        description="Input correlation identifier, returned when it was provided by the caller.",
-    )
     frequency_prediction: float = Field(
         description="Predicted probability of observing at least one claim.",
     )
@@ -346,10 +324,6 @@ class SeverityPredictionResponse(BaseModel):
         }
     )
 
-    index: StrictInt | None = Field(
-        default=None,
-        description="Input correlation identifier, returned when it was provided by the caller.",
-    )
     severity_prediction: float = Field(
         description="Predicted expected severity conditional on a claim.",
     )
@@ -363,10 +337,6 @@ class PrimePredictionResponse(BaseModel):
         }
     )
 
-    index: StrictInt | None = Field(
-        default=None,
-        description="Input correlation identifier, returned when it was provided by the caller.",
-    )
     frequency_prediction: float = Field(description="Predicted claim frequency component.")
     severity_prediction: float = Field(description="Predicted claim severity component.")
     prime_prediction: float = Field(
@@ -581,10 +551,6 @@ class QuoteResultResponse(BaseModel):
         }
     )
 
-    index: StrictInt | None = Field(
-        default=None,
-        description="Input correlation identifier, returned when it was provided by the caller.",
-    )
     frequency_prediction: float = Field(description="Predicted claim frequency component.")
     severity_prediction: float = Field(description="Predicted claim severity component.")
     prime_prediction: float = Field(description="Final premium prediction for the quote.")
@@ -616,10 +582,6 @@ class QuoteSummaryResponse(BaseModel):
     id: str = Field(description="Identifier of the persisted quote.")
     created_at_utc: datetime = Field(description="UTC timestamp at which the quote was created.")
     run_id: str = Field(description="Model bundle identifier used to compute the quote.")
-    index: StrictInt | None = Field(
-        default=None,
-        description="Input correlation identifier when it was provided by the caller.",
-    )
     type_contrat: StrictStr = Field(description="Insurance contract type.")
     marque_vehicule: StrictStr = Field(description="Vehicle brand.")
     modele_vehicule: StrictStr = Field(description="Vehicle model.")

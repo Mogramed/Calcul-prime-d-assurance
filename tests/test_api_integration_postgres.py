@@ -105,7 +105,7 @@ def test_predict_prime_persists_postgres_rows(
         ).fetchone()
         output_rows = connection.execute(
             """
-            SELECT record_position, input_index, frequency_prediction, severity_prediction, prime_prediction
+            SELECT record_position, frequency_prediction, severity_prediction, prime_prediction
             FROM prediction_outputs
             ORDER BY record_position
             """
@@ -120,7 +120,6 @@ def test_predict_prime_persists_postgres_rows(
     assert request_row["status_code"] == 200
     assert len(output_rows) == 1
     assert output_rows[0]["record_position"] == 0
-    assert output_rows[0]["input_index"] == sample_prediction_records[0]["index"]
     assert output_rows[0]["prime_prediction"] is not None
 
 
@@ -202,7 +201,7 @@ def test_quotes_are_persisted_and_filtered_by_client_id(
 
     assert len(quote_rows) == 2
     assert quote_rows[0]["run_id"] == existing_run_id
-    assert quote_rows[0]["input_payload_json"]["index"] == sample_prediction_records[0]["index"]
+    assert "index" not in quote_rows[0]["input_payload_json"]
     assert quote_rows[0]["prime_prediction"] is not None
 
 

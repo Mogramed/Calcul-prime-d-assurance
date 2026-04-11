@@ -10,7 +10,6 @@ from typing import Any, Protocol
 @dataclass(frozen=True, slots=True)
 class PredictionOutputRecord:
     record_position: int
-    input_index: int | None
     frequency_prediction: float | None
     severity_prediction: float | None
     prime_prediction: float | None

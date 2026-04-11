@@ -78,7 +78,6 @@ def _build_prediction_outputs(
     return [
         PredictionOutputRecord(
             record_position=position,
-            input_index=prediction.get("index"),
             frequency_prediction=_as_float(prediction.get("frequency_prediction")),
             severity_prediction=_as_float(prediction.get("severity_prediction")),
             prime_prediction=_as_float(prediction.get("prime_prediction")),
@@ -171,10 +170,7 @@ def get_prediction_schema() -> PredictionSchemaResponse:
 async def predict_frequency(
     request: Request,
     payload: PredictionInput = Body(
-        description=(
-            "Raw business-facing fields for one insurance contract. The optional `index` field is "
-            "echoed back in the response when provided."
-        ),
+        description="Raw business-facing fields for one insurance contract.",
         openapi_examples={
             "single_record": {
                 "summary": "Single contract scoring example",

@@ -1,5 +1,4 @@
 export interface PredictionInput {
-  index?: number | null;
   bonus: number;
   type_contrat: string;
   duree_contrat: number;
@@ -30,7 +29,6 @@ export interface PredictionInput {
 }
 
 export interface QuoteResultResponse {
-  index?: number | null;
   frequency_prediction: number;
   severity_prediction: number;
   prime_prediction: number;
@@ -48,7 +46,6 @@ export interface QuoteSummaryResponse {
   id: string;
   created_at_utc: string;
   run_id: string;
-  index?: number | null;
   type_contrat: string;
   marque_vehicule: string;
   modele_vehicule: string;

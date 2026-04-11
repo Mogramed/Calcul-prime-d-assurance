@@ -39,7 +39,6 @@ class QuoteSummaryRecord:
     id: str
     created_at_utc: datetime
     run_id: str
-    input_index: int | None
     type_contrat: str
     marque_vehicule: str
     modele_vehicule: str

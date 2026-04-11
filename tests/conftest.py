@@ -110,7 +110,9 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
                 return _public_user(user)
         return None
 
-    async def get_user_by_session_token_hash(self, session_token_hash: str) -> StoredUserRecord | None:
+    async def get_user_by_session_token_hash(
+        self, session_token_hash: str
+    ) -> StoredUserRecord | None:
         session = self.sessions.get(session_token_hash)
         if session is None:
             return None
@@ -160,7 +162,11 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
     async def attach_quotes_to_user(self, *, client_id_hash: str, user_id: str) -> int:
         attached = 0
         for index, quote in enumerate(self.quotes):
-            if quote.client_id_hash == client_id_hash and quote.user_id is None and quote.deleted_at_utc is None:
+            if (
+                quote.client_id_hash == client_id_hash
+                and quote.user_id is None
+                and quote.deleted_at_utc is None
+            ):
                 self.quotes[index] = StoredQuoteRecord(
                     id=quote.id,
                     created_at_utc=quote.created_at_utc,
@@ -221,7 +227,11 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
         if self.fail_quote_persistence or not self.ready:
             raise QuoteStoreUnavailableError("Quote persistence is unavailable.")
         for quote in self.quotes:
-            if quote.id == quote_id and quote.client_id_hash == client_id_hash and quote.deleted_at_utc is None:
+            if (
+                quote.id == quote_id
+                and quote.client_id_hash == client_id_hash
+                and quote.deleted_at_utc is None
+            ):
                 return quote
         return None
 
@@ -296,7 +306,6 @@ def _quote_summary(quote: StoredQuoteRecord) -> QuoteSummaryRecord:
         id=quote.id,
         created_at_utc=quote.created_at_utc,
         run_id=quote.run_id,
-        input_index=_coerce_optional_int(quote.input_payload.get("index")),
         type_contrat=str(quote.input_payload["type_contrat"]),
         marque_vehicule=str(quote.input_payload["marque_vehicule"]),
         modele_vehicule=str(quote.input_payload["modele_vehicule"]),
@@ -313,12 +322,6 @@ def _owner_email(users: list[StoredAuthUserRecord], user_id: str | None) -> str 
     return None
 
 
-def _coerce_optional_int(value: object) -> int | None:
-    if value is None:
-        return None
-    return int(value)
-
-
 @pytest.fixture(scope="session")
 def existing_run_id() -> str:
     run_id = latest_run_id()
@@ -329,7 +332,9 @@ def existing_run_id() -> str:
 
 @pytest.fixture(scope="session")
 def sample_prediction_records() -> list[dict]:
-    sample = pd.read_csv("data/test.csv").head(2).fillna("")
+    sample = (
+        pd.read_csv("data/test.csv").head(2).drop(columns=["index"], errors="ignore").fillna("")
+    )
     return json.loads(sample.to_json(orient="records"))
 
 
