@@ -31,6 +31,6 @@ Thumbs.db
 .env
 web/node_modules/
 web/.next/
-/node_modules_stale_20260323
+node_modules_stale_20260323/
 .mypy_cache_stale/
 .venv/
