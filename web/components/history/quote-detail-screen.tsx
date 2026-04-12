@@ -163,7 +163,7 @@ export function QuoteDetailScreen() {
                           {quoteFieldConfigs[fieldName].label}
                         </p>
                         <p className="mt-2 text-sm font-semibold text-[var(--foreground)]">
-                          {formatQuoteFieldValue(fieldName, quoteQuery.data.input_payload[fieldName])}
+                          {formatQuoteFieldValue(fieldName, formValues[fieldName])}
                         </p>
                       </div>
                     ))}

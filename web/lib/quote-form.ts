@@ -4,10 +4,13 @@ import type { PredictionInput } from "@/generated/client/types.gen";
 import {
   brandOptions,
   contractOptions,
-  fuelOptions,
+  findVehicleVariantId,
   genderOptions,
   getChoiceLabel,
   getModelOptions,
+  getVehicleVariant,
+  getVehicleVariantLabel,
+  getVehicleVariantOptions,
   paymentFrequencyOptions,
   paymentStatusOptions,
   secondDriverOptions,
@@ -23,11 +26,13 @@ const requiredInteger = z
   .trim()
   .min(1, "Champ requis")
   .refine((value) => /^-?\d+$/.test(value), "Entier requis");
+const positiveInteger = requiredInteger.refine((value) => Number.parseInt(value, 10) > 0, "Valeur invalide");
 const requiredNumber = z
   .string()
   .trim()
   .min(1, "Champ requis")
   .refine((value) => !Number.isNaN(Number(value)), "Nombre requis");
+const positiveNumber = requiredNumber.refine((value) => Number(value) > 0, "Valeur invalide");
 const optionalInteger = z
   .string()
   .trim()
@@ -35,10 +40,10 @@ const optionalInteger = z
 
 export const quoteFormSchema = z
   .object({
-    bonus: requiredNumber,
+    bonus: positiveNumber,
     type_contrat: requiredText,
-    duree_contrat: requiredInteger,
-    anciennete_info: requiredInteger,
+    duree_contrat: positiveInteger,
+    anciennete_info: positiveInteger,
     freq_paiement: requiredText,
     paiement: requiredText,
     utilisation: requiredText,
@@ -48,52 +53,84 @@ export const quoteFormSchema = z
       .min(1, "Champ requis")
       .refine((value) => /^\d{4,5}$/.test(value), "Code postal invalide"),
     conducteur2: requiredText,
-    age_conducteur1: requiredInteger,
+    age_conducteur1: positiveInteger,
     age_conducteur2: optionalInteger,
     sex_conducteur1: requiredText,
     sex_conducteur2: z.string().trim(),
-    anciennete_permis1: requiredInteger,
+    anciennete_permis1: positiveInteger,
     anciennete_permis2: optionalInteger,
-    anciennete_vehicule: requiredNumber,
+    anciennete_vehicule: positiveNumber,
+    marque_vehicule: requiredText,
+    modele_vehicule: requiredText,
+    vehicle_variant_id: requiredText,
     cylindre_vehicule: requiredInteger,
     din_vehicule: requiredInteger,
     essence_vehicule: requiredText,
-    marque_vehicule: requiredText,
-    modele_vehicule: requiredText,
-    debut_vente_vehicule: requiredInteger,
-    fin_vente_vehicule: requiredInteger,
+    debut_vente_vehicule: positiveInteger,
+    fin_vente_vehicule: positiveInteger,
     vitesse_vehicule: requiredInteger,
     type_vehicule: requiredText,
-    prix_vehicule: requiredInteger,
+    prix_vehicule: positiveInteger,
     poids_vehicule: requiredInteger,
   })
   .superRefine((values, context) => {
-    if (values.conducteur2 !== "Yes") {
+    if (values.conducteur2 === "Yes") {
+      if (!values.age_conducteur2.trim()) {
+        context.addIssue({
+          code: "custom",
+          path: ["age_conducteur2"],
+          message: "Champ requis",
+        });
+      }
+
+      if (!values.sex_conducteur2.trim()) {
+        context.addIssue({
+          code: "custom",
+          path: ["sex_conducteur2"],
+          message: "Choisissez une option",
+        });
+      }
+
+      if (!values.anciennete_permis2.trim()) {
+        context.addIssue({
+          code: "custom",
+          path: ["anciennete_permis2"],
+          message: "Champ requis",
+        });
+      }
+    }
+
+    const variant = getVehicleVariant(
+      values.marque_vehicule,
+      values.modele_vehicule,
+      values.vehicle_variant_id,
+    );
+
+    if (!variant) {
+      context.addIssue({
+        code: "custom",
+        path: ["vehicle_variant_id"],
+        message: "Choisissez une configuration valide pour ce vehicule.",
+      });
       return;
     }
 
-    if (!values.age_conducteur2.trim()) {
-      context.addIssue({
-        code: "custom",
-        path: ["age_conducteur2"],
-        message: "Champ requis",
-      });
-    }
+    const expectedSpecs = {
+      cylindre_vehicule: String(variant.cylindre_vehicule),
+      din_vehicule: String(variant.din_vehicule),
+      essence_vehicule: variant.essence_vehicule,
+      vitesse_vehicule: String(variant.vitesse_vehicule),
+      poids_vehicule: String(variant.poids_vehicule),
+    } satisfies Record<string, string>;
 
-    if (!values.sex_conducteur2.trim()) {
-      context.addIssue({
-        code: "custom",
-        path: ["sex_conducteur2"],
-        message: "Choisissez une option",
-      });
-    }
-
-    if (!values.anciennete_permis2.trim()) {
-      context.addIssue({
-        code: "custom",
-        path: ["anciennete_permis2"],
-        message: "Champ requis",
-      });
+    for (const [fieldName, expectedValue] of Object.entries(expectedSpecs)) {
+      if (String(values[fieldName as keyof typeof values]).trim() !== expectedValue) {
+        context.addIssue({
+          code: "custom",
+          path: [fieldName],
+          message: "Cette caracteristique doit correspondre au vehicule selectionne.",
+        });
+      }
     }
   });
 
@@ -101,7 +138,7 @@ export type QuoteFormValues = z.infer<typeof quoteFormSchema>;
 export type QuoteFieldName = keyof QuoteFormValues;
 export type QuoteStepId = "profile" | "drivers" | "vehicle";
 
-type FieldKind = "input" | "select";
+type FieldKind = "input" | "select" | "derived";
 
 export type QuoteFieldConfig = {
   name: QuoteFieldName;
@@ -121,6 +158,14 @@ export type QuoteStep = {
   fields: QuoteFieldName[];
 };
 
+export const vehicleAutofillFieldNames = [
+  "essence_vehicule",
+  "din_vehicule",
+  "vitesse_vehicule",
+  "cylindre_vehicule",
+  "poids_vehicule",
+] as const satisfies readonly QuoteFieldName[];
+
 export const defaultQuoteValues: QuoteFormValues = {
   bonus: "",
   type_contrat: "",
@@ -138,11 +183,12 @@ export const defaultQuoteValues: QuoteFormValues = {
   anciennete_permis1: "",
   anciennete_permis2: "",
   anciennete_vehicule: "",
+  marque_vehicule: "",
+  modele_vehicule: "",
+  vehicle_variant_id: "",
   cylindre_vehicule: "",
   din_vehicule: "",
   essence_vehicule: "",
-  marque_vehicule: "",
-  modele_vehicule: "",
   debut_vente_vehicule: "",
   fin_vente_vehicule: "",
   vitesse_vehicule: "",
@@ -225,7 +271,7 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     description: "Renseignez l'age du conducteur principal.",
     kind: "input",
     inputMode: "numeric",
-    placeholder: "66",
+    placeholder: "45",
   },
   age_conducteur2: {
     name: "age_conducteur2",
@@ -255,7 +301,7 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     description: "Nombre d'annees depuis l'obtention du permis.",
     kind: "input",
     inputMode: "numeric",
-    placeholder: "34",
+    placeholder: "20",
   },
   anciennete_permis2: {
     name: "anciennete_permis2",
@@ -271,30 +317,7 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     description: "Renseignez l'age du vehicule en annees.",
     kind: "input",
     inputMode: "decimal",
-    placeholder: "16",
-  },
-  cylindre_vehicule: {
-    name: "cylindre_vehicule",
-    label: "Cylindree",
-    description: "La cylindree du vehicule en cm3.",
-    kind: "input",
-    inputMode: "numeric",
-    placeholder: "1239",
-  },
-  din_vehicule: {
-    name: "din_vehicule",
-    label: "Puissance DIN",
-    description: "La puissance moteur en chevaux DIN.",
-    kind: "input",
-    inputMode: "numeric",
-    placeholder: "55",
-  },
-  essence_vehicule: {
-    name: "essence_vehicule",
-    label: "Motorisation",
-    description: "Choisissez la motorisation principale du vehicule.",
-    kind: "select",
-    options: fuelOptions,
+    placeholder: "8",
   },
   marque_vehicule: {
     name: "marque_vehicule",
@@ -309,10 +332,35 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     description: "Choisissez ensuite le modele correspondant.",
     kind: "select",
   },
+  vehicle_variant_id: {
+    name: "vehicle_variant_id",
+    label: "Configuration technique",
+    description:
+      "Choisissez la version qui correspond a votre vehicule. Les caracteristiques techniques les plus sensibles seront ensuite renseignees automatiquement.",
+    kind: "select",
+  },
+  cylindre_vehicule: {
+    name: "cylindre_vehicule",
+    label: "Cylindree",
+    description: "Renseignement automatique selon la version selectionnee.",
+    kind: "derived",
+  },
+  din_vehicule: {
+    name: "din_vehicule",
+    label: "Puissance DIN",
+    description: "Renseignement automatique selon la version selectionnee.",
+    kind: "derived",
+  },
+  essence_vehicule: {
+    name: "essence_vehicule",
+    label: "Motorisation",
+    description: "Renseignement automatique selon la version selectionnee.",
+    kind: "derived",
+  },
   debut_vente_vehicule: {
     name: "debut_vente_vehicule",
     label: "Debut de commercialisation",
-    description: "Annee de debut de commercialisation du modele.",
+    description: "Indiquez le repere de debut de serie du vehicule.",
     kind: "input",
     inputMode: "numeric",
     placeholder: "16",
@@ -320,7 +368,7 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
   fin_vente_vehicule: {
     name: "fin_vente_vehicule",
     label: "Fin de commercialisation",
-    description: "Annee de fin de commercialisation du modele.",
+    description: "Indiquez le repere de fin de serie correspondant.",
     kind: "input",
     inputMode: "numeric",
     placeholder: "15",
@@ -328,22 +376,20 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
   vitesse_vehicule: {
     name: "vitesse_vehicule",
     label: "Vitesse maximale",
-    description: "La vitesse maximale annoncee pour le vehicule.",
-    kind: "input",
-    inputMode: "numeric",
-    placeholder: "150",
+    description: "Renseignement automatique selon la version selectionnee.",
+    kind: "derived",
   },
   type_vehicule: {
     name: "type_vehicule",
     label: "Categorie du vehicule",
-    description: "Precisez la categorie principale du vehicule.",
+    description: "Choisissez la categorie la plus proche de votre vehicule.",
     kind: "select",
     options: vehicleTypeOptions,
   },
   prix_vehicule: {
     name: "prix_vehicule",
-    label: "Valeur du vehicule",
-    description: "La valeur de reference du vehicule en euros.",
+    label: "Valeur de reference",
+    description: "Renseignez la valeur de reference du vehicule.",
     kind: "input",
     inputMode: "numeric",
     placeholder: "10321",
@@ -351,10 +397,8 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
   poids_vehicule: {
     name: "poids_vehicule",
     label: "Poids",
-    description: "Le poids du vehicule en kilogrammes.",
-    kind: "input",
-    inputMode: "numeric",
-    placeholder: "830",
+    description: "Poids historique associe a la version selectionnee.",
+    kind: "derived",
   },
 };
 
@@ -394,18 +438,20 @@ export const quoteSteps: QuoteStep[] = [
     id: "vehicle",
     eyebrow: "Etape 3",
     title: "Vehicule",
-    description: "Terminez avec les caracteristiques du vehicule pour obtenir votre estimation.",
+    description:
+      "Choisissez votre modele puis la configuration la plus proche. Les donnees techniques les plus sensibles sont ensuite remplies automatiquement.",
     fields: [
       "marque_vehicule",
       "modele_vehicule",
+      "vehicle_variant_id",
       "anciennete_vehicule",
       "essence_vehicule",
-      "type_vehicule",
-      "cylindre_vehicule",
       "din_vehicule",
+      "vitesse_vehicule",
       "debut_vente_vehicule",
       "fin_vente_vehicule",
-      "vitesse_vehicule",
+      "type_vehicule",
+      "cylindre_vehicule",
       "prix_vehicule",
       "poids_vehicule",
     ],
@@ -431,9 +477,46 @@ export function getStepFields(stepId: QuoteStepId, values: QuoteFormValues) {
   );
 }
 
+export function clearVehicleAutofillValues(
+  values: QuoteFormValues,
+): QuoteFormValues {
+  const nextValues = { ...values };
+  for (const fieldName of vehicleAutofillFieldNames) {
+    nextValues[fieldName] = "";
+  }
+  return nextValues;
+}
+
+export function applyVehicleVariantToValues(
+  values: QuoteFormValues,
+): QuoteFormValues {
+  const variant = getVehicleVariant(
+    values.marque_vehicule,
+    values.modele_vehicule,
+    values.vehicle_variant_id,
+  );
+
+  if (!variant) {
+    return clearVehicleAutofillValues(values);
+  }
+
+  return {
+    ...values,
+    essence_vehicule: variant.essence_vehicule,
+    din_vehicule: String(variant.din_vehicule),
+    vitesse_vehicule: String(variant.vitesse_vehicule),
+    cylindre_vehicule: String(variant.cylindre_vehicule),
+    poids_vehicule: String(variant.poids_vehicule),
+  };
+}
+
 export function getFieldOptions(fieldName: QuoteFieldName, values: QuoteFormValues) {
   if (fieldName === "modele_vehicule") {
     return getModelOptions(values.marque_vehicule);
+  }
+
+  if (fieldName === "vehicle_variant_id") {
+    return getVehicleVariantOptions(values.marque_vehicule, values.modele_vehicule);
   }
 
   return quoteFieldConfigs[fieldName].options ?? [];
@@ -479,8 +562,7 @@ export function toPredictionInput(values: QuoteFormValues): PredictionInput {
 
 export function toFormValues(payload: PredictionInput): QuoteFormValues {
   const hasSecondDriver = payload.conducteur2 === "Yes";
-
-  return {
+  const baseValues: QuoteFormValues = {
     bonus: String(payload.bonus),
     type_contrat: payload.type_contrat,
     duree_contrat: String(payload.duree_contrat),
@@ -497,17 +579,23 @@ export function toFormValues(payload: PredictionInput): QuoteFormValues {
     anciennete_permis1: String(payload.anciennete_permis1),
     anciennete_permis2: hasSecondDriver ? String(payload.anciennete_permis2) : "",
     anciennete_vehicule: String(payload.anciennete_vehicule),
+    marque_vehicule: payload.marque_vehicule,
+    modele_vehicule: payload.modele_vehicule,
+    vehicle_variant_id: "",
     cylindre_vehicule: String(payload.cylindre_vehicule),
     din_vehicule: String(payload.din_vehicule),
     essence_vehicule: payload.essence_vehicule,
-    marque_vehicule: payload.marque_vehicule,
-    modele_vehicule: payload.modele_vehicule,
     debut_vente_vehicule: String(payload.debut_vente_vehicule),
     fin_vente_vehicule: String(payload.fin_vente_vehicule),
     vitesse_vehicule: String(payload.vitesse_vehicule),
     type_vehicule: payload.type_vehicule,
     prix_vehicule: String(payload.prix_vehicule),
     poids_vehicule: String(payload.poids_vehicule),
+  };
+
+  return {
+    ...baseValues,
+    vehicle_variant_id: findVehicleVariantId(baseValues),
   };
 }
 
@@ -534,12 +622,15 @@ export function formatQuoteFieldValue(fieldName: QuoteFieldName, value: string |
       return getChoiceLabel("essence_vehicule", String(value));
     case "type_vehicule":
       return getChoiceLabel("type_vehicule", String(value));
+    case "vehicle_variant_id":
+      return getVehicleVariantLabel(String(value)) ?? String(value);
     case "marque_vehicule":
     case "modele_vehicule":
       return formatTitleCase(String(value));
     case "prix_vehicule":
       return formatCurrency(Number(value));
     case "bonus":
+    case "anciennete_vehicule":
       return String(value);
     case "code_postal":
       return String(value);
@@ -556,8 +647,6 @@ export function formatQuoteFieldValue(fieldName: QuoteFieldName, value: string |
     case "cylindre_vehicule":
     case "din_vehicule":
       return formatInteger(Number(value));
-    case "anciennete_vehicule":
-      return String(value);
     default:
       return String(value);
   }

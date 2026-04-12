@@ -11,6 +11,14 @@ export type SessionUser = {
   email: string;
   role: UserRole;
   is_active: boolean;
+  email_verified_at_utc: string | null;
+};
+
+export type EmailVerificationDeliveryResponse = {
+  status: "sent" | "failed" | "skipped";
+  recipient_email: string | null;
+  detail?: string | null;
+  provider_status_code?: number | null;
 };
 
 export type AuthSessionResponse = {
@@ -18,11 +26,17 @@ export type AuthSessionResponse = {
   user: SessionUser | null;
   session_token?: string | null;
   expires_at_utc?: string | null;
+  email_verification_required?: boolean;
+  email_verification_delivery?: EmailVerificationDeliveryResponse | null;
 };
 
 export type AuthCredentialsInput = {
   email: string;
   password: string;
+};
+
+export type EmailVerificationInput = {
+  token: string;
 };
 
 export type AdminUserSummaryResponse = SessionUser;

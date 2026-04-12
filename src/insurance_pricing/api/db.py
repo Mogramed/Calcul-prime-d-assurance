@@ -45,6 +45,7 @@ from insurance_pricing.api.audit import (
 )
 from insurance_pricing.api.auth_store import (
     AdminUserSummaryRecord,
+    EmailVerificationCreateRecord,
     SessionCreateRecord,
     StoredAuthUserRecord,
     StoredUserRecord,
@@ -59,6 +60,7 @@ from insurance_pricing.api.quote_store import (
     QuoteStore,
     QuoteStoreUnavailableError,
     QuoteSummaryRecord,
+    QuoteUpdateRecord,
     StoredQuoteRecord,
 )
 
@@ -140,9 +142,14 @@ class UserRow(Base):
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    email_verified_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     quotes: Mapped[list[QuoteRow]] = relationship(back_populates="user")
     sessions: Mapped[list[AuthSessionRow]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    email_verification_tokens: Mapped[list[EmailVerificationTokenRow]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -167,6 +174,28 @@ class AuthSessionRow(Base):
     expires_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     user: Mapped[UserRow] = relationship(back_populates="sessions")
+
+
+class EmailVerificationTokenRow(Base):
+    __tablename__ = "email_verification_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_at_utc: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    expires_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[UserRow] = relationship(back_populates="email_verification_tokens")
 
 
 class QuoteRow(Base):
@@ -288,6 +317,7 @@ class PostgresAuditStore(AuditStore, QuoteStore, UserStore):
             password_hash=record.password_hash,
             role=record.role,
             is_active=True,
+            email_verified_at_utc=record.email_verified_at_utc,
         )
 
         try:
@@ -355,6 +385,45 @@ class PostgresAuditStore(AuditStore, QuoteStore, UserStore):
                 )
         except SQLAlchemyError as exc:
             raise UserStoreUnavailableError("Session creation failed.") from exc
+
+    async def create_email_verification(self, record: EmailVerificationCreateRecord) -> None:
+        try:
+            async with self.session() as session, session.begin():
+                session.add(
+                    EmailVerificationTokenRow(
+                        user_id=record.user_id,
+                        token_hash=record.token_hash,
+                        expires_at_utc=record.expires_at_utc,
+                    )
+                )
+        except SQLAlchemyError as exc:
+            raise UserStoreUnavailableError("Email verification persistence failed.") from exc
+
+    async def verify_email(self, token_hash: str) -> StoredUserRecord | None:
+        try:
+            async with self.session() as session, session.begin():
+                result = await session.execute(
+                    select(EmailVerificationTokenRow)
+                    .join(UserRow, UserRow.id == EmailVerificationTokenRow.user_id)
+                    .where(
+                        EmailVerificationTokenRow.token_hash == token_hash,
+                        EmailVerificationTokenRow.used_at_utc.is_(None),
+                        EmailVerificationTokenRow.expires_at_utc > datetime.now(UTC),
+                        UserRow.is_active.is_(True),
+                    )
+                )
+                token_row = result.scalar_one_or_none()
+                if token_row is None:
+                    return None
+                user_row = token_row.user
+                if user_row.email_verified_at_utc is None:
+                    user_row.email_verified_at_utc = datetime.now(UTC)
+                token_row.used_at_utc = datetime.now(UTC)
+                await session.flush()
+                await session.refresh(user_row)
+        except SQLAlchemyError as exc:
+            raise UserStoreUnavailableError("Email verification failed.") from exc
+        return _stored_user_from_row(user_row)
 
     async def delete_session(self, session_token_hash: str) -> None:
         try:
@@ -428,6 +497,24 @@ class PostgresAuditStore(AuditStore, QuoteStore, UserStore):
         except SQLAlchemyError as exc:
             raise QuoteStoreUnavailableError("Quote persistence failed.") from exc
         return _stored_quote_from_row(quote_row)
+
+    async def update_quote(self, record: QuoteUpdateRecord) -> StoredQuoteRecord | None:
+        try:
+            async with self.session() as session, session.begin():
+                row = await session.get(QuoteRow, record.quote_id)
+                if row is None or row.deleted_at_utc is not None:
+                    return None
+                row.user_id = record.user_id
+                row.run_id = record.run_id
+                row.input_payload_json = dict(record.input_payload)
+                row.frequency_prediction = record.frequency_prediction
+                row.severity_prediction = record.severity_prediction
+                row.prime_prediction = record.prime_prediction
+                await session.flush()
+                await session.refresh(row)
+        except SQLAlchemyError as exc:
+            raise QuoteStoreUnavailableError("Quote update failed.") from exc
+        return _stored_quote_from_row(row)
 
     async def list_quotes(self, client_id_hash: str) -> list[QuoteSummaryRecord]:
         try:
@@ -598,6 +685,7 @@ def _stored_user_from_row(row: UserRow) -> StoredUserRecord:
         email=row.email,
         role=row.role,  # type: ignore[arg-type]
         is_active=row.is_active,
+        email_verified_at_utc=row.email_verified_at_utc,
     )
 
 
@@ -609,6 +697,7 @@ def _stored_auth_user_from_row(row: UserRow) -> StoredAuthUserRecord:
         password_hash=row.password_hash,
         role=row.role,  # type: ignore[arg-type]
         is_active=row.is_active,
+        email_verified_at_utc=row.email_verified_at_utc,
     )
 
 
@@ -619,6 +708,7 @@ def _admin_user_summary_from_row(row: UserRow) -> AdminUserSummaryRecord:
         email=row.email,
         role=row.role,  # type: ignore[arg-type]
         is_active=row.is_active,
+        email_verified_at_utc=row.email_verified_at_utc,
     )
 
 

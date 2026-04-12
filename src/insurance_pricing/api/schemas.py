@@ -223,6 +223,14 @@ USER_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
     "email": "client@nova-assurances.fr",
     "role": "customer",
     "is_active": True,
+    "email_verified_at_utc": "2026-03-23T13:05:00+00:00",
+}
+
+EMAIL_VERIFICATION_DELIVERY_EXAMPLE: dict[str, JsonValue] = {
+    "status": "sent",
+    "recipient_email": "client@nova-assurances.fr",
+    "detail": "Verification email accepted by Resend.",
+    "provider_status_code": 202,
 }
 
 AUTH_SESSION_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
@@ -230,6 +238,8 @@ AUTH_SESSION_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
     "user": USER_RESPONSE_EXAMPLE,
     "session_token": "opaque-session-token",
     "expires_at_utc": "2026-04-22T13:00:00+00:00",
+    "email_verification_required": False,
+    "email_verification_delivery": None,
 }
 
 ADMIN_USER_SUMMARY_EXAMPLE: dict[str, JsonValue] = USER_RESPONSE_EXAMPLE
@@ -651,6 +661,17 @@ class AuthCredentialsInput(BaseModel):
     password: str = Field(min_length=8, description="Plain-text password submitted by the user.")
 
 
+class EmailVerificationInput(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "EmailVerificationInput",
+            "examples": [{"token": "opaque-email-verification-token"}],
+        }
+    )
+
+    token: str = Field(min_length=16, description="Opaque email verification token sent by email.")
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -664,6 +685,35 @@ class UserResponse(BaseModel):
     email: EmailStr = Field(description="Email address attached to the account.")
     role: Literal["customer", "admin"] = Field(description="Authorization role for the account.")
     is_active: bool = Field(description="Whether the account is still active.")
+    email_verified_at_utc: datetime | None = Field(
+        default=None,
+        description="UTC timestamp at which the account email was confirmed.",
+    )
+
+
+class EmailVerificationDeliveryResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "EmailVerificationDeliveryResponse",
+            "examples": [EMAIL_VERIFICATION_DELIVERY_EXAMPLE],
+        }
+    )
+
+    status: Literal["sent", "failed", "skipped"] = Field(
+        description="Delivery outcome for the email verification message."
+    )
+    recipient_email: EmailStr | None = Field(
+        default=None,
+        description="Recipient email address when a verification delivery attempt was made.",
+    )
+    detail: str | None = Field(
+        default=None,
+        description="Diagnostic detail describing the delivery outcome.",
+    )
+    provider_status_code: int | None = Field(
+        default=None,
+        description="HTTP status code returned by the email provider when available.",
+    )
 
 
 class AuthSessionResponse(BaseModel):
@@ -685,6 +735,14 @@ class AuthSessionResponse(BaseModel):
     expires_at_utc: datetime | None = Field(
         default=None,
         description="UTC timestamp at which the returned session expires.",
+    )
+    email_verification_required: bool = Field(
+        default=False,
+        description="Whether the account still requires email verification.",
+    )
+    email_verification_delivery: EmailVerificationDeliveryResponse | None = Field(
+        default=None,
+        description="Optional delivery status for the verification email just triggered.",
     )
 
 

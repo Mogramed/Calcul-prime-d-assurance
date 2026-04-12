@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import {
+  applyVehicleVariantToValues,
   defaultQuoteValues,
   formatQuoteFieldValue,
   getFieldOptions,
@@ -35,10 +36,11 @@ import {
   quoteSteps,
   toFormValues,
   toPredictionInput,
+  vehicleAutofillFieldNames,
   type QuoteFormValues,
   type QuoteStepId,
 } from "@/lib/quote-form";
-import { createQuote, getAuthSession, getQuote } from "@/lib/web-api";
+import { createQuote, getAuthSession, getQuote, updateQuote } from "@/lib/web-api";
 
 const stepIcons: Record<QuoteStepId, typeof ClipboardList> = {
   profile: ClipboardList,
@@ -67,6 +69,7 @@ export function QuoteWorkbench() {
   const currentStepFields = getStepFields(currentStep.id, formValues);
   const secondDriverEnabled = isSecondDriverEnabled(formValues);
   const modelOptions = getFieldOptions("modele_vehicule", formValues);
+  const vehicleVariantOptions = getFieldOptions("vehicle_variant_id", formValues);
 
   const quoteQuery = useQuery({
     queryKey: ["quote", quoteId],
@@ -87,8 +90,34 @@ export function QuoteWorkbench() {
   useEffect(() => {
     if (formValues.modele_vehicule && !modelOptions.some((option) => option.value === formValues.modele_vehicule)) {
       form.setValue("modele_vehicule", "");
+      form.setValue("vehicle_variant_id", "");
     }
   }, [form, formValues.modele_vehicule, modelOptions]);
+
+  useEffect(() => {
+    if (
+      formValues.vehicle_variant_id &&
+      !vehicleVariantOptions.some((option) => option.value === formValues.vehicle_variant_id)
+    ) {
+      form.setValue("vehicle_variant_id", "");
+    }
+  }, [form, formValues.vehicle_variant_id, vehicleVariantOptions]);
+
+  useEffect(() => {
+    const nextValues = applyVehicleVariantToValues(formValues);
+    for (const fieldName of vehicleAutofillFieldNames) {
+      if (formValues[fieldName] !== nextValues[fieldName]) {
+        form.setValue(fieldName, nextValues[fieldName], {
+          shouldDirty: Boolean(form.formState.isDirty),
+          shouldValidate: false,
+        });
+      }
+    }
+  }, [
+    form,
+    form.formState.isDirty,
+    formValues,
+  ]);
 
   useEffect(() => {
     if (!secondDriverEnabled) {
@@ -110,17 +139,23 @@ export function QuoteWorkbench() {
     secondDriverEnabled,
   ]);
 
-  const createQuoteMutation = useMutation({
-    mutationFn: async (values: QuoteFormValues) => createQuote(toPredictionInput(values)),
+  const saveQuoteMutation = useMutation({
+    mutationFn: async (values: QuoteFormValues) =>
+      hasQuoteId && quoteId
+        ? updateQuote(quoteId, toPredictionInput(values))
+        : createQuote(toPredictionInput(values)),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["quotes"] });
+      if (quoteId) {
+        await queryClient.invalidateQueries({ queryKey: ["quote", quoteId] });
+      }
       setActiveStepIndex(quoteSteps.length - 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
   });
 
-  const activeQuote = createQuoteMutation.data ?? quoteQuery.data;
-  const latestEmailDelivery = createQuoteMutation.data?.email_delivery;
+  const activeQuote = saveQuoteMutation.data ?? quoteQuery.data;
+  const latestEmailDelivery = saveQuoteMutation.data?.email_delivery;
 
   async function goToNextStep() {
     const stepIsValid = await form.trigger(currentStepFields, { shouldFocus: true });
@@ -232,7 +267,7 @@ export function QuoteWorkbench() {
             ) : (
               <form
                 className="space-y-8"
-                onSubmit={form.handleSubmit((values) => createQuoteMutation.mutate(values))}
+                onSubmit={form.handleSubmit((values) => saveQuoteMutation.mutate(values))}
               >
                 <div className="grid gap-4 sm:grid-cols-2">
                   {currentStepFields.map((fieldName) => {
@@ -240,7 +275,9 @@ export function QuoteWorkbench() {
                     const options = getFieldOptions(fieldName, formValues);
                     const error = form.formState.errors[fieldName]?.message;
                     const isSelectField = fieldConfig.kind === "select";
+                    const isDerivedField = fieldConfig.kind === "derived";
                     const isModelField = fieldName === "modele_vehicule";
+                    const isVariantField = fieldName === "vehicle_variant_id";
 
                     return (
                       <label
@@ -259,12 +296,17 @@ export function QuoteWorkbench() {
 
                         {isSelectField ? (
                           <Select
-                            disabled={isModelField && !formValues.marque_vehicule}
+                            disabled={
+                              (isModelField && !formValues.marque_vehicule) ||
+                              (isVariantField && (!formValues.marque_vehicule || !formValues.modele_vehicule))
+                            }
                             {...form.register(fieldName)}
                           >
                             <option value="">
                               {isModelField && !formValues.marque_vehicule
                                 ? "Choisissez d&rsquo;abord une marque"
+                                : isVariantField && (!formValues.marque_vehicule || !formValues.modele_vehicule)
+                                  ? "Choisissez d&rsquo;abord un modele"
                                 : "Selectionnez une option"}
                             </option>
                             {options.map((option) => (
@@ -273,6 +315,13 @@ export function QuoteWorkbench() {
                               </option>
                             ))}
                           </Select>
+                        ) : isDerivedField ? (
+                          <Input
+                            readOnly
+                            placeholder="Renseigne automatiquement apres selection"
+                            className="bg-[var(--surface-alt)]/70"
+                            {...form.register(fieldName)}
+                          />
                         ) : (
                           <Input
                             type={fieldConfig.inputMode === "decimal" || fieldConfig.inputMode === "numeric" ? "number" : "text"}
@@ -302,11 +351,11 @@ export function QuoteWorkbench() {
                         type="button"
                         variant="secondary"
                         onClick={() => {
-                          form.reset(defaultQuoteValues);
+                          form.reset(quoteQuery.data ? toFormValues(quoteQuery.data.input_payload) : defaultQuoteValues);
                           setActiveStepIndex(0);
                         }}
                       >
-                        Reinitialiser
+                        {quoteQuery.data ? "Retrouver ce devis" : "Reinitialiser"}
                       </Button>
                     ) : null}
                     {activeStepIndex > 0 ? (
@@ -325,15 +374,15 @@ export function QuoteWorkbench() {
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
                     ) : (
-                      <Button type="submit" disabled={createQuoteMutation.isPending}>
-                        {createQuoteMutation.isPending ? (
+                      <Button type="submit" disabled={saveQuoteMutation.isPending}>
+                        {saveQuoteMutation.isPending ? (
                           <>
                             <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                            Estimation en cours
+                            {hasQuoteId ? "Mise a jour en cours" : "Estimation en cours"}
                           </>
                         ) : (
                           <>
-                            Obtenir mon estimation
+                            {hasQuoteId ? "Mettre a jour mon estimation" : "Obtenir mon estimation"}
                             <Sparkles className="ml-2 h-4 w-4" />
                           </>
                         )}
@@ -357,10 +406,10 @@ export function QuoteWorkbench() {
             </p>
           </CardHeader>
           <CardContent className="space-y-5 pt-6">
-            {createQuoteMutation.isError ? (
+            {saveQuoteMutation.isError ? (
               <div className="rounded-[24px] border border-[color:color-mix(in_srgb,var(--danger)_18%,white)] bg-[color:color-mix(in_srgb,var(--danger)_8%,white)] p-4 text-sm leading-7 text-[var(--danger)]">
-                {createQuoteMutation.error instanceof Error
-                  ? createQuoteMutation.error.message
+                {saveQuoteMutation.error instanceof Error
+                  ? saveQuoteMutation.error.message
                   : "Une erreur est survenue pendant le calcul."}
               </div>
             ) : null}
@@ -391,6 +440,12 @@ export function QuoteWorkbench() {
                     <p className="mt-2 font-semibold text-[var(--foreground)]">
                       {formatQuoteFieldValue("marque_vehicule", activeQuote.input_payload.marque_vehicule)}{" "}
                       {formatQuoteFieldValue("modele_vehicule", activeQuote.input_payload.modele_vehicule)}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      {formatQuoteFieldValue(
+                        "vehicle_variant_id",
+                        formValues.vehicle_variant_id || toFormValues(activeQuote.input_payload).vehicle_variant_id,
+                      )}
                     </p>
                   </div>
                   <div className="rounded-[24px] border border-[var(--line)] bg-white/80 px-4 py-4">
@@ -473,6 +528,11 @@ export function QuoteWorkbench() {
                 {formValues.modele_vehicule
                   ? formatQuoteFieldValue("modele_vehicule", formValues.modele_vehicule)
                   : "Modele a choisir"}
+              </p>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                {formValues.vehicle_variant_id
+                  ? formatQuoteFieldValue("vehicle_variant_id", formValues.vehicle_variant_id)
+                  : "Configuration technique a choisir"}
               </p>
             </div>
             <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-alt)]/70 px-4 py-3">

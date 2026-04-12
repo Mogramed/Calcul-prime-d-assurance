@@ -21,6 +21,17 @@ class QuoteCreateRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class QuoteUpdateRecord:
+    quote_id: str
+    user_id: str | None
+    run_id: str
+    input_payload: Mapping[str, Any]
+    frequency_prediction: float
+    severity_prediction: float
+    prime_prediction: float
+
+
+@dataclass(frozen=True, slots=True)
 class StoredQuoteRecord:
     id: str
     created_at_utc: datetime
@@ -71,6 +82,8 @@ class QuoteStore(Protocol):
     async def check_ready(self) -> bool: ...
 
     async def create_quote(self, record: QuoteCreateRecord) -> StoredQuoteRecord: ...
+
+    async def update_quote(self, record: QuoteUpdateRecord) -> StoredQuoteRecord | None: ...
 
     async def list_quotes(self, client_id_hash: str) -> Sequence[QuoteSummaryRecord]: ...
 

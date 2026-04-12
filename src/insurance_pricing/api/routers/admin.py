@@ -31,6 +31,7 @@ def _user_summary_response(record: AdminUserSummaryRecord) -> AdminUserSummaryRe
         email=record.email,
         role=record.role,
         is_active=record.is_active,
+        email_verified_at_utc=record.email_verified_at_utc,
     )
 
 

@@ -1,15 +1,32 @@
 import vehicleCatalogData from "@/data/vehicle-catalog.json";
-import { formatTitleCase } from "@/lib/format";
+import { formatInteger, formatTitleCase } from "@/lib/format";
 
 export type QuoteOption = {
   value: string;
   label: string;
 };
 
+export type VehicleVariant = {
+  id: string;
+  label: string;
+  essence_vehicule: string;
+  din_vehicule: number;
+  vitesse_vehicule: number;
+  cylindre_vehicule: number;
+  poids_vehicule: number;
+  record_count: number;
+};
+
+type VehicleModelCatalog = {
+  value: string;
+  label: string;
+  variants: VehicleVariant[];
+};
+
 type VehicleBrandCatalog = {
   value: string;
   label: string;
-  models: QuoteOption[];
+  models: VehicleModelCatalog[];
 };
 
 const vehicleCatalog = vehicleCatalogData as {
@@ -77,16 +94,92 @@ const optionsByField = {
 
 export const brandOptions = vehicleCatalog.brands.map((brand) => ({
   value: brand.value,
-  label: formatTitleCase(brand.value),
+  label: brand.label || formatTitleCase(brand.value),
 }));
+
+function getBrandCatalog(brandValue: string) {
+  return vehicleCatalog.brands.find((brand) => brand.value === brandValue) ?? null;
+}
+
+function getModelCatalog(brandValue: string, modelValue: string) {
+  return getBrandCatalog(brandValue)?.models.find((model) => model.value === modelValue) ?? null;
+}
 
 export function getModelOptions(brandValue: string) {
   return (
-    vehicleCatalog.brands.find((brand) => brand.value === brandValue)?.models.map((model) => ({
+    getBrandCatalog(brandValue)?.models.map((model) => ({
       value: model.value,
-      label: formatTitleCase(model.value),
+      label: model.label || formatTitleCase(model.value),
     })) ?? []
   );
+}
+
+export function getVehicleVariantOptions(brandValue: string, modelValue: string) {
+  return (
+    getModelCatalog(brandValue, modelValue)?.variants.map((variant) => ({
+      value: variant.id,
+      label: variant.label,
+    })) ?? []
+  );
+}
+
+export function getVehicleVariant(
+  brandValue: string,
+  modelValue: string,
+  variantId: string | null | undefined,
+) {
+  if (!variantId) {
+    return null;
+  }
+  return (
+    getModelCatalog(brandValue, modelValue)?.variants.find((variant) => variant.id === variantId) ??
+    null
+  );
+}
+
+export function getVehicleVariantLabel(variantId: string | null | undefined) {
+  if (!variantId) {
+    return null;
+  }
+
+  for (const brand of vehicleCatalog.brands) {
+    for (const model of brand.models) {
+      const variant = model.variants.find((candidate) => candidate.id === variantId);
+      if (variant) {
+        return variant.label;
+      }
+    }
+  }
+
+  return null;
+}
+
+type VehicleVariantLookup = {
+  marque_vehicule: string;
+  modele_vehicule: string;
+  essence_vehicule: string;
+  din_vehicule: string | number;
+  vitesse_vehicule: string | number;
+  cylindre_vehicule: string | number;
+  poids_vehicule: string | number;
+};
+
+function numericMatches(actual: number, candidate: string | number) {
+  return String(actual) === String(candidate).trim();
+}
+
+export function findVehicleVariantId(values: VehicleVariantLookup) {
+  const variants = getModelCatalog(values.marque_vehicule, values.modele_vehicule)?.variants ?? [];
+  const match = variants.find(
+    (variant) =>
+      variant.essence_vehicule === values.essence_vehicule &&
+      numericMatches(variant.din_vehicule, values.din_vehicule) &&
+      numericMatches(variant.vitesse_vehicule, values.vitesse_vehicule) &&
+      numericMatches(variant.cylindre_vehicule, values.cylindre_vehicule) &&
+      numericMatches(variant.poids_vehicule, values.poids_vehicule),
+  );
+
+  return match?.id ?? "";
 }
 
 export function getOptionLabel(
@@ -103,4 +196,8 @@ export function getOptionLabel(
 
 export function getChoiceLabel(fieldName: keyof typeof optionsByField, value: string | null | undefined) {
   return getOptionLabel(optionsByField[fieldName], value);
+}
+
+export function formatVehicleMetric(value: number | string) {
+  return formatInteger(Number(value));
 }

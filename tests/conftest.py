@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from insurance_pricing.api import AppSettings
+from insurance_pricing.api.account_emailing import AccountEmailDeliveryRecord, AccountEmailSender
 from insurance_pricing.api.audit import (
     ApiErrorAuditRecord,
     AuditStore,
@@ -18,6 +19,7 @@ from insurance_pricing.api.audit import (
 )
 from insurance_pricing.api.auth_store import (
     AdminUserSummaryRecord,
+    EmailVerificationCreateRecord,
     SessionCreateRecord,
     StoredAuthUserRecord,
     StoredUserRecord,
@@ -31,6 +33,7 @@ from insurance_pricing.api.quote_store import (
     QuoteStore,
     QuoteStoreUnavailableError,
     QuoteSummaryRecord,
+    QuoteUpdateRecord,
     StoredQuoteRecord,
 )
 
@@ -63,6 +66,7 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
         self.quotes: list[StoredQuoteRecord] = []
         self.users: list[StoredAuthUserRecord] = []
         self.sessions: dict[str, tuple[str, datetime]] = {}
+        self.email_verification_tokens: dict[str, tuple[str, datetime]] = {}
         self.started = False
 
     async def startup(self) -> None:
@@ -96,6 +100,7 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
             password_hash=record.password_hash,
             role=record.role,
             is_active=True,
+            email_verified_at_utc=record.email_verified_at_utc,
         )
         self.users.insert(0, stored_user)
         return _public_user(stored_user)
@@ -129,6 +134,31 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
     async def delete_session(self, session_token_hash: str) -> None:
         self.sessions.pop(session_token_hash, None)
 
+    async def create_email_verification(self, record: EmailVerificationCreateRecord) -> None:
+        self.email_verification_tokens[record.token_hash] = (record.user_id, record.expires_at_utc)
+
+    async def verify_email(self, token_hash: str) -> StoredUserRecord | None:
+        verification = self.email_verification_tokens.pop(token_hash, None)
+        if verification is None:
+            return None
+        user_id, expires_at_utc = verification
+        if expires_at_utc <= datetime.now(UTC):
+            return None
+        for index, user in enumerate(self.users):
+            if user.id == user_id:
+                updated = StoredAuthUserRecord(
+                    id=user.id,
+                    created_at_utc=user.created_at_utc,
+                    email=user.email,
+                    password_hash=user.password_hash,
+                    role=user.role,
+                    is_active=user.is_active,
+                    email_verified_at_utc=datetime.now(UTC),
+                )
+                self.users[index] = updated
+                return _public_user(updated)
+        return None
+
     async def list_admin_users(self) -> list[AdminUserSummaryRecord]:
         return [
             AdminUserSummaryRecord(
@@ -137,6 +167,7 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
                 email=user.email,
                 role=user.role,
                 is_active=user.is_active,
+                email_verified_at_utc=user.email_verified_at_utc,
             )
             for user in sorted(self.users, key=lambda item: item.created_at_utc, reverse=True)
         ]
@@ -151,6 +182,7 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
                     password_hash=user.password_hash,
                     role=user.role,
                     is_active=False,
+                    email_verified_at_utc=user.email_verified_at_utc,
                 )
                 self.users[index] = updated
                 self.sessions = {
@@ -201,6 +233,27 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
         )
         self.quotes.insert(0, stored_quote)
         return stored_quote
+
+    async def update_quote(self, record: QuoteUpdateRecord) -> StoredQuoteRecord | None:
+        if self.fail_quote_persistence or not self.ready:
+            raise QuoteStoreUnavailableError("Quote persistence is unavailable.")
+        for index, quote in enumerate(self.quotes):
+            if quote.id == record.quote_id and quote.deleted_at_utc is None:
+                updated = StoredQuoteRecord(
+                    id=quote.id,
+                    created_at_utc=quote.created_at_utc,
+                    client_id_hash=quote.client_id_hash,
+                    user_id=record.user_id,
+                    run_id=record.run_id,
+                    input_payload=dict(record.input_payload),
+                    frequency_prediction=record.frequency_prediction,
+                    severity_prediction=record.severity_prediction,
+                    prime_prediction=record.prime_prediction,
+                    deleted_at_utc=quote.deleted_at_utc,
+                )
+                self.quotes[index] = updated
+                return updated
+        return None
 
     async def list_quotes(self, client_id_hash: str) -> list[QuoteSummaryRecord]:
         if self.fail_quote_persistence or not self.ready:
@@ -329,6 +382,39 @@ class InMemoryQuoteEmailSender(QuoteEmailSender):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class SentVerificationEmail:
+    recipient_email: str
+    verification_token: str
+
+
+class InMemoryAccountEmailSender(AccountEmailSender):
+    def __init__(self, *, fail_send: bool = False) -> None:
+        self.fail_send = fail_send
+        self.sent_emails: list[SentVerificationEmail] = []
+
+    async def send_verification_email(
+        self,
+        *,
+        recipient_email: str,
+        verification_token: str,
+    ) -> AccountEmailDeliveryRecord:
+        if self.fail_send:
+            raise RuntimeError("Account email delivery failed.")
+        self.sent_emails.append(
+            SentVerificationEmail(
+                recipient_email=recipient_email,
+                verification_token=verification_token,
+            )
+        )
+        return AccountEmailDeliveryRecord(
+            status="sent",
+            recipient_email=recipient_email,
+            detail="Verification email accepted by the in-memory sender.",
+            provider_status_code=202,
+        )
+
+
 def _public_user(user: StoredAuthUserRecord) -> StoredUserRecord:
     return StoredUserRecord(
         id=user.id,
@@ -336,6 +422,7 @@ def _public_user(user: StoredAuthUserRecord) -> StoredUserRecord:
         email=user.email,
         role=user.role,
         is_active=user.is_active,
+        email_verified_at_utc=user.email_verified_at_utc,
     )
 
 
@@ -400,3 +487,8 @@ def audit_store_factory():
 @pytest.fixture
 def in_memory_quote_email_sender() -> InMemoryQuoteEmailSender:
     return InMemoryQuoteEmailSender()
+
+
+@pytest.fixture
+def in_memory_account_email_sender() -> InMemoryAccountEmailSender:
+    return InMemoryAccountEmailSender()

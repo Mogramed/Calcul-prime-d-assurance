@@ -29,7 +29,11 @@ export function AuthForm({ mode }: AuthFormProps) {
     onSuccess: async (session) => {
       await queryClient.invalidateQueries({ queryKey: ["auth-session"] });
       await queryClient.invalidateQueries({ queryKey: ["quotes"] });
-      router.push(session.user?.role === "admin" ? "/admin" : "/compte");
+      if (session.user?.role === "admin") {
+        router.push("/admin");
+      } else {
+        router.push("/compte");
+      }
       router.refresh();
     },
   });
@@ -38,7 +42,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const description =
     mode === "login"
       ? "Retrouvez vos devis, telechargez vos rapports PDF et gerez vos estimations depuis n'importe quelle machine."
-      : "Enregistrez vos devis, accedez a vos rapports PDF et retrouvez votre historique sur tous vos appareils.";
+      : "Creez votre espace, confirmez votre adresse email et retrouvez vos devis sur tous vos appareils.";
   const cta = mode === "login" ? "Se connecter" : "Creer mon compte";
 
   return (

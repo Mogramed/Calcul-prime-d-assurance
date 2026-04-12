@@ -55,7 +55,7 @@ def clean_persistence_tables(integration_database_url: str):
     ):
         cursor.execute(
             "TRUNCATE TABLE prediction_outputs, prediction_requests, "
-            "api_errors, auth_sessions, users, quotes "
+            "api_errors, auth_sessions, email_verification_tokens, users, quotes "
             "RESTART IDENTITY CASCADE"
         )
     yield

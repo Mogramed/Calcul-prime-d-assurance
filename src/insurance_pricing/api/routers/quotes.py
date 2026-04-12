@@ -21,6 +21,7 @@ from insurance_pricing.api.quote_store import (
     QuoteStore,
     QuoteStoreUnavailableError,
     QuoteSummaryRecord,
+    QuoteUpdateRecord,
     StoredQuoteRecord,
     hash_client_id,
 )
@@ -166,6 +167,75 @@ async def create_quote(
         quote_email_sender=quote_email_sender,
     )
 
+    return _quote_response(stored_quote, email_delivery=email_delivery)
+
+
+@router.put(
+    "/quotes/{quote_id}",
+    response_model=QuoteResponse,
+    response_model_exclude_none=True,
+    summary="Update a persisted quote",
+    description=(
+        "Re-scores an existing quote, updates the persisted payload and prediction, and returns "
+        "the refreshed quote detail for the current customer context."
+    ),
+    operation_id="update_quote",
+    responses={
+        400: {"description": "The required X-Client-ID header is missing or invalid."},
+        404: {"description": "The quote does not exist for the current customer context."},
+        503: {"description": "Quote persistence is unavailable because PostgreSQL is not ready."},
+    },
+)
+async def update_quote(
+    quote_id: str,
+    request: Request,
+    payload: PredictionInput = Body(),
+    client_id: str = Depends(get_client_id),
+    current_user: StoredUserRecord | None = Depends(get_current_user),
+    service: PredictionService = Depends(get_prediction_service),
+    quote_store: QuoteStore = Depends(get_quote_store),
+    quote_email_sender: QuoteEmailSender = Depends(get_quote_email_sender),
+) -> QuoteResponse:
+    _mark_request(request, endpoint_kind="quote_update")
+    try:
+        existing_quote = await _get_accessible_quote(
+            quote_store=quote_store,
+            quote_id=quote_id,
+            client_id=client_id,
+            current_user=current_user,
+        )
+    except QuoteStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Quote persistence is unavailable.") from exc
+
+    if existing_quote is None or existing_quote.deleted_at_utc is not None:
+        raise HTTPException(status_code=404, detail="Quote not found.")
+
+    payload_obj = payload.model_dump(mode="python")
+    prediction = await run_in_threadpool(service.predict_record, payload_obj)
+
+    try:
+        stored_quote = await quote_store.update_quote(
+            QuoteUpdateRecord(
+                quote_id=existing_quote.id,
+                user_id=current_user.id if current_user is not None else existing_quote.user_id,
+                run_id=service.run_id,
+                input_payload=payload_obj,
+                frequency_prediction=float(prediction["frequency_prediction"]),
+                severity_prediction=float(prediction["severity_prediction"]),
+                prime_prediction=float(prediction["prime_prediction"]),
+            )
+        )
+    except QuoteStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Quote persistence is unavailable.") from exc
+
+    if stored_quote is None:
+        raise HTTPException(status_code=404, detail="Quote not found.")
+
+    email_delivery = await _send_quote_email_if_possible(
+        stored_quote=stored_quote,
+        current_user=current_user,
+        quote_email_sender=quote_email_sender,
+    )
     return _quote_response(stored_quote, email_delivery=email_delivery)
 
 

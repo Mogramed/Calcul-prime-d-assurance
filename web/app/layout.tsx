@@ -83,9 +83,20 @@ export default async function RootLayout({
               <main className="flex-1">{children}</main>
 
               <footer className="mt-8 border-t border-white/40 px-2 pt-5 text-sm text-[var(--muted)]">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="grid gap-3 lg:grid-cols-[auto_1fr_auto] lg:items-start">
                   <p className="font-medium text-[var(--foreground)]">Nova Assurances</p>
-                  <p>Estimation indicative de prime auto. Mentions legales et contact a completer avant mise en production.</p>
+                  <div className="space-y-1 leading-7">
+                    <p>
+                      Projet demonstrateur de tarification auto. Les estimations affichees sur ce site sont fournies a titre indicatif, sans valeur contractuelle, et ne constituent pas une offre d'assurance.
+                    </p>
+                    <p>
+                      Responsable de publication : Mohamed Khaldi. Contact : khaldimohamedamine78@gmail.com.
+                    </p>
+                    <p>
+                      Hebergement : Google Cloud Run. Donnees de devis reservees au fonctionnement du service et a la demonstration du projet.
+                    </p>
+                  </div>
+                  <p className="text-left lg:text-right">Version de demonstration</p>
                 </div>
               </footer>
             </div>

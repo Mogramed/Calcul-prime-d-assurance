@@ -443,8 +443,10 @@ def test_openapi_exposes_product_endpoints(
     assert "/auth/register" in schema["paths"]
     assert "/auth/login" in schema["paths"]
     assert "/auth/session" in schema["paths"]
+    assert "/auth/verify-email" in schema["paths"]
     assert "/quotes" in schema["paths"]
     assert "/quotes/{quote_id}" in schema["paths"]
+    assert "put" in schema["paths"]["/quotes/{quote_id}"]
     assert "/quotes/{quote_id}/report.pdf" in schema["paths"]
     assert "/quotes/{quote_id}/send-email" in schema["paths"]
     assert "/admin/users" in schema["paths"]
@@ -479,9 +481,14 @@ def test_swagger_ui_keeps_models_visible(
 def test_register_claims_anonymous_quotes_and_exposes_session(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
 ):
-    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
     client_id = str(uuid4())
 
     with TestClient(app) as client:
@@ -516,14 +523,86 @@ def test_register_claims_anonymous_quotes_and_exposes_session(
     assert anonymous_quote.status_code == 200
     assert register_response.status_code == 201
     assert register_response.json()["user"]["role"] == "customer"
+    assert register_response.json()["email_verification_required"] is True
+    assert register_response.json()["email_verification_delivery"] == {
+        "status": "sent",
+        "recipient_email": "client@nova-assurances.fr",
+        "detail": "Verification email accepted by the in-memory sender.",
+        "provider_status_code": 202,
+    }
     assert session_response.status_code == 200
     assert session_response.json()["authenticated"] is True
+    assert session_response.json()["email_verification_required"] is True
     assert history_response.status_code == 200
     assert history_response.json()["count"] == 1
     assert history_response.json()["quotes"][0]["id"] == anonymous_quote.json()["id"]
     assert logout_response.status_code == 204
     assert after_logout_response.status_code == 200
     assert after_logout_response.json()["authenticated"] is False
+    assert len(in_memory_account_email_sender.sent_emails) == 1
+
+
+def test_unverified_user_must_confirm_email_before_logging_in(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    in_memory_account_email_sender,
+):
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
+
+    with TestClient(app) as client:
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": str(uuid4())},
+        )
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+        )
+
+    assert register_response.status_code == 201
+    assert login_response.status_code == 403
+    assert login_response.json()["detail"] == "Veuillez confirmer votre adresse email avant de vous connecter."
+
+
+def test_verify_email_endpoint_activates_future_logins(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    in_memory_account_email_sender,
+):
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
+    client_id = str(uuid4())
+
+    with TestClient(app) as client:
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": client_id},
+        )
+        verification_token = in_memory_account_email_sender.sent_emails[0].verification_token
+        verify_response = client.post(
+            "/auth/verify-email",
+            json={"token": verification_token},
+        )
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": client_id},
+        )
+
+    assert register_response.status_code == 201
+    assert verify_response.status_code == 200
+    assert verify_response.json()["email_verified_at_utc"] is not None
+    assert login_response.status_code == 200
+    assert login_response.json()["email_verification_required"] is False
 
 
 def test_authenticated_user_can_download_quote_report(
@@ -643,6 +722,49 @@ def test_quote_creation_still_succeeds_when_email_delivery_fails(
         "detail": "Quote email delivery failed.",
     }
     assert in_memory_quote_email_sender.sent_emails == []
+
+
+def test_updating_a_quote_reuses_the_same_quote_identifier(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    client_id = str(uuid4())
+    updated_payload = dict(sample_prediction_records[0])
+    updated_payload["bonus"] = 0.77
+    updated_payload["marque_vehicule"] = "PEUGEOT"
+
+    with TestClient(app) as client:
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": client_id},
+        )
+        session_token = register_response.json()["session_token"]
+        quote_response = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
+        )
+        update_response = client.put(
+            f"/quotes/{quote_response.json()['id']}",
+            json=updated_payload,
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
+        )
+
+    assert quote_response.status_code == 200
+    assert update_response.status_code == 200
+    assert update_response.json()["id"] == quote_response.json()["id"]
+    assert update_response.json()["input_payload"]["bonus"] == 0.77
+    assert update_response.json()["input_payload"]["marque_vehicule"] == "PEUGEOT"
+    assert len(in_memory_audit_store.quotes) == 1
 
 
 def test_authenticated_user_can_trigger_quote_email_endpoint(
