@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from html import escape
 from typing import Literal, Protocol
@@ -67,7 +68,7 @@ class ResendAccountEmailSender:
         verification_token: str,
     ) -> AccountEmailDeliveryRecord:
         verification_url = f"{self.public_web_url}/verification-email?token={verification_token}"
-        payload = {
+        payload: Mapping[str, object] = {
             "from": f"{self.sender_name} <{self.sender_email}>",
             "to": [recipient_email],
             "subject": "Confirmez votre adresse email Nova Assurances",
@@ -199,7 +200,7 @@ def _build_verification_email_text(verification_url: str) -> str:
 
 
 def _post_resend_email(
-    payload: dict[str, object],
+    payload: Mapping[str, object],
     headers: dict[str, str],
 ) -> tuple[int, str]:
     request = Request(
