@@ -314,7 +314,10 @@ def test_create_quote_persists_payload_and_returns_prediction(
     assert body["run_id"] == api_settings.run_id
     assert "index" not in body["input_payload"]
     assert body["result"]["prime_prediction"] is not None
-    assert body["email_delivery"] == {"status": "skipped"}
+    assert body["email_delivery"] == {
+        "status": "skipped",
+        "detail": "Authentication is required to send a quote email.",
+    }
     assert len(in_memory_audit_store.quotes) == 1
 
 
@@ -443,6 +446,7 @@ def test_openapi_exposes_product_endpoints(
     assert "/quotes" in schema["paths"]
     assert "/quotes/{quote_id}" in schema["paths"]
     assert "/quotes/{quote_id}/report.pdf" in schema["paths"]
+    assert "/quotes/{quote_id}/send-email" in schema["paths"]
     assert "/admin/users" in schema["paths"]
     assert "/admin/quotes" in schema["paths"]
     assert "/models/current" in schema["paths"]
@@ -592,6 +596,8 @@ def test_authenticated_quote_creation_sends_recap_email_with_pdf(
     assert quote_response.json()["email_delivery"] == {
         "status": "sent",
         "recipient_email": "client@nova-assurances.fr",
+        "detail": "Email accepted by the in-memory sender.",
+        "provider_status_code": 202,
     }
     assert len(in_memory_quote_email_sender.sent_emails) == 1
     sent_email = in_memory_quote_email_sender.sent_emails[0]
@@ -634,8 +640,78 @@ def test_quote_creation_still_succeeds_when_email_delivery_fails(
     assert quote_response.json()["email_delivery"] == {
         "status": "failed",
         "recipient_email": "client@nova-assurances.fr",
+        "detail": "Quote email delivery failed.",
     }
     assert in_memory_quote_email_sender.sent_emails == []
+
+
+def test_authenticated_user_can_trigger_quote_email_endpoint(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    in_memory_quote_email_sender,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        quote_email_sender=in_memory_quote_email_sender,
+    )
+    client_id = str(uuid4())
+
+    with TestClient(app) as client:
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": client_id},
+        )
+        session_token = register_response.json()["session_token"]
+        quote_response = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
+        )
+        send_response = client.post(
+            f"/quotes/{quote_response.json()['id']}/send-email",
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
+        )
+
+    assert send_response.status_code == 200
+    assert send_response.json() == {
+        "status": "sent",
+        "recipient_email": "client@nova-assurances.fr",
+        "detail": "Email accepted by the in-memory sender.",
+        "provider_status_code": 202,
+    }
+    assert len(in_memory_quote_email_sender.sent_emails) == 2
+
+
+def test_quote_email_endpoint_requires_authentication(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    sample_prediction_records: list[dict],
+):
+    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    client_id = str(uuid4())
+
+    with TestClient(app) as client:
+        quote_response = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={"X-Client-ID": client_id},
+        )
+        send_response = client.post(
+            f"/quotes/{quote_response.json()['id']}/send-email",
+            headers={"X-Client-ID": client_id},
+        )
+
+    assert send_response.status_code == 401
+    assert send_response.json()["detail"] == "Authentication is required."
 
 
 def test_admin_can_list_and_moderate_users_and_quotes(

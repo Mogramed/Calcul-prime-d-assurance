@@ -65,6 +65,8 @@ _FIELD_VALUE_LABELS: dict[str, dict[str, str]] = {
 class QuoteEmailDeliveryRecord:
     status: Literal["sent", "failed", "skipped"]
     recipient_email: str | None
+    detail: str | None = None
+    provider_status_code: int | None = None
 
 
 class QuoteEmailSender(Protocol):
@@ -85,7 +87,11 @@ class NoOpQuoteEmailSender:
         recipient_email: str,
         pdf_bytes: bytes,
     ) -> QuoteEmailDeliveryRecord:
-        return QuoteEmailDeliveryRecord(status="skipped", recipient_email=recipient_email)
+        return QuoteEmailDeliveryRecord(
+            status="skipped",
+            recipient_email=recipient_email,
+            detail="Email delivery is not configured.",
+        )
 
 
 class ResendQuoteEmailSender:
@@ -109,6 +115,14 @@ class ResendQuoteEmailSender:
         recipient_email: str,
         pdf_bytes: bytes,
     ) -> QuoteEmailDeliveryRecord:
+        QUOTE_EMAIL_LOGGER.info(
+            "quote_email_send_requested",
+            extra={
+                "quote_id": quote.id,
+                "recipient_email": recipient_email,
+                "provider": "resend",
+            },
+        )
         payload: Mapping[str, object] = {
             "from": f"{self.sender_name} <{self.sender_email}>",
             "to": [recipient_email],
@@ -144,7 +158,11 @@ class ResendQuoteEmailSender:
                 },
                 exc_info=True,
             )
-            return QuoteEmailDeliveryRecord(status="failed", recipient_email=recipient_email)
+            return QuoteEmailDeliveryRecord(
+                status="failed",
+                recipient_email=recipient_email,
+                detail="Unable to reach Resend.",
+            )
 
         if 200 <= status_code < 300:
             provider_message_id = None
@@ -161,8 +179,14 @@ class ResendQuoteEmailSender:
                     "provider_message_id": provider_message_id,
                 },
             )
-            return QuoteEmailDeliveryRecord(status="sent", recipient_email=recipient_email)
+            return QuoteEmailDeliveryRecord(
+                status="sent",
+                recipient_email=recipient_email,
+                detail="Email accepted by Resend.",
+                provider_status_code=status_code,
+            )
 
+        error_detail = _extract_resend_error_detail(response_body)
         QUOTE_EMAIL_LOGGER.warning(
             "quote_email_send_rejected",
             extra={
@@ -171,9 +195,15 @@ class ResendQuoteEmailSender:
                 "provider": "resend",
                 "status_code": status_code,
                 "response_body": response_body[:500],
+                "provider_detail": error_detail,
             },
         )
-        return QuoteEmailDeliveryRecord(status="failed", recipient_email=recipient_email)
+        return QuoteEmailDeliveryRecord(
+            status="failed",
+            recipient_email=recipient_email,
+            detail=error_detail,
+            provider_status_code=status_code,
+        )
 
 
 def build_quote_email_sender(
@@ -336,6 +366,24 @@ def _post_resend_email(
         return exc.code, response_body
     except URLError as exc:
         raise OSError("Unable to reach Resend.") from exc
+
+
+def _extract_resend_error_detail(response_body: str) -> str:
+    if not response_body:
+        return "Resend rejected the request without returning a response body."
+
+    try:
+        payload = json.loads(response_body)
+    except json.JSONDecodeError:
+        return response_body[:500]
+
+    if isinstance(payload, dict):
+        for key in ("message", "error", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    return response_body[:500]
 
 
 def _format_currency(value: float) -> str:

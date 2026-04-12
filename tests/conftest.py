@@ -321,7 +321,12 @@ class InMemoryQuoteEmailSender(QuoteEmailSender):
                 pdf_bytes=pdf_bytes,
             )
         )
-        return QuoteEmailDeliveryRecord(status="sent", recipient_email=recipient_email)
+        return QuoteEmailDeliveryRecord(
+            status="sent",
+            recipient_email=recipient_email,
+            detail="Email accepted by the in-memory sender.",
+            provider_status_code=202,
+        )
 
 
 def _public_user(user: StoredAuthUserRecord) -> StoredUserRecord:
