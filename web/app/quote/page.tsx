@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { withAppBasePath } from "@/lib/app-paths";
 
 function buildSearchQuery(
   searchParams: Record<string, string | string[] | undefined>,
@@ -29,5 +30,5 @@ export default async function LegacyQuotePage({
   const resolvedSearchParams = await searchParams;
   const query = buildSearchQuery(resolvedSearchParams);
 
-  redirect(query ? `/devis?${query}` : "/devis");
+  redirect(query ? withAppBasePath(`/devis?${query}`) : withAppBasePath("/devis"));
 }

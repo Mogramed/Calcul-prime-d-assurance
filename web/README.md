@@ -16,8 +16,9 @@ Variables principales:
 - `API_BASE_URL`: URL serveur de l'API amont pour les routes BFF Next.js.
 - `API_AUDIENCE`: audience Cloud Run optionnelle pour obtenir un jeton serveur a serveur.
 - `COOKIE_SECURE`: laisser `false` en local HTTP et passer a `true` sur un domaine HTTPS.
+- `NEXT_PUBLIC_BASE_PATH`: prefixe de deploiement du site, par exemple `/nova-assurance`.
 
-Le navigateur n'appelle que les routes same-origin `/api/*` du frontend Next.js. Le cookie
+Le navigateur n'appelle que les routes same-origin `/app-api/*` du frontend Next.js. Le cookie
 `nova_client_id` est gere cote serveur, en `HttpOnly`, puis relaye vers l'API amont via le header
 `X-Client-ID`.
 

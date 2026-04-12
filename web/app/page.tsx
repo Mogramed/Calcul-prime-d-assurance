@@ -12,8 +12,8 @@ const highlights = [
     icon: Sparkles,
   },
   {
-    title: "Disponible sur cet appareil",
-    description: "Vos derniers devis restent accessibles ici pour etre relus ou modifies facilement.",
+    title: "Recapitulatif par email",
+    description: "Votre devis peut vous etre renvoye avec son PDF pour etre retrouve plus facilement.",
     icon: ShieldCheck,
   },
   {

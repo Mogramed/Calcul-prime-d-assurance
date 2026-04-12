@@ -34,12 +34,18 @@ export interface QuoteResultResponse {
   prime_prediction: number;
 }
 
+export interface QuoteEmailDeliveryResponse {
+  status: "sent" | "failed" | "skipped";
+  recipient_email?: string | null;
+}
+
 export interface QuoteResponse {
   id: string;
   created_at_utc: string;
   run_id: string;
   input_payload: PredictionInput;
   result: QuoteResultResponse;
+  email_delivery?: QuoteEmailDeliveryResponse | null;
 }
 
 export interface QuoteSummaryResponse {

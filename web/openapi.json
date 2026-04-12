@@ -3,7 +3,7 @@
   "info": {
     "title": "Insurance Pricing API",
     "summary": "HTTP inference API for the insurance premium pricing model.",
-    "description": "Production-style FastAPI surface for serving insurance pricing predictions.\n\n## Scope\n- score raw insurance business records\n- expose frequency, severity, and final premium predictions\n- keep the served model bundle pinned at startup through `INSURANCE_PRICING_RUN_ID`\n\n## Request Contract\nSend the raw columns from the historical scoring dataset, such as the ones present in `data/test.csv`. Feature engineering stays inside the service layer, so clients only need to send business-facing fields.\n\n## Response Headers\nEvery response includes `X-Request-ID` and `X-Process-Time-Ms` headers to help trace calls across clients, logs, and deployment environments.\n\n## Batch Behavior\nBatch endpoints preserve input order and return the optional `index` field when it is provided by the caller.\n\n## Product Quote Endpoints\nThe public `/quotes` endpoints persist end-user quote history scoped to an anonymous `X-Client-ID` header so the Next.js frontend can retrieve prior simulations.",
+    "description": "Production-style FastAPI surface for serving insurance pricing predictions.\n\n## Scope\n- score raw insurance business records\n- expose frequency, severity, and final premium predictions\n- keep the served model bundle pinned at startup through `INSURANCE_PRICING_RUN_ID`\n\n## Request Contract\nSend the raw columns from the historical scoring dataset, such as the ones present in `data/test.csv`. Feature engineering stays inside the service layer, so clients only need to send business-facing fields.\n\n## Response Headers\nEvery response includes `X-Request-ID` and `X-Process-Time-Ms` headers to help trace calls across clients, logs, and deployment environments.\n\n## Batch Behavior\nBatch endpoints preserve input order so clients can safely align each prediction with the submitted records.\n\n## Product Quote Endpoints\nThe public `/quotes` endpoints persist end-user quote history scoped to an anonymous `X-Client-ID` header so the Next.js frontend can retrieve prior simulations.",
     "contact": {
       "name": "Insurance Pricing Team"
     },
@@ -155,13 +155,12 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PredictionInput",
-                "description": "Raw business-facing fields for one insurance contract. The optional `index` field is echoed back in the response when provided."
+                "description": "Raw business-facing fields for one insurance contract."
               },
               "examples": {
                 "single_record": {
                   "summary": "Single contract scoring example",
                   "value": {
-                    "index": 50000,
                     "bonus": 0.58,
                     "type_contrat": "Maxi",
                     "duree_contrat": 1,
@@ -240,7 +239,6 @@
                   "value": {
                     "records": [
                       {
-                        "index": 50000,
                         "bonus": 0.58,
                         "type_contrat": "Maxi",
                         "duree_contrat": 1,
@@ -270,7 +268,6 @@
                         "poids_vehicule": 830
                       },
                       {
-                        "index": 50001,
                         "bonus": 0.63,
                         "type_contrat": "Maxi",
                         "duree_contrat": 1,
@@ -349,7 +346,6 @@
                 "single_record": {
                   "summary": "Single contract scoring example",
                   "value": {
-                    "index": 50000,
                     "bonus": 0.58,
                     "type_contrat": "Maxi",
                     "duree_contrat": 1,
@@ -428,7 +424,6 @@
                   "value": {
                     "records": [
                       {
-                        "index": 50000,
                         "bonus": 0.58,
                         "type_contrat": "Maxi",
                         "duree_contrat": 1,
@@ -458,7 +453,6 @@
                         "poids_vehicule": 830
                       },
                       {
-                        "index": 50001,
                         "bonus": 0.63,
                         "type_contrat": "Maxi",
                         "duree_contrat": 1,
@@ -537,7 +531,6 @@
                 "single_record": {
                   "summary": "Single contract scoring example",
                   "value": {
-                    "index": 50000,
                     "bonus": 0.58,
                     "type_contrat": "Maxi",
                     "duree_contrat": 1,
@@ -616,7 +609,6 @@
                   "value": {
                     "records": [
                       {
-                        "index": 50000,
                         "bonus": 0.58,
                         "type_contrat": "Maxi",
                         "duree_contrat": 1,
@@ -646,7 +638,6 @@
                         "poids_vehicule": 830
                       },
                       {
-                        "index": 50001,
                         "bonus": 0.63,
                         "type_contrat": "Maxi",
                         "duree_contrat": 1,
@@ -981,7 +972,6 @@
                 "single_record": {
                   "summary": "Single contract quote example",
                   "value": {
-                    "index": 50000,
                     "bonus": 0.58,
                     "type_contrat": "Maxi",
                     "duree_contrat": 1,
@@ -1999,12 +1989,10 @@
             "count": 2,
             "predictions": [
               {
-                "frequency_prediction": 0.0835,
-                "index": 50000
+                "frequency_prediction": 0.0835
               },
               {
-                "frequency_prediction": 0.0612,
-                "index": 50001
+                "frequency_prediction": 0.0612
               }
             ],
             "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none"
@@ -2013,18 +2001,6 @@
       },
       "FrequencyPredictionResponse": {
         "properties": {
-          "index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Index",
-            "description": "Input correlation identifier, returned when it was provided by the caller."
-          },
           "frequency_prediction": {
             "type": "number",
             "title": "Frequency Prediction",
@@ -2038,8 +2014,7 @@
         "title": "FrequencyPredictionResponse",
         "examples": [
           {
-            "frequency_prediction": 0.0835,
-            "index": 50000
+            "frequency_prediction": 0.0835
           }
         ]
       },
@@ -2382,7 +2357,6 @@
                 "essence_vehicule": "Gasoline",
                 "fin_vente_vehicule": 15,
                 "freq_paiement": "Yearly",
-                "index": 50000,
                 "marque_vehicule": "RENAULT",
                 "modele_vehicule": "CLIO",
                 "paiement": "No",
@@ -2412,7 +2386,6 @@
                 "essence_vehicule": "Gasoline",
                 "fin_vente_vehicule": 15,
                 "freq_paiement": "Yearly",
-                "index": 50001,
                 "marque_vehicule": "PEUGEOT",
                 "modele_vehicule": "208",
                 "paiement": "No",
@@ -2469,18 +2442,6 @@
       },
       "PredictionInput": {
         "properties": {
-          "index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Index",
-            "description": "Optional correlation identifier echoed back in prediction responses."
-          },
           "bonus": {
             "$ref": "#/components/schemas/NumericValue",
             "description": "Driver bonus-malus coefficient."
@@ -2664,7 +2625,6 @@
             "essence_vehicule": "Gasoline",
             "fin_vente_vehicule": 15,
             "freq_paiement": "Yearly",
-            "index": 50000,
             "marque_vehicule": "RENAULT",
             "modele_vehicule": "CLIO",
             "paiement": "No",
@@ -2736,21 +2696,13 @@
             "batch_model": "InsurancePricingBatchRequest",
             "fields": [
               {
-                "description": "Optional correlation identifier echoed back in prediction responses.",
-                "name": "index",
-                "required": false,
-                "type": "integer | null"
-              },
-              {
                 "description": "Driver bonus-malus coefficient.",
                 "name": "bonus",
                 "required": true,
                 "type": "integer | number"
               }
             ],
-            "optional_fields": [
-              "index"
-            ],
+            "optional_fields": [],
             "record_model": "InsurancePricingRecord",
             "required_fields": [
               "bonus",
@@ -2795,13 +2747,11 @@
             "predictions": [
               {
                 "frequency_prediction": 0.0835,
-                "index": 50000,
                 "prime_prediction": 201.25504,
                 "severity_prediction": 2410.24
               },
               {
                 "frequency_prediction": 0.0612,
-                "index": 50001,
                 "prime_prediction": 109.106232,
                 "severity_prediction": 1795.86
               }
@@ -2812,18 +2762,6 @@
       },
       "PrimePredictionResponse": {
         "properties": {
-          "index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Index",
-            "description": "Input correlation identifier, returned when it was provided by the caller."
-          },
           "frequency_prediction": {
             "type": "number",
             "title": "Frequency Prediction",
@@ -2850,9 +2788,46 @@
         "examples": [
           {
             "frequency_prediction": 0.0835,
-            "index": 50000,
             "prime_prediction": 201.25504,
             "severity_prediction": 2410.24
+          }
+        ]
+      },
+      "QuoteEmailDeliveryResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status",
+            "description": "Delivery outcome for the quote recap email."
+          },
+          "recipient_email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Email",
+            "description": "Recipient email address when an email delivery attempt was made."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "QuoteEmailDeliveryResponse",
+        "examples": [
+          {
+            "recipient_email": "client@nova-assurances.fr",
+            "status": "sent"
           }
         ]
       },
@@ -2885,7 +2860,6 @@
               {
                 "created_at_utc": "2026-03-23T10:15:00+00:00",
                 "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
-                "index": 50000,
                 "marque_vehicule": "RENAULT",
                 "modele_vehicule": "CLIO",
                 "prime_prediction": 201.25504,
@@ -2921,6 +2895,17 @@
           "result": {
             "$ref": "#/components/schemas/QuoteResultResponse",
             "description": "Prediction outputs returned for the quote."
+          },
+          "email_delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuoteEmailDeliveryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional status of the recap email sent after quote creation."
           }
         },
         "type": "object",
@@ -2935,6 +2920,10 @@
         "examples": [
           {
             "created_at_utc": "2026-03-23T10:15:00+00:00",
+            "email_delivery": {
+              "recipient_email": "client@nova-assurances.fr",
+              "status": "sent"
+            },
             "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
             "input_payload": {
               "age_conducteur1": 66,
@@ -2953,7 +2942,6 @@
               "essence_vehicule": "Gasoline",
               "fin_vente_vehicule": 15,
               "freq_paiement": "Yearly",
-              "index": 50000,
               "marque_vehicule": "RENAULT",
               "modele_vehicule": "CLIO",
               "paiement": "No",
@@ -2968,7 +2956,6 @@
             },
             "result": {
               "frequency_prediction": 0.0835,
-              "index": 50000,
               "prime_prediction": 201.25504,
               "severity_prediction": 2410.24
             },
@@ -2978,18 +2965,6 @@
       },
       "QuoteResultResponse": {
         "properties": {
-          "index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Index",
-            "description": "Input correlation identifier, returned when it was provided by the caller."
-          },
           "frequency_prediction": {
             "type": "number",
             "title": "Frequency Prediction",
@@ -3016,7 +2991,6 @@
         "examples": [
           {
             "frequency_prediction": 0.0835,
-            "index": 50000,
             "prime_prediction": 201.25504,
             "severity_prediction": 2410.24
           }
@@ -3039,18 +3013,6 @@
             "type": "string",
             "title": "Run Id",
             "description": "Model bundle identifier used to compute the quote."
-          },
-          "index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Index",
-            "description": "Input correlation identifier when it was provided by the caller."
           },
           "type_contrat": {
             "type": "string",
@@ -3088,7 +3050,6 @@
           {
             "created_at_utc": "2026-03-23T10:15:00+00:00",
             "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
-            "index": 50000,
             "marque_vehicule": "RENAULT",
             "modele_vehicule": "CLIO",
             "prime_prediction": 201.25504,
@@ -3130,11 +3091,9 @@
             "count": 2,
             "predictions": [
               {
-                "index": 50000,
                 "severity_prediction": 2410.24
               },
               {
-                "index": 50001,
                 "severity_prediction": 1795.86
               }
             ],
@@ -3144,18 +3103,6 @@
       },
       "SeverityPredictionResponse": {
         "properties": {
-          "index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Index",
-            "description": "Input correlation identifier, returned when it was provided by the caller."
-          },
           "severity_prediction": {
             "type": "number",
             "title": "Severity Prediction",
@@ -3169,7 +3116,6 @@
         "title": "SeverityPredictionResponse",
         "examples": [
           {
-            "index": 50000,
             "severity_prediction": 2410.24
           }
         ]

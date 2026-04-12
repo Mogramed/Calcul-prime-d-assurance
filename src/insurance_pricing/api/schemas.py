@@ -186,12 +186,18 @@ PREDICTION_SCHEMA_EXAMPLE: dict[str, JsonValue] = {
 
 QUOTE_RESULT_EXAMPLE: dict[str, JsonValue] = PRIME_PREDICTION_EXAMPLE
 
+QUOTE_EMAIL_DELIVERY_EXAMPLE: dict[str, JsonValue] = {
+    "status": "sent",
+    "recipient_email": "client@nova-assurances.fr",
+}
+
 QUOTE_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
     "id": "30bc53c8-5112-4a49-a204-5e8de5e7dcc5",
     "created_at_utc": "2026-03-23T10:15:00+00:00",
     "run_id": "base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none",
     "input_payload": SINGLE_PREDICTION_EXAMPLE,
     "result": QUOTE_RESULT_EXAMPLE,
+    "email_delivery": QUOTE_EMAIL_DELIVERY_EXAMPLE,
 }
 
 QUOTE_SUMMARY_EXAMPLE: dict[str, JsonValue] = {
@@ -556,6 +562,23 @@ class QuoteResultResponse(BaseModel):
     prime_prediction: float = Field(description="Final premium prediction for the quote.")
 
 
+class QuoteEmailDeliveryResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "QuoteEmailDeliveryResponse",
+            "examples": [QUOTE_EMAIL_DELIVERY_EXAMPLE],
+        }
+    )
+
+    status: Literal["sent", "failed", "skipped"] = Field(
+        description="Delivery outcome for the quote recap email."
+    )
+    recipient_email: EmailStr | None = Field(
+        default=None,
+        description="Recipient email address when an email delivery attempt was made.",
+    )
+
+
 class QuoteResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -569,6 +592,10 @@ class QuoteResponse(BaseModel):
     run_id: str = Field(description="Model bundle identifier used to compute the quote.")
     input_payload: PredictionInput = Field(description="Original input payload used for the quote.")
     result: QuoteResultResponse = Field(description="Prediction outputs returned for the quote.")
+    email_delivery: QuoteEmailDeliveryResponse | None = Field(
+        default=None,
+        description="Optional status of the recap email sent after quote creation.",
+    )
 
 
 class QuoteSummaryResponse(BaseModel):

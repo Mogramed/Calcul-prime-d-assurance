@@ -13,6 +13,8 @@
   --accent-soft: rgba(233, 211, 192, 0.82);
   --navy: #142132;
   --danger: #aa3a25;
+  --warning: #9a5a19;
+  --success: #2f7a4f;
 }
 
 @theme inline {

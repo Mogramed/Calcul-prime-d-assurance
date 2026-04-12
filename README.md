@@ -8,7 +8,7 @@ Complete auto insurance pricing project covering:
 4. a PostgreSQL persistence layer with Alembic migrations
 5. a GitHub Actions CI, Docker images, and Cloud Run deployment
 
-The project has evolved from a model/benchmark foundation to a complete web application named `Nova Assurances`, featuring authentication, quote history, PDF generation, an admin area, and cloud deployment.
+The project has evolved from a model/benchmark foundation to a complete web application named `Nova Assurances`, featuring authentication, quote history, PDF generation, automatic quote recap emails, an admin area, and cloud deployment.
 
 ## Overview
 
@@ -20,6 +20,7 @@ The pricing engine calculates an auto premium from raw business data. It exposes
 2. HTTP endpoints to score a record for frequency, severity, or final premium
 3. a client website to create a quote, view its history, and download a PDF
 4. admin features to monitor accounts and moderate quotes
+5. automatic quote recap emails with the PDF attached
 
 ### Main features
 
@@ -38,7 +39,8 @@ The pricing engine calculates an auto premium from raw business data. It exposes
 3. email + password authentication
 4. PDF generation for each quote
 5. admin endpoints for account and quote management
-6. structured logs, readiness checks, and PostgreSQL persistence
+6. automatic Resend email delivery after quote creation
+7. structured logs, readiness checks, and PostgreSQL persistence
 
 #### Product frontend
 
@@ -47,6 +49,7 @@ The pricing engine calculates an auto premium from raw business data. It exposes
 3. mandatory login before creating or viewing a quote
 4. client area and quote history
 5. admin console reserved for admin accounts
+6. email delivery feedback in the quoting flow
 
 #### DevOps
 
@@ -60,7 +63,7 @@ The pricing engine calculates an auto premium from raw business data. It exposes
 ```mermaid
 flowchart LR
     U["User"] --> W["Next.js web app"]
-    W --> BFF["Next.js /api/* routes"]
+    W --> BFF["Next.js /app-api/* routes"]
     BFF --> API["FastAPI API"]
     API --> DB["PostgreSQL / Neon"]
     API --> ART["Model artifacts"]
@@ -102,6 +105,7 @@ flowchart LR
 5. SQLAlchemy + Psycopg + Alembic
 6. Argon2 for password hashing
 7. ReportLab for PDF generation
+8. Resend for transactional emails
 
 ### Frontend
 
@@ -221,7 +225,7 @@ When the API is running:
 
 1. the API persists errors, sessions, and quotes in PostgreSQL
 2. `GET /ready` verifies model loading and database connectivity
-3. the quote endpoints are used by the Next.js frontend via its `/api/*` routes
+3. the quote endpoints are used by the Next.js frontend via its `/app-api/*` routes
 4. in the current state of the project, the Cloud Run API is configured as public
 
 ## Next.js Frontend
@@ -236,6 +240,7 @@ The `web/` frontend is the "Nova Assurances" product layer.
 4. quote creation
 5. history consultation
 6. PDF report download
+7. automatic recap email with the quote PDF
 
 ### Admin flow
 
@@ -247,7 +252,7 @@ The `web/` frontend is the "Nova Assurances" product layer.
 ### Frontend specifics
 
 1. quotes are blocked as long as no session is open
-2. the browser only calls the frontend's same-origin `/api/*` routes
+2. the browser only calls the frontend's same-origin `/app-api/*` routes
 3. session cookies are managed server-side
 4. the OpenAPI client is regenerated from `web/openapi.json`
 
@@ -332,6 +337,11 @@ docker compose --profile ops up --build postgres migrate api web
 | `INSURANCE_PRICING_CORS_ALLOWED_ORIGINS` | allowed origins |
 | `INSURANCE_PRICING_ADMIN_EMAILS` | authorized admin emails |
 | `INSURANCE_PRICING_SESSION_TTL_HOURS` | session duration |
+| `INSURANCE_PRICING_ROOT_PATH` | public API prefix used behind a load balancer |
+| `INSURANCE_PRICING_PUBLIC_WEB_URL` | public web URL inserted in recap emails |
+| `INSURANCE_PRICING_RESEND_API_KEY` | Resend API key |
+| `INSURANCE_PRICING_RESEND_SENDER_EMAIL` | verified sender email for recap emails |
+| `INSURANCE_PRICING_RESEND_SENDER_NAME` | sender display name |
 
 ### Frontend
 
@@ -340,6 +350,7 @@ docker compose --profile ops up --build postgres migrate api web
 | `API_BASE_URL` | upstream API URL |
 | `API_AUDIENCE` | optional Cloud Run audience |
 | `COOKIE_SECURE` | `false` in local HTTP, `true` in HTTPS |
+| `NEXT_PUBLIC_BASE_PATH` | deploy-time path prefix, for example `/nova-assurance` |
 
 Example variables are provided in:
 
@@ -422,13 +433,15 @@ The [deploy-cloud-run.yml](.github/workflows/deploy-cloud-run.yml) workflow mana
 4. migration job deployment
 5. API deployment
 6. web deployment
-7. post-deployment smoke test
+7. Resend email configuration through GitHub secrets / variables
+8. post-deployment smoke test
 
 In the current state:
 
 1. `nova-web` is public
 2. `nova-api` is public
-3. the smoke test validates the web flow and authentication
+3. the site can be built under a path prefix such as `/nova-assurance`
+4. the smoke test validates the web flow and authentication
 
 Related documentation:
 
@@ -442,7 +455,7 @@ The [smoke_web_app.py](scripts/smoke_web_app.py) script allows validating a web 
 Example:
 
 ```bash
-uv run --group test python scripts/smoke_web_app.py --base-url [https://nova-web-xxxxx.a.run.app](https://nova-web-xxxxx.a.run.app)
+uv run --group test python scripts/smoke_web_app.py --base-url "https://mohamed-khd.com/nova-assurance"
 ```
 
 This test notably verifies:
@@ -453,6 +466,7 @@ This test notably verifies:
 4. quote creation
 5. history
 6. PDF download
+7. quote email delivery status is returned
 
 ## Additional documentation
 
@@ -468,5 +482,5 @@ The project today covers an almost complete cycle:
 1. experimentation and model selection
 2. industrial HTTP exposure
 3. client/admin web application
-4. persistence and PDF
-5. CI, Docker, Cloud Run
+4. persistence, PDF, and recap email delivery
+5. CI, Docker, Cloud Run, and custom-domain-ready path routing

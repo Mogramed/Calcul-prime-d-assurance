@@ -14,6 +14,7 @@ from insurance_pricing.api.dependencies import get_settings
 from insurance_pricing.api.errors import install_exception_handlers
 from insurance_pricing.api.logging import configure_logging, get_logger
 from insurance_pricing.api.middleware import install_observability_middleware
+from insurance_pricing.api.quote_emailing import QuoteEmailSender, build_quote_email_sender
 from insurance_pricing.api.quote_store import QuoteStore
 from insurance_pricing.api.routers.admin import router as admin_router
 from insurance_pricing.api.routers.auth import router as auth_router
@@ -34,6 +35,7 @@ def create_app(
     audit_store: AuditStore | None = None,
     quote_store: QuoteStore | None = None,
     user_store: UserStore | None = None,
+    quote_email_sender: QuoteEmailSender | None = None,
 ) -> FastAPI:
     resolved_settings = settings if settings is not None else get_settings()
     configure_logging(level=resolved_settings.log_level, json_logs=resolved_settings.log_json)
@@ -44,6 +46,24 @@ def create_app(
     )
     resolved_quote_store = quote_store if quote_store is not None else resolved_audit_store
     resolved_user_store = user_store if user_store is not None else resolved_audit_store
+    resolved_quote_email_sender = (
+        quote_email_sender
+        if quote_email_sender is not None
+        else build_quote_email_sender(
+            resend_api_key=(
+                resolved_settings.resend_api_key.get_secret_value()
+                if resolved_settings.resend_api_key is not None
+                else None
+            ),
+            resend_sender_email=(
+                str(resolved_settings.resend_sender_email)
+                if resolved_settings.resend_sender_email is not None
+                else None
+            ),
+            resend_sender_name=resolved_settings.resend_sender_name,
+            public_web_url=resolved_settings.public_web_url,
+        )
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -56,6 +76,7 @@ def create_app(
             app.state.audit_store = resolved_audit_store
             app.state.quote_store = resolved_quote_store
             app.state.user_store = resolved_user_store
+            app.state.quote_email_sender = resolved_quote_email_sender
             await resolved_audit_store.startup()
             if resolved_quote_store is not resolved_audit_store:
                 await resolved_quote_store.startup()
@@ -77,6 +98,9 @@ def create_app(
                 "database_configured": True,
                 "cors_allowed_origins": resolved_settings.cors_allowed_origins,
                 "admin_emails": resolved_settings.admin_emails,
+                "email_delivery_configured": resolved_settings.resend_api_key is not None
+                and resolved_settings.resend_sender_email is not None,
+                "root_path": resolved_settings.root_path,
             },
         )
         yield
@@ -111,6 +135,7 @@ def create_app(
             "`X-Client-ID` header so the Next.js frontend can retrieve prior simulations."
         ),
         version=__version__,
+        root_path=resolved_settings.root_path,
         lifespan=lifespan,
         contact={
             "name": "Insurance Pricing Team",
@@ -165,6 +190,7 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.quote_store = resolved_quote_store
     app.state.user_store = resolved_user_store
+    app.state.quote_email_sender = resolved_quote_email_sender
     if resolved_settings.cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,

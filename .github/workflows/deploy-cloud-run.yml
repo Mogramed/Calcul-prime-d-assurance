@@ -28,6 +28,12 @@ env:
   INSURANCE_PRICING_RUN_ID: ${{ vars.INSURANCE_PRICING_RUN_ID }}
   INSURANCE_PRICING_ADMIN_EMAILS: ${{ vars.INSURANCE_PRICING_ADMIN_EMAILS }}
   INSURANCE_PRICING_SESSION_TTL_HOURS: ${{ vars.INSURANCE_PRICING_SESSION_TTL_HOURS || '720' }}
+  INSURANCE_PRICING_ROOT_PATH: ${{ vars.INSURANCE_PRICING_ROOT_PATH || '' }}
+  INSURANCE_PRICING_PUBLIC_WEB_URL: ${{ vars.INSURANCE_PRICING_PUBLIC_WEB_URL || '' }}
+  INSURANCE_PRICING_PUBLIC_API_URL: ${{ vars.INSURANCE_PRICING_PUBLIC_API_URL || '' }}
+  INSURANCE_PRICING_RESEND_SENDER_EMAIL: ${{ vars.INSURANCE_PRICING_RESEND_SENDER_EMAIL || '' }}
+  INSURANCE_PRICING_RESEND_SENDER_NAME: ${{ vars.INSURANCE_PRICING_RESEND_SENDER_NAME || 'Nova Assurances' }}
+  NEXT_PUBLIC_BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH || '' }}
   ENABLE_CLOUD_RUN_SMOKE_TEST: ${{ vars.ENABLE_CLOUD_RUN_SMOKE_TEST || 'false' }}
   CLOUD_RUN_API_IMAGE_NAME: ${{ vars.CLOUD_RUN_API_IMAGE_NAME || 'insurance-pricing-api' }}
   CLOUD_RUN_WEB_IMAGE_NAME: ${{ vars.CLOUD_RUN_WEB_IMAGE_NAME || 'nova-assurances-web' }}
@@ -205,6 +211,8 @@ jobs:
           context: ./web
           file: ./web/Dockerfile
           push: true
+          build-args: |
+            NEXT_PUBLIC_BASE_PATH=${{ env.NEXT_PUBLIC_BASE_PATH }}
           tags: |
             ${{ steps.image.outputs.web_image_uri }}
             ${{ steps.image.outputs.web_latest_uri }}
@@ -248,13 +256,14 @@ jobs:
           API_IMAGE_URI: ${{ steps.image.outputs.api_image_uri }}
           SHORT_SHA: ${{ steps.image.outputs.short_sha }}
           INSURANCE_PRICING_DATABASE_URL: ${{ secrets.INSURANCE_PRICING_DATABASE_URL }}
+          INSURANCE_PRICING_RESEND_API_KEY: ${{ secrets.INSURANCE_PRICING_RESEND_API_KEY }}
         run: |
           gcloud run deploy "${CLOUD_RUN_API_SERVICE}" \
             --project "${GCP_PROJECT_ID}" \
             --region "${GCP_REGION}" \
             --image "${API_IMAGE_URI}" \
             --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
-            --set-env-vars "INSURANCE_PRICING_RUN_ID=${INSURANCE_PRICING_RUN_ID},INSURANCE_PRICING_DATABASE_URL=${INSURANCE_PRICING_DATABASE_URL},INSURANCE_PRICING_LOG_LEVEL=INFO,INSURANCE_PRICING_LOG_JSON=true,INSURANCE_PRICING_CORS_ALLOWED_ORIGINS=,INSURANCE_PRICING_ADMIN_EMAILS=${INSURANCE_PRICING_ADMIN_EMAILS},INSURANCE_PRICING_SESSION_TTL_HOURS=${INSURANCE_PRICING_SESSION_TTL_HOURS}" \
+            --set-env-vars "INSURANCE_PRICING_RUN_ID=${INSURANCE_PRICING_RUN_ID},INSURANCE_PRICING_DATABASE_URL=${INSURANCE_PRICING_DATABASE_URL},INSURANCE_PRICING_LOG_LEVEL=INFO,INSURANCE_PRICING_LOG_JSON=true,INSURANCE_PRICING_CORS_ALLOWED_ORIGINS=,INSURANCE_PRICING_ADMIN_EMAILS=${INSURANCE_PRICING_ADMIN_EMAILS},INSURANCE_PRICING_SESSION_TTL_HOURS=${INSURANCE_PRICING_SESSION_TTL_HOURS},INSURANCE_PRICING_ROOT_PATH=${INSURANCE_PRICING_ROOT_PATH},INSURANCE_PRICING_PUBLIC_WEB_URL=${INSURANCE_PRICING_PUBLIC_WEB_URL},INSURANCE_PRICING_RESEND_SENDER_EMAIL=${INSURANCE_PRICING_RESEND_SENDER_EMAIL},INSURANCE_PRICING_RESEND_SENDER_NAME=${INSURANCE_PRICING_RESEND_SENDER_NAME},INSURANCE_PRICING_RESEND_API_KEY=${INSURANCE_PRICING_RESEND_API_KEY}" \
             --cpu "${CLOUD_RUN_API_CPU}" \
             --memory "${CLOUD_RUN_API_MEMORY}" \
             --concurrency "${CLOUD_RUN_API_CONCURRENCY}" \
@@ -299,7 +308,7 @@ jobs:
             --region "${GCP_REGION}" \
             --image "${WEB_IMAGE_URI}" \
             --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
-            --set-env-vars "API_BASE_URL=${API_URL},API_AUDIENCE=${API_URL},COOKIE_SECURE=true" \
+            --set-env-vars "API_BASE_URL=${API_URL},API_AUDIENCE=${API_URL},COOKIE_SECURE=true,NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}" \
             --cpu "${CLOUD_RUN_WEB_CPU}" \
             --memory "${CLOUD_RUN_WEB_MEMORY}" \
             --concurrency "${CLOUD_RUN_WEB_CONCURRENCY}" \
@@ -323,6 +332,19 @@ jobs:
 
           echo "web_url=${web_url}" >> "${GITHUB_OUTPUT}"
 
+      - name: Resolve public entry URLs
+        id: public-urls
+        shell: bash
+        env:
+          API_URL: ${{ steps.api-url.outputs.api_url }}
+          WEB_URL: ${{ steps.web-url.outputs.web_url }}
+        run: |
+          public_web_url="${INSURANCE_PRICING_PUBLIC_WEB_URL:-${WEB_URL}${NEXT_PUBLIC_BASE_PATH}}"
+          public_api_url="${INSURANCE_PRICING_PUBLIC_API_URL:-${API_URL}}"
+
+          echo "public_web_url=${public_web_url}" >> "${GITHUB_OUTPUT}"
+          echo "public_api_url=${public_api_url}" >> "${GITHUB_OUTPUT}"
+
       - name: Set up Python for smoke test
         if: env.ENABLE_CLOUD_RUN_SMOKE_TEST == 'true'
         uses: actions/setup-python@v5
@@ -337,7 +359,7 @@ jobs:
         if: env.ENABLE_CLOUD_RUN_SMOKE_TEST == 'true'
         shell: bash
         env:
-          WEB_URL: ${{ steps.web-url.outputs.web_url }}
+          WEB_URL: ${{ steps.public-urls.outputs.public_web_url }}
           CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL: ${{ vars.CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL }}
           CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD: ${{ secrets.CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD }}
         run: |
@@ -369,15 +391,19 @@ jobs:
           DEPLOY_SHA: ${{ steps.image.outputs.deploy_sha }}
           API_URL: ${{ steps.api-url.outputs.api_url }}
           WEB_URL: ${{ steps.web-url.outputs.web_url }}
+          PUBLIC_API_URL: ${{ steps.public-urls.outputs.public_api_url }}
+          PUBLIC_WEB_URL: ${{ steps.public-urls.outputs.public_web_url }}
         run: |
           {
             echo "### Cloud Run Deployment"
             echo
             echo "- Web service: \`${CLOUD_RUN_WEB_SERVICE}\`"
-            echo "- Web URL: ${WEB_URL}"
+            echo "- Web service URL: ${WEB_URL}"
+            echo "- Public web entry: ${PUBLIC_WEB_URL}"
             echo "- Web image: \`${WEB_IMAGE_URI}\`"
             echo "- API service: \`${CLOUD_RUN_API_SERVICE}\`"
-            echo "- API URL: ${API_URL}"
+            echo "- API service URL: ${API_URL}"
+            echo "- Public API entry: ${PUBLIC_API_URL}"
             echo "- API image: \`${API_IMAGE_URI}\`"
             echo "- Commit: \`${DEPLOY_SHA}\`"
             if [[ "${ENABLE_CLOUD_RUN_SMOKE_TEST}" == "true" ]]; then
@@ -386,5 +412,5 @@ jobs:
               echo "- Smoke test: disabled"
             fi
             echo
-            echo "The web service is public. The API service is public too, so Swagger and direct API access stay available on the Cloud Run URL."
+            echo "The web service is public. The API service is public too, so Swagger and direct API access stay available on the exposed API entrypoint."
           } >> "${GITHUB_STEP_SUMMARY}"
