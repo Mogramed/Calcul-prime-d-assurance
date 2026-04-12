@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { withAppBasePath } from "@/lib/app-paths";
 
 export default async function LegacyQuoteDetailPage({
   params,
@@ -7,5 +6,5 @@ export default async function LegacyQuoteDetailPage({
   params: Promise<{ quoteId: string }>;
 }) {
   const { quoteId } = await params;
-  redirect(withAppBasePath(`/mes-devis/${quoteId}`));
+  redirect(`/mes-devis/${quoteId}`);
 }
