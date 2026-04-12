@@ -359,13 +359,15 @@ jobs:
         if: env.ENABLE_CLOUD_RUN_SMOKE_TEST == 'true'
         shell: bash
         env:
-          WEB_URL: ${{ steps.public-urls.outputs.public_web_url }}
+          WEB_SERVICE_URL: ${{ steps.web-url.outputs.web_url }}
           CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL: ${{ vars.CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL }}
           CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD: ${{ secrets.CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD }}
         run: |
+          smoke_base_url="${WEB_SERVICE_URL%/}${NEXT_PUBLIC_BASE_PATH}"
+
           args=(
             scripts/smoke_web_app.py
-            --base-url "${WEB_URL}"
+            --base-url "${smoke_base_url}"
           )
 
           if [[ -n "${CLOUD_RUN_SMOKE_TEST_ADMIN_EMAIL}" ]]; then
@@ -381,6 +383,7 @@ jobs:
             )
           fi
 
+          echo "Running smoke test against ${smoke_base_url}"
           python "${args[@]}"
 
       - name: Summarize deployment
@@ -408,6 +411,7 @@ jobs:
             echo "- Commit: \`${DEPLOY_SHA}\`"
             if [[ "${ENABLE_CLOUD_RUN_SMOKE_TEST}" == "true" ]]; then
               echo "- Smoke test: enabled"
+              echo "- Smoke test target: ${WEB_URL}${NEXT_PUBLIC_BASE_PATH}"
             else
               echo "- Smoke test: disabled"
             fi
