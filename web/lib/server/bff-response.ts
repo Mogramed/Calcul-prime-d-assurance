@@ -26,5 +26,7 @@ export function publicSessionResponse(session: AuthSessionResponse): AuthSession
     authenticated: session.authenticated,
     user: session.user,
     expires_at_utc: session.expires_at_utc ?? null,
+    email_verification_required: session.email_verification_required ?? false,
+    email_verification_delivery: session.email_verification_delivery ?? null,
   };
 }

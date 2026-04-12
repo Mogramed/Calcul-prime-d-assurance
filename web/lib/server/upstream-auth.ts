@@ -6,6 +6,8 @@ import type {
   AdminUserListResponse,
   AuthCredentialsInput,
   AuthSessionResponse,
+  EmailVerificationInput,
+  SessionUser,
 } from "@/lib/api-types";
 import { UpstreamApiError, getServerAuthorizationHeader, getUpstreamApiBaseUrl } from "@/lib/server/upstream-quotes";
 
@@ -78,6 +80,13 @@ export function logoutUpstreamAccount(sessionToken?: string | null) {
   return upstreamRequest<null>("/auth/logout", {
     method: "POST",
     sessionToken,
+  });
+}
+
+export function verifyUpstreamAccountEmail(body: EmailVerificationInput) {
+  return upstreamRequest<SessionUser>("/auth/verify-email", {
+    method: "POST",
+    body,
   });
 }
 

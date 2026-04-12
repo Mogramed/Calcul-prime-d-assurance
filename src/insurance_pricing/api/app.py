@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from insurance_pricing import __version__
+from insurance_pricing.api.account_emailing import AccountEmailSender, build_account_email_sender
 from insurance_pricing.api.audit import AuditStore
 from insurance_pricing.api.auth_store import UserStore
 from insurance_pricing.api.db import PostgresAuditStore
@@ -36,6 +37,7 @@ def create_app(
     quote_store: QuoteStore | None = None,
     user_store: UserStore | None = None,
     quote_email_sender: QuoteEmailSender | None = None,
+    account_email_sender: AccountEmailSender | None = None,
 ) -> FastAPI:
     resolved_settings = settings if settings is not None else get_settings()
     configure_logging(level=resolved_settings.log_level, json_logs=resolved_settings.log_json)
@@ -64,6 +66,24 @@ def create_app(
             public_web_url=resolved_settings.public_web_url,
         )
     )
+    resolved_account_email_sender = (
+        account_email_sender
+        if account_email_sender is not None
+        else build_account_email_sender(
+            resend_api_key=(
+                resolved_settings.resend_api_key.get_secret_value()
+                if resolved_settings.resend_api_key is not None
+                else None
+            ),
+            resend_sender_email=(
+                str(resolved_settings.resend_sender_email)
+                if resolved_settings.resend_sender_email is not None
+                else None
+            ),
+            resend_sender_name=resolved_settings.resend_sender_name,
+            public_web_url=resolved_settings.public_web_url,
+        )
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -77,6 +97,7 @@ def create_app(
             app.state.quote_store = resolved_quote_store
             app.state.user_store = resolved_user_store
             app.state.quote_email_sender = resolved_quote_email_sender
+            app.state.account_email_sender = resolved_account_email_sender
             await resolved_audit_store.startup()
             if resolved_quote_store is not resolved_audit_store:
                 await resolved_quote_store.startup()
@@ -191,6 +212,7 @@ def create_app(
     app.state.quote_store = resolved_quote_store
     app.state.user_store = resolved_user_store
     app.state.quote_email_sender = resolved_quote_email_sender
+    app.state.account_email_sender = resolved_account_email_sender
     if resolved_settings.cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,

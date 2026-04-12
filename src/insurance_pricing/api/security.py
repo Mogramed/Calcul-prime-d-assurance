@@ -8,6 +8,7 @@ from argon2.exceptions import VerifyMismatchError
 
 PASSWORD_HASHER = PasswordHasher()
 DEFAULT_SESSION_TTL_HOURS = 24 * 30
+DEFAULT_EMAIL_VERIFICATION_TTL_HOURS = 24
 
 
 def hash_password(password: str) -> str:
@@ -26,4 +27,10 @@ def generate_session_token() -> str:
 
 
 def session_expiry(*, ttl_hours: int = DEFAULT_SESSION_TTL_HOURS) -> datetime:
+    return datetime.now(UTC) + timedelta(hours=ttl_hours)
+
+
+def email_verification_expiry(
+    *, ttl_hours: int = DEFAULT_EMAIL_VERIFICATION_TTL_HOURS
+) -> datetime:
     return datetime.now(UTC) + timedelta(hours=ttl_hours)

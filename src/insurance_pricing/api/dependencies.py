@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, Request
 
+from insurance_pricing.api.account_emailing import AccountEmailSender
 from insurance_pricing.api.audit import AuditStore
 from insurance_pricing.api.auth_store import (
     SESSION_TOKEN_HEADER,
@@ -46,6 +47,10 @@ def get_user_store(request: Request) -> UserStore:
 
 def get_quote_email_sender(request: Request) -> QuoteEmailSender:
     return cast(QuoteEmailSender, request.app.state.quote_email_sender)
+
+
+def get_account_email_sender(request: Request) -> AccountEmailSender:
+    return cast(AccountEmailSender, request.app.state.account_email_sender)
 
 
 def get_client_id(

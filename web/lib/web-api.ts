@@ -10,6 +10,8 @@ import type {
   AdminUserListResponse,
   AuthCredentialsInput,
   AuthSessionResponse,
+  EmailVerificationInput,
+  SessionUser,
 } from "@/lib/api-types";
 
 export class WebApiError extends Error {
@@ -29,6 +31,10 @@ type RequestOptions = RequestInit & {
 };
 
 function friendlyErrorMessage(status: number, body: ApiErrorBody | unknown) {
+  if (body && typeof body === "object" && "detail" in body && typeof body.detail === "string") {
+    return body.detail;
+  }
+
   if (status === 400 || status === 422) {
     return "Certaines informations doivent etre verifiees avant de continuer.";
   }
@@ -51,10 +57,6 @@ function friendlyErrorMessage(status: number, body: ApiErrorBody | unknown) {
 
   if (status === 503) {
     return "Le service est temporairement indisponible.";
-  }
-
-  if (body && typeof body === "object" && "detail" in body && typeof body.detail === "string") {
-    return body.detail;
   }
 
   return "Une erreur est survenue. Merci de reessayer dans un instant.";
@@ -93,6 +95,13 @@ export function createQuote(body: PredictionInput) {
   });
 }
 
+export function updateQuote(quoteId: string, body: PredictionInput) {
+  return request<QuoteResponse>(withBffPath(`/quotes/${quoteId}`), {
+    method: "PUT",
+    json: body,
+  });
+}
+
 export function listQuotes(signal?: AbortSignal) {
   return request<QuoteListResponse>(withBffPath("/quotes"), {
     method: "GET",
@@ -109,6 +118,13 @@ export function getQuote(quoteId: string, signal?: AbortSignal) {
 
 export function registerAccount(body: AuthCredentialsInput) {
   return request<AuthSessionResponse>(withBffPath("/auth/register"), {
+    method: "POST",
+    json: body,
+  });
+}
+
+export function verifyAccountEmail(body: EmailVerificationInput) {
+  return request<SessionUser>(withBffPath("/auth/verify-email"), {
     method: "POST",
     json: body,
   });

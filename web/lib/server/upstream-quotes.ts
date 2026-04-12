@@ -24,7 +24,7 @@ export class UpstreamApiError extends Error {
 }
 
 type RequestOptions = {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PUT";
   clientId: string;
   sessionToken?: string | null;
   body?: PredictionInput;
@@ -144,6 +144,20 @@ export function listUpstreamQuotes(clientId: string, sessionToken?: string | nul
 export function getUpstreamQuote(quoteId: string, clientId: string, sessionToken?: string | null) {
   return upstreamRequest<QuoteResponse>(`/quotes/${quoteId}`, {
     method: "GET",
+    clientId,
+    sessionToken,
+  });
+}
+
+export function updateUpstreamQuote(
+  quoteId: string,
+  body: PredictionInput,
+  clientId: string,
+  sessionToken?: string | null,
+) {
+  return upstreamRequest<QuoteResponse>(`/quotes/${quoteId}`, {
+    method: "PUT",
+    body,
     clientId,
     sessionToken,
   });

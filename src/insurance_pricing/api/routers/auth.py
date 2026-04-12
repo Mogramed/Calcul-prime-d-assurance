@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
+from insurance_pricing.api.account_emailing import AccountEmailDeliveryRecord, AccountEmailSender
 from insurance_pricing.api.auth_store import (
+    EmailVerificationCreateRecord,
     SessionCreateRecord,
     StoredAuthUserRecord,
     StoredUserRecord,
@@ -17,6 +19,7 @@ from insurance_pricing.api.auth_store import (
     normalize_email,
 )
 from insurance_pricing.api.dependencies import (
+    get_account_email_sender,
     get_app_settings,
     get_current_user,
     get_optional_client_id,
@@ -24,8 +27,15 @@ from insurance_pricing.api.dependencies import (
     get_user_store,
 )
 from insurance_pricing.api.quote_store import hash_client_id
-from insurance_pricing.api.schemas import AuthCredentialsInput, AuthSessionResponse, UserResponse
+from insurance_pricing.api.schemas import (
+    AuthCredentialsInput,
+    AuthSessionResponse,
+    EmailVerificationDeliveryResponse,
+    EmailVerificationInput,
+    UserResponse,
+)
 from insurance_pricing.api.security import (
+    email_verification_expiry,
     generate_session_token,
     hash_password,
     session_expiry,
@@ -43,6 +53,20 @@ def _user_response(user: StoredUserRecord | StoredAuthUserRecord) -> UserRespons
         email=user.email,
         role=user.role,
         is_active=user.is_active,
+        email_verified_at_utc=user.email_verified_at_utc,
+    )
+
+
+def _email_delivery_response(
+    delivery: AccountEmailDeliveryRecord | None,
+) -> EmailVerificationDeliveryResponse | None:
+    if delivery is None:
+        return None
+    return EmailVerificationDeliveryResponse(
+        status=delivery.status,
+        recipient_email=delivery.recipient_email,
+        detail=delivery.detail,
+        provider_status_code=delivery.provider_status_code,
     )
 
 
@@ -51,12 +75,15 @@ def _session_response(
     *,
     session_token: str | None = None,
     expires_at_utc: datetime | None = None,
+    email_verification_delivery: AccountEmailDeliveryRecord | None = None,
 ) -> AuthSessionResponse:
     return AuthSessionResponse(
         authenticated=user is not None,
         user=_user_response(user) if user is not None else None,
         session_token=session_token,
         expires_at_utc=expires_at_utc,
+        email_verification_required=user is not None and user.email_verified_at_utc is None,
+        email_verification_delivery=_email_delivery_response(email_verification_delivery),
     )
 
 
@@ -76,11 +103,13 @@ async def register_account(
     client_id: str | None = Depends(get_optional_client_id),
     user_store: UserStore = Depends(get_user_store),
     settings: AppSettings = Depends(get_app_settings),
+    account_email_sender: AccountEmailSender = Depends(get_account_email_sender),
 ) -> AuthSessionResponse:
     email = normalize_email(str(payload.email))
     role: Literal["customer", "admin"] = (
         "admin" if email in settings.admin_emails else "customer"
     )
+    email_verified_at_utc = datetime.now(UTC) if role == "admin" else None
 
     try:
         user = await user_store.create_user(
@@ -88,6 +117,7 @@ async def register_account(
                 email=email,
                 password_hash=hash_password(payload.password),
                 role=role,
+                email_verified_at_utc=email_verified_at_utc,
             )
         )
     except UserAlreadyExistsError as exc:
@@ -97,6 +127,7 @@ async def register_account(
 
     session_token = generate_session_token()
     expires_at_utc = session_expiry(ttl_hours=settings.session_ttl_hours)
+    email_verification_delivery: AccountEmailDeliveryRecord | None = None
 
     try:
         await user_store.create_session(
@@ -111,10 +142,28 @@ async def register_account(
                 client_id_hash=hash_client_id(client_id),
                 user_id=user.id,
             )
+        if user.email_verified_at_utc is None:
+            verification_token = generate_session_token()
+            await user_store.create_email_verification(
+                EmailVerificationCreateRecord(
+                    user_id=user.id,
+                    token_hash=hash_session_token(verification_token),
+                    expires_at_utc=email_verification_expiry(),
+                )
+            )
+            email_verification_delivery = await account_email_sender.send_verification_email(
+                recipient_email=user.email,
+                verification_token=verification_token,
+            )
     except UserStoreUnavailableError as exc:
         raise HTTPException(status_code=503, detail="Account creation is unavailable.") from exc
 
-    return _session_response(user, session_token=session_token, expires_at_utc=expires_at_utc)
+    return _session_response(
+        user,
+        session_token=session_token,
+        expires_at_utc=expires_at_utc,
+        email_verification_delivery=email_verification_delivery,
+    )
 
 
 @router.post(
@@ -144,6 +193,11 @@ async def login_account(
         raise HTTPException(status_code=401, detail="Invalid email or password.")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="This account is inactive.")
+    if user.email_verified_at_utc is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Veuillez confirmer votre adresse email avant de vous connecter.",
+        )
 
     session_token = generate_session_token()
     expires_at_utc = session_expiry(ttl_hours=settings.session_ttl_hours)
@@ -177,6 +231,35 @@ async def get_auth_session(
     current_user: StoredUserRecord | None = Depends(get_current_user),
 ) -> AuthSessionResponse:
     return _session_response(current_user)
+
+
+@router.post(
+    "/auth/verify-email",
+    response_model=UserResponse,
+    summary="Confirm a user email address",
+    operation_id="verify_account_email",
+    responses={
+        400: {"description": "The verification token is missing or invalid."},
+        404: {"description": "No pending verification matches this token."},
+        503: {"description": "Email verification is unavailable."},
+    },
+)
+async def verify_account_email(
+    payload: EmailVerificationInput = Body(),
+    user_store: UserStore = Depends(get_user_store),
+) -> UserResponse:
+    try:
+        user = await user_store.verify_email(hash_session_token(payload.token))
+    except UserStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Email verification is unavailable.") from exc
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ce lien de verification est invalide ou a expire.",
+        )
+
+    return _user_response(user)
 
 
 @router.post(

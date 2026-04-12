@@ -14,6 +14,7 @@ class UserCreateRecord:
     email: str
     password_hash: str
     role: UserRole
+    email_verified_at_utc: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +24,7 @@ class StoredUserRecord:
     email: str
     role: UserRole
     is_active: bool
+    email_verified_at_utc: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,10 +35,18 @@ class StoredAuthUserRecord:
     password_hash: str
     role: UserRole
     is_active: bool
+    email_verified_at_utc: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
 class SessionCreateRecord:
+    user_id: str
+    token_hash: str
+    expires_at_utc: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class EmailVerificationCreateRecord:
     user_id: str
     token_hash: str
     expires_at_utc: datetime
@@ -55,6 +65,7 @@ class AdminUserSummaryRecord:
     email: str
     role: UserRole
     is_active: bool
+    email_verified_at_utc: datetime | None
 
 
 class UserStoreUnavailableError(RuntimeError):
@@ -85,6 +96,12 @@ class UserStore(Protocol):
     async def create_session(self, record: SessionCreateRecord) -> None: ...
 
     async def delete_session(self, session_token_hash: str) -> None: ...
+
+    async def create_email_verification(
+        self, record: EmailVerificationCreateRecord
+    ) -> None: ...
+
+    async def verify_email(self, token_hash: str) -> StoredUserRecord | None: ...
 
     async def list_admin_users(self) -> list[AdminUserSummaryRecord]: ...
 
