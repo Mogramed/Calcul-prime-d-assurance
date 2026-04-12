@@ -68,7 +68,6 @@ export function QuoteWorkbench() {
   const {
     age_conducteur2,
     anciennete_permis2,
-    conducteur2,
     cylindre_vehicule,
     din_vehicule,
     essence_vehicule,
