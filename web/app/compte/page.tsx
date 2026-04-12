@@ -5,7 +5,6 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { withAppBasePath } from "@/lib/app-paths";
 import { formatDateTime } from "@/lib/format";
 import { getCurrentSessionUser } from "@/lib/server/current-user";
 
@@ -13,7 +12,7 @@ export default async function AccountPage() {
   const user = await getCurrentSessionUser();
 
   if (!user) {
-    redirect(withAppBasePath("/connexion"));
+    redirect("/connexion");
   }
 
   return (
