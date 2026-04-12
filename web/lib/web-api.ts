@@ -3,6 +3,7 @@ import type {
   QuoteListResponse,
   QuoteResponse,
 } from "@/generated/client/types.gen";
+import { withBffPath } from "@/lib/app-paths";
 import type {
   ApiErrorBody,
   AdminQuoteListResponse,
@@ -86,79 +87,79 @@ async function request<T>(path: string, options: RequestOptions = {}) {
 }
 
 export function createQuote(body: PredictionInput) {
-  return request<QuoteResponse>("/api/quotes", {
+  return request<QuoteResponse>(withBffPath("/quotes"), {
     method: "POST",
     json: body,
   });
 }
 
 export function listQuotes(signal?: AbortSignal) {
-  return request<QuoteListResponse>("/api/quotes", {
+  return request<QuoteListResponse>(withBffPath("/quotes"), {
     method: "GET",
     signal,
   });
 }
 
 export function getQuote(quoteId: string, signal?: AbortSignal) {
-  return request<QuoteResponse>(`/api/quotes/${quoteId}`, {
+  return request<QuoteResponse>(withBffPath(`/quotes/${quoteId}`), {
     method: "GET",
     signal,
   });
 }
 
 export function registerAccount(body: AuthCredentialsInput) {
-  return request<AuthSessionResponse>("/api/auth/register", {
+  return request<AuthSessionResponse>(withBffPath("/auth/register"), {
     method: "POST",
     json: body,
   });
 }
 
 export function loginAccount(body: AuthCredentialsInput) {
-  return request<AuthSessionResponse>("/api/auth/login", {
+  return request<AuthSessionResponse>(withBffPath("/auth/login"), {
     method: "POST",
     json: body,
   });
 }
 
 export function getAuthSession(signal?: AbortSignal) {
-  return request<AuthSessionResponse>("/api/auth/session", {
+  return request<AuthSessionResponse>(withBffPath("/auth/session"), {
     method: "GET",
     signal,
   });
 }
 
 export function logoutAccount() {
-  return request<null>("/api/auth/logout", {
+  return request<null>(withBffPath("/auth/logout"), {
     method: "POST",
   });
 }
 
 export function listAdminUsers(signal?: AbortSignal) {
-  return request<AdminUserListResponse>("/api/admin/users", {
+  return request<AdminUserListResponse>(withBffPath("/admin/users"), {
     method: "GET",
     signal,
   });
 }
 
 export function deactivateAdminUser(userId: string) {
-  return request<null>(`/api/admin/users/${userId}`, {
+  return request<null>(withBffPath(`/admin/users/${userId}`), {
     method: "DELETE",
   });
 }
 
 export function listAdminQuotes(signal?: AbortSignal) {
-  return request<AdminQuoteListResponse>("/api/admin/quotes", {
+  return request<AdminQuoteListResponse>(withBffPath("/admin/quotes"), {
     method: "GET",
     signal,
   });
 }
 
 export function deleteAdminQuote(quoteId: string) {
-  return request<null>(`/api/admin/quotes/${quoteId}`, {
+  return request<null>(withBffPath(`/admin/quotes/${quoteId}`), {
     method: "DELETE",
   });
 }
 
 export function getQuoteReportUrl(quoteId: string) {
-  return `/api/quotes/${quoteId}/report`;
+  return withBffPath(`/quotes/${quoteId}/report`);
 }

@@ -13,6 +13,7 @@ from insurance_pricing.api.auth_store import (
     UserStore,
     hash_session_token,
 )
+from insurance_pricing.api.quote_emailing import QuoteEmailSender
 from insurance_pricing.api.quote_store import CLIENT_ID_HEADER, QuoteStore
 from insurance_pricing.api.service import PredictionService
 from insurance_pricing.api.settings import AppSettings
@@ -41,6 +42,10 @@ def get_quote_store(request: Request) -> QuoteStore:
 
 def get_user_store(request: Request) -> UserStore:
     return cast(UserStore, request.app.state.user_store)
+
+
+def get_quote_email_sender(request: Request) -> QuoteEmailSender:
+    return cast(QuoteEmailSender, request.app.state.quote_email_sender)
 
 
 def get_client_id(

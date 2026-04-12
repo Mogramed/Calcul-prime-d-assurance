@@ -47,6 +47,12 @@ CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT=insurance-pricing-runtime@your-gcp-project.iam
 INSURANCE_PRICING_RUN_ID=base_v2_catboost_two_part_tweedie_1.3_train_smoke_42_classic_none_none
 INSURANCE_PRICING_ADMIN_EMAILS=admin@nova-assurances.fr
 INSURANCE_PRICING_SESSION_TTL_HOURS=720
+NEXT_PUBLIC_BASE_PATH=/nova-assurance
+INSURANCE_PRICING_ROOT_PATH=/nova-assurance/api
+INSURANCE_PRICING_PUBLIC_WEB_URL=https://mohamed-khd.com/nova-assurance
+INSURANCE_PRICING_PUBLIC_API_URL=https://mohamed-khd.com/nova-assurance/api
+INSURANCE_PRICING_RESEND_SENDER_EMAIL=contact@nova-assurance.fr
+INSURANCE_PRICING_RESEND_SENDER_NAME=Nova Assurances
 ```
 
 ## Repository secrets obligatoires
@@ -55,6 +61,7 @@ Ajoute exactement ces secrets:
 
 ```text
 INSURANCE_PRICING_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST/DATABASE?sslmode=require
+INSURANCE_PRICING_RESEND_API_KEY=re_xxxxxxxxx
 ```
 
 ## Variables optionnelles utiles
@@ -101,6 +108,19 @@ CLOUD_RUN_SMOKE_TEST_ADMIN_PASSWORD=your-admin-password
 
 L'email admin utilise ici doit deja etre present dans `INSURANCE_PRICING_ADMIN_EMAILS`.
 Le mot de passe doit etre cree dans `Actions > Secrets`, pas dans `Actions > Variables`.
+
+## Variables utiles pour Resend
+
+Pour l'envoi automatique du recapitulatif de devis par email:
+
+1. `INSURANCE_PRICING_RESEND_API_KEY` doit etre cree dans `Actions > Secrets`
+2. `INSURANCE_PRICING_RESEND_SENDER_EMAIL` et `INSURANCE_PRICING_RESEND_SENDER_NAME` vont dans `Actions > Variables`
+3. `INSURANCE_PRICING_PUBLIC_WEB_URL` permet de pointer le client vers son espace dans l'email
+
+Attention:
+
+1. l'adresse expediteur doit appartenir a un domaine que tu possedes et verifies dans Resend
+2. si tu ne possedes pas `nova-assurance.fr`, utilise plutot une adresse sur `mohamed-khd.com`
 
 ## Ordre recommande
 

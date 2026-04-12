@@ -120,6 +120,7 @@ export function QuoteWorkbench() {
   });
 
   const activeQuote = createQuoteMutation.data ?? quoteQuery.data;
+  const latestEmailDelivery = createQuoteMutation.data?.email_delivery;
 
   async function goToNextStep() {
     const stepIsValid = await form.trigger(currentStepFields, { shouldFocus: true });
@@ -411,6 +412,24 @@ export function QuoteWorkbench() {
                     <Link href={`/mes-devis/${activeQuote.id}`}>Voir le recapitulatif</Link>
                   </Button>
                 </div>
+
+                {latestEmailDelivery ? (
+                  <div
+                    className={`rounded-[24px] border px-4 py-4 text-sm leading-7 ${
+                      latestEmailDelivery.status === "sent"
+                        ? "border-[color:color-mix(in_srgb,var(--success)_18%,white)] bg-[color:color-mix(in_srgb,var(--success)_8%,white)] text-[var(--foreground)]"
+                        : latestEmailDelivery.status === "failed"
+                          ? "border-[color:color-mix(in_srgb,var(--warning)_22%,white)] bg-[color:color-mix(in_srgb,var(--warning)_8%,white)] text-[var(--foreground)]"
+                          : "border-[var(--line)] bg-white/82 text-[var(--foreground)]"
+                    }`}
+                  >
+                    {latestEmailDelivery.status === "sent"
+                      ? `Un recapitulatif a ete envoye a ${latestEmailDelivery.recipient_email ?? authSessionQuery.data?.user?.email ?? "votre adresse email"}, avec le PDF de votre devis.`
+                      : latestEmailDelivery.status === "failed"
+                        ? "Votre devis est bien cree, mais l'envoi par email n'a pas pu aboutir pour le moment. Le PDF reste disponible dans votre espace."
+                        : "Le devis est pret. Le recapitulatif email sera disponible des que l'envoi automatique sera configure."}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="rounded-[28px] border border-dashed border-[var(--line)] bg-white/72 p-6 text-sm leading-7 text-[var(--muted)]">

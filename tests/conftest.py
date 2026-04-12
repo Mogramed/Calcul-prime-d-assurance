@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -23,6 +24,7 @@ from insurance_pricing.api.auth_store import (
     UserAlreadyExistsError,
     UserStore,
 )
+from insurance_pricing.api.quote_emailing import QuoteEmailDeliveryRecord, QuoteEmailSender
 from insurance_pricing.api.quote_store import (
     AdminQuoteSummaryRecord,
     QuoteCreateRecord,
@@ -291,6 +293,37 @@ class InMemoryAuditStore(AuditStore, QuoteStore, UserStore):
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class SentQuoteEmail:
+    quote_id: str
+    recipient_email: str
+    pdf_bytes: bytes
+
+
+class InMemoryQuoteEmailSender(QuoteEmailSender):
+    def __init__(self, *, fail_send: bool = False) -> None:
+        self.fail_send = fail_send
+        self.sent_emails: list[SentQuoteEmail] = []
+
+    async def send_quote_email(
+        self,
+        *,
+        quote: StoredQuoteRecord,
+        recipient_email: str,
+        pdf_bytes: bytes,
+    ) -> QuoteEmailDeliveryRecord:
+        if self.fail_send:
+            raise RuntimeError("Quote email delivery failed.")
+        self.sent_emails.append(
+            SentQuoteEmail(
+                quote_id=quote.id,
+                recipient_email=recipient_email,
+                pdf_bytes=pdf_bytes,
+            )
+        )
+        return QuoteEmailDeliveryRecord(status="sent", recipient_email=recipient_email)
+
+
 def _public_user(user: StoredAuthUserRecord) -> StoredUserRecord:
     return StoredUserRecord(
         id=user.id,
@@ -357,3 +390,8 @@ def in_memory_audit_store() -> InMemoryAuditStore:
 @pytest.fixture
 def audit_store_factory():
     return InMemoryAuditStore
+
+
+@pytest.fixture
+def in_memory_quote_email_sender() -> InMemoryQuoteEmailSender:
+    return InMemoryQuoteEmailSender()

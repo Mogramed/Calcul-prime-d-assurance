@@ -6,11 +6,11 @@ import sys
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 SAMPLE_QUOTE_INPUT: dict[str, Any] = {
-    "index": 50000,
     "bonus": 0.58,
     "type_contrat": "Maxi",
     "duree_contrat": 1,
@@ -63,6 +63,11 @@ def _response_preview(response: httpx.Response) -> str:
     return body[:300]
 
 
+def _request_path(path: str) -> str:
+    normalized = path.lstrip("/")
+    return normalized or "."
+
+
 def _expect_status(
     response: httpx.Response,
     *,
@@ -80,7 +85,7 @@ def _expect_status(
 
 def _check_page(client: httpx.Client, path: str, *, expected_text: str) -> None:
     step = f"page {path}"
-    response = client.get(path)
+    response = client.get(_request_path(path))
     _expect_status(response, step=step, expected=200)
     if expected_text not in response.text:
         raise _fail(step, f"expected to find '{expected_text}' in the HTML response.")
@@ -91,16 +96,18 @@ def _check_protected_page_redirect(
     client: httpx.Client,
     path: str,
     *,
+    app_base_path: str,
     expected_redirect_path: str,
     expected_text: str,
 ) -> None:
     step = f"protected page {path}"
-    response = client.get(path)
+    response = client.get(_request_path(path))
     _expect_status(response, step=step, expected=200)
-    if response.url.path != expected_redirect_path:
+    final_expected_path = f"{app_base_path}{expected_redirect_path}" if app_base_path else expected_redirect_path
+    if response.url.path != final_expected_path:
         raise _fail(
             step,
-            f"expected final path '{expected_redirect_path}', got '{response.url.path}'.",
+            f"expected final path '{final_expected_path}', got '{response.url.path}'.",
         )
     if expected_text not in response.text:
         raise _fail(step, f"expected to find '{expected_text}' in the redirected HTML response.")
@@ -115,7 +122,7 @@ def _post_json(
     payload: dict[str, Any] | None = None,
     expected: int | tuple[int, ...] = 200,
 ) -> dict[str, Any]:
-    response = client.post(path, json=payload)
+    response = client.post(_request_path(path), json=payload)
     _expect_status(response, step=step, expected=expected)
     return response.json()
 
@@ -127,7 +134,7 @@ def _get_json(
     step: str,
     expected: int | tuple[int, ...] = 200,
 ) -> dict[str, Any]:
-    response = client.get(path)
+    response = client.get(_request_path(path))
     _expect_status(response, step=step, expected=expected)
     return response.json()
 
@@ -139,7 +146,7 @@ def _delete(
     step: str,
     expected: int | tuple[int, ...] = 204,
 ) -> None:
-    response = client.delete(path)
+    response = client.delete(_request_path(path))
     _expect_status(response, step=step, expected=expected)
 
 
@@ -157,7 +164,7 @@ def _customer_flow(
 ) -> SmokeArtifacts:
     register = _post_json(
         client,
-        "/api/auth/register",
+        "/app-api/auth/register",
         step="customer registration",
         payload={"email": email, "password": password},
         expected=(200, 201),
@@ -170,14 +177,14 @@ def _customer_flow(
         raise _fail("customer registration", "the returned user email does not match.")
     _log_ok("customer registration", email)
 
-    session = _get_json(client, "/api/auth/session", step="session lookup")
+    session = _get_json(client, "/app-api/auth/session", step="session lookup")
     if session.get("authenticated") is not True:
         raise _fail("session lookup", "the session endpoint did not confirm the login.")
     _log_ok("session lookup", "authenticated session confirmed")
 
     quote = _post_json(
         client,
-        "/api/quotes",
+        "/app-api/quotes",
         step="quote creation",
         payload=SAMPLE_QUOTE_INPUT,
         expected=200,
@@ -188,15 +195,18 @@ def _customer_flow(
         raise _fail("quote creation", "missing quote identifier in response.")
     if not isinstance(prime, (int, float)) or prime <= 0:
         raise _fail("quote creation", "prime prediction was not returned as a positive number.")
+    email_delivery = quote.get("email_delivery") or {}
+    if email_delivery.get("status") not in {"sent", "failed", "skipped"}:
+        raise _fail("quote creation", "email delivery status was not returned.")
     _log_ok("quote creation", f"quote {quote_id} created")
 
-    history = _get_json(client, "/api/quotes", step="quote history")
+    history = _get_json(client, "/app-api/quotes", step="quote history")
     history_ids = {item.get("id") for item in history.get("quotes", [])}
     if quote_id not in history_ids:
         raise _fail("quote history", "the created quote was not found in history.")
     _log_ok("quote history", "quote visible in customer history")
 
-    pdf_response = client.get(f"/api/quotes/{quote_id}/report")
+    pdf_response = client.get(_request_path(f"/app-api/quotes/{quote_id}/report"))
     _expect_status(pdf_response, step="quote pdf", expected=200)
     content_type = pdf_response.headers.get("content-type", "")
     if "application/pdf" not in content_type:
@@ -228,12 +238,12 @@ def _admin_cleanup(
         headers={"User-Agent": "nova-assurances-smoke/1.0"},
     ) as client:
         login_response = client.post(
-            "/api/auth/login",
+            _request_path("/app-api/auth/login"),
             json={"email": admin_email, "password": admin_password},
         )
         if login_response.status_code == 401 and admin_register_if_missing:
             register_response = client.post(
-                "/api/auth/register",
+                _request_path("/app-api/auth/register"),
                 json={"email": admin_email, "password": admin_password},
             )
             _expect_status(
@@ -267,8 +277,8 @@ def _admin_cleanup(
                 )
             _log_ok("admin login", admin_email)
 
-        users = _get_json(client, "/api/admin/users", step="admin user list")
-        quotes = _get_json(client, "/api/admin/quotes", step="admin quote list")
+        users = _get_json(client, "/app-api/admin/users", step="admin user list")
+        quotes = _get_json(client, "/app-api/admin/quotes", step="admin quote list")
         if artifacts.customer_user_id and all(
             item.get("id") != artifacts.customer_user_id for item in users.get("users", [])
         ):
@@ -280,12 +290,12 @@ def _admin_cleanup(
         _log_ok("admin views", "admin endpoints reachable")
 
         if artifacts.quote_id:
-            _delete(client, f"/api/admin/quotes/{artifacts.quote_id}", step="admin quote cleanup")
+            _delete(client, f"/app-api/admin/quotes/{artifacts.quote_id}", step="admin quote cleanup")
             _log_ok("admin quote cleanup", artifacts.quote_id)
         if artifacts.customer_user_id:
             _delete(
                 client,
-                f"/api/admin/users/{artifacts.customer_user_id}",
+                f"/app-api/admin/users/{artifacts.customer_user_id}",
                 step="admin user cleanup",
             )
             _log_ok("admin user cleanup", artifacts.customer_email)
@@ -349,7 +359,8 @@ def main() -> int:
         return 2
 
     customer_email = args.customer_email or _build_customer_email(args.customer_email_prefix)
-    base_url = args.base_url.rstrip("/")
+    base_url = f"{args.base_url.rstrip('/')}/"
+    app_base_path = urlsplit(base_url).path.rstrip("/")
 
     artifacts: SmokeArtifacts | None = None
     try:
@@ -363,6 +374,7 @@ def main() -> int:
             _check_protected_page_redirect(
                 client,
                 "/devis",
+                app_base_path=app_base_path,
                 expected_redirect_path="/connexion",
                 expected_text="Connexion a votre espace",
             )

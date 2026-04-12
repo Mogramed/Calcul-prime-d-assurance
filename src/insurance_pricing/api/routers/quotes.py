@@ -10,8 +10,11 @@ from insurance_pricing.api.dependencies import (
     get_client_id,
     get_current_user,
     get_prediction_service,
+    get_quote_email_sender,
     get_quote_store,
 )
+from insurance_pricing.api.logging import get_logger
+from insurance_pricing.api.quote_emailing import QuoteEmailDeliveryRecord, QuoteEmailSender
 from insurance_pricing.api.quote_store import (
     QuoteCreateRecord,
     QuoteStore,
@@ -24,6 +27,7 @@ from insurance_pricing.api.reporting import build_quote_report_pdf
 from insurance_pricing.api.schemas import (
     SINGLE_PREDICTION_EXAMPLE,
     PredictionInput,
+    QuoteEmailDeliveryResponse,
     QuoteListResponse,
     QuoteResponse,
     QuoteResultResponse,
@@ -32,6 +36,7 @@ from insurance_pricing.api.schemas import (
 from insurance_pricing.api.service import PredictionService
 
 router = APIRouter(tags=["quotes"])
+QUOTE_ROUTER_LOGGER = get_logger("insurance_pricing.api.routers.quotes")
 
 
 def _mark_request(request: Request, *, endpoint_kind: str) -> None:
@@ -43,7 +48,11 @@ def _quote_result(prediction: dict[str, object]) -> QuoteResultResponse:
     return QuoteResultResponse(**prediction)
 
 
-def _quote_response(record: StoredQuoteRecord) -> QuoteResponse:
+def _quote_response(
+    record: StoredQuoteRecord,
+    *,
+    email_delivery: QuoteEmailDeliveryRecord | None = None,
+) -> QuoteResponse:
     return QuoteResponse(
         id=record.id,
         created_at_utc=record.created_at_utc,
@@ -55,6 +64,14 @@ def _quote_response(record: StoredQuoteRecord) -> QuoteResponse:
                 "severity_prediction": record.severity_prediction,
                 "prime_prediction": record.prime_prediction,
             }
+        ),
+        email_delivery=(
+            QuoteEmailDeliveryResponse(
+                status=email_delivery.status,
+                recipient_email=email_delivery.recipient_email,
+            )
+            if email_delivery is not None
+            else None
         ),
     )
 
@@ -119,6 +136,7 @@ async def create_quote(
     current_user: StoredUserRecord | None = Depends(get_current_user),
     service: PredictionService = Depends(get_prediction_service),
     quote_store: QuoteStore = Depends(get_quote_store),
+    quote_email_sender: QuoteEmailSender = Depends(get_quote_email_sender),
 ) -> QuoteResponse:
     _mark_request(request, endpoint_kind="quote_create")
     payload_obj = payload.model_dump(mode="python")
@@ -139,7 +157,13 @@ async def create_quote(
     except QuoteStoreUnavailableError as exc:
         raise HTTPException(status_code=503, detail="Quote persistence is unavailable.") from exc
 
-    return _quote_response(stored_quote)
+    email_delivery = await _send_quote_email_if_possible(
+        stored_quote=stored_quote,
+        current_user=current_user,
+        quote_email_sender=quote_email_sender,
+    )
+
+    return _quote_response(stored_quote, email_delivery=email_delivery)
 
 
 @router.get(
@@ -264,3 +288,34 @@ async def download_quote_report(
 
 def _pdf_filename(quote: StoredQuoteRecord) -> str:
     return f"{Path('nova-devis-' + quote.id).stem}.pdf"
+
+
+async def _send_quote_email_if_possible(
+    *,
+    stored_quote: StoredQuoteRecord,
+    current_user: StoredUserRecord | None,
+    quote_email_sender: QuoteEmailSender,
+) -> QuoteEmailDeliveryRecord:
+    if current_user is None:
+        return QuoteEmailDeliveryRecord(status="skipped", recipient_email=None)
+
+    try:
+        pdf_bytes = await run_in_threadpool(build_quote_report_pdf, stored_quote)
+        return await quote_email_sender.send_quote_email(
+            quote=stored_quote,
+            recipient_email=current_user.email,
+            pdf_bytes=pdf_bytes,
+        )
+    except Exception:
+        QUOTE_ROUTER_LOGGER.warning(
+            "quote_email_delivery_failed",
+            extra={
+                "quote_id": stored_quote.id,
+                "recipient_email": current_user.email,
+            },
+            exc_info=True,
+        )
+        return QuoteEmailDeliveryRecord(
+            status="failed",
+            recipient_email=current_user.email,
+        )

@@ -8,6 +8,8 @@ RUN npm install --no-fund --no-audit
 FROM node:22-alpine AS build
 
 WORKDIR /app
+ARG NEXT_PUBLIC_BASE_PATH=""
+ENV NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
