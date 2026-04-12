@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from html import escape
@@ -108,7 +109,7 @@ class ResendQuoteEmailSender:
         recipient_email: str,
         pdf_bytes: bytes,
     ) -> QuoteEmailDeliveryRecord:
-        payload = {
+        payload: Mapping[str, object] = {
             "from": f"{self.sender_name} <{self.sender_email}>",
             "to": [recipient_email],
             "subject": "Votre devis Nova Assurances",
@@ -317,7 +318,7 @@ def _quote_report_filename(quote: StoredQuoteRecord) -> str:
 
 
 def _post_resend_email(
-    payload: dict[str, object],
+    payload: Mapping[str, object],
     headers: dict[str, str],
 ) -> tuple[int, str]:
     request = Request(
