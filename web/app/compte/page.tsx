@@ -35,7 +35,7 @@ export default async function AccountPage() {
             {!user.email_verified_at_utc ? (
               <div className="rounded-[24px] border border-[color:color-mix(in_srgb,var(--warning)_22%,white)] bg-[color:color-mix(in_srgb,var(--warning)_8%,white)] p-4 text-sm leading-7 text-[var(--foreground)]">
                 Nous vous avons envoye un email de confirmation. Validez votre adresse pour securiser
-                l'acces a votre compte sur la duree et conserver une connexion fiable sur tous vos
+                l&rsquo;acces a votre compte sur la duree et conserver une connexion fiable sur tous vos
                 appareils.
               </div>
             ) : null}

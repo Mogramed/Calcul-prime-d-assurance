@@ -65,6 +65,20 @@ export function QuoteWorkbench() {
     defaultValue: defaultQuoteValues,
   });
   const formValues: QuoteFormValues = { ...defaultQuoteValues, ...watchedValues };
+  const {
+    age_conducteur2,
+    anciennete_permis2,
+    conducteur2,
+    cylindre_vehicule,
+    din_vehicule,
+    essence_vehicule,
+    marque_vehicule,
+    modele_vehicule,
+    poids_vehicule,
+    sex_conducteur2,
+    vehicle_variant_id,
+    vitesse_vehicule,
+  } = formValues;
   const currentStep = quoteSteps[activeStepIndex];
   const currentStepFields = getStepFields(currentStep.id, formValues);
   const secondDriverEnabled = isSecondDriverEnabled(formValues);
@@ -88,25 +102,42 @@ export function QuoteWorkbench() {
   }, [form, quoteQuery.data]);
 
   useEffect(() => {
-    if (formValues.modele_vehicule && !modelOptions.some((option) => option.value === formValues.modele_vehicule)) {
+    if (modele_vehicule && !modelOptions.some((option) => option.value === modele_vehicule)) {
       form.setValue("modele_vehicule", "");
       form.setValue("vehicle_variant_id", "");
     }
-  }, [form, formValues.modele_vehicule, modelOptions]);
+  }, [form, modele_vehicule, modelOptions]);
 
   useEffect(() => {
     if (
-      formValues.vehicle_variant_id &&
-      !vehicleVariantOptions.some((option) => option.value === formValues.vehicle_variant_id)
+      vehicle_variant_id &&
+      !vehicleVariantOptions.some((option) => option.value === vehicle_variant_id)
     ) {
       form.setValue("vehicle_variant_id", "");
     }
-  }, [form, formValues.vehicle_variant_id, vehicleVariantOptions]);
+  }, [form, vehicle_variant_id, vehicleVariantOptions]);
 
   useEffect(() => {
-    const nextValues = applyVehicleVariantToValues(formValues);
+    const nextValues = applyVehicleVariantToValues({
+      ...defaultQuoteValues,
+      marque_vehicule,
+      modele_vehicule,
+      vehicle_variant_id,
+      essence_vehicule,
+      din_vehicule,
+      vitesse_vehicule,
+      cylindre_vehicule,
+      poids_vehicule,
+    });
+    const currentAutofillValues = {
+      essence_vehicule,
+      din_vehicule,
+      vitesse_vehicule,
+      cylindre_vehicule,
+      poids_vehicule,
+    };
     for (const fieldName of vehicleAutofillFieldNames) {
-      if (formValues[fieldName] !== nextValues[fieldName]) {
+      if (currentAutofillValues[fieldName] !== nextValues[fieldName]) {
         form.setValue(fieldName, nextValues[fieldName], {
           shouldDirty: Boolean(form.formState.isDirty),
           shouldValidate: false,
@@ -116,27 +147,34 @@ export function QuoteWorkbench() {
   }, [
     form,
     form.formState.isDirty,
-    formValues,
+    marque_vehicule,
+    modele_vehicule,
+    vehicle_variant_id,
+    essence_vehicule,
+    din_vehicule,
+    vitesse_vehicule,
+    cylindre_vehicule,
+    poids_vehicule,
   ]);
 
   useEffect(() => {
     if (!secondDriverEnabled) {
-      if (formValues.age_conducteur2) {
+      if (age_conducteur2) {
         form.setValue("age_conducteur2", "");
       }
-      if (formValues.sex_conducteur2) {
+      if (sex_conducteur2) {
         form.setValue("sex_conducteur2", "");
       }
-      if (formValues.anciennete_permis2) {
+      if (anciennete_permis2) {
         form.setValue("anciennete_permis2", "");
       }
     }
   }, [
+    age_conducteur2,
+    anciennete_permis2,
     form,
-    formValues.age_conducteur2,
-    formValues.anciennete_permis2,
-    formValues.sex_conducteur2,
     secondDriverEnabled,
+    sex_conducteur2,
   ]);
 
   const saveQuoteMutation = useMutation({

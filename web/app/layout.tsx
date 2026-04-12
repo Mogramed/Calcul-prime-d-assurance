@@ -87,7 +87,7 @@ export default async function RootLayout({
                   <p className="font-medium text-[var(--foreground)]">Nova Assurances</p>
                   <div className="space-y-1 leading-7">
                     <p>
-                      Projet demonstrateur de tarification auto. Les estimations affichees sur ce site sont fournies a titre indicatif, sans valeur contractuelle, et ne constituent pas une offre d'assurance.
+                      Projet demonstrateur de tarification auto. Les estimations affichees sur ce site sont fournies a titre indicatif, sans valeur contractuelle, et ne constituent pas une offre d&rsquo;assurance.
                     </p>
                     <p>
                       Responsable de publication : Mohamed Khaldi. Contact : khaldimohamedamine78@gmail.com.

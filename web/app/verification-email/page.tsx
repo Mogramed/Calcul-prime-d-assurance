@@ -44,7 +44,7 @@ export default function VerifyEmailPage() {
                 Confirmation de votre adresse email
               </h1>
               <p className="max-w-2xl text-sm leading-7 text-white/78 sm:text-base">
-                Nous verifions votre lien pour finaliser l'activation de votre espace Nova Assurances.
+                Nous verifions votre lien pour finaliser l&rsquo;activation de votre espace Nova Assurances.
               </p>
             </div>
           </div>
@@ -52,7 +52,7 @@ export default function VerifyEmailPage() {
         <CardContent className="pt-6">
           {!token ? (
             <div className="rounded-[24px] border border-[color:color-mix(in_srgb,var(--warning)_22%,white)] bg-[color:color-mix(in_srgb,var(--warning)_8%,white)] p-5 text-sm leading-7 text-[var(--foreground)]">
-              Le lien de verification est incomplet. Ouvrez a nouveau l'email recu apres votre inscription.
+              Le lien de verification est incomplet. Ouvrez a nouveau l&rsquo;email recu apres votre inscription.
             </div>
           ) : verificationMutation.isPending ? (
             <div className="flex min-h-52 items-center justify-center rounded-[24px] border border-dashed border-[var(--line)] bg-white/72 text-sm text-[var(--muted)]">
@@ -67,7 +67,7 @@ export default function VerifyEmailPage() {
                   <div>
                     <p className="font-semibold">Adresse email confirmee</p>
                     <p className="mt-1">
-                      Votre compte est maintenant valide. Vous pouvez reprendre vos devis ou vous connecter depuis n'importe quelle machine.
+                      Votre compte est maintenant valide. Vous pouvez reprendre vos devis ou vous connecter depuis n&rsquo;importe quelle machine.
                     </p>
                   </div>
                 </div>
@@ -88,7 +88,7 @@ export default function VerifyEmailPage() {
                 <div className="flex items-start gap-3">
                   <MailWarning className="mt-1 h-5 w-5 text-[var(--danger)]" />
                   <div>
-                    <p className="font-semibold">Le lien n'est plus valide</p>
+                    <p className="font-semibold">Le lien n&rsquo;est plus valide</p>
                     <p className="mt-1">
                       {verificationMutation.error instanceof Error
                         ? verificationMutation.error.message
