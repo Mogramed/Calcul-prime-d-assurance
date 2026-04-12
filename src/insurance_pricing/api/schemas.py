@@ -189,6 +189,8 @@ QUOTE_RESULT_EXAMPLE: dict[str, JsonValue] = PRIME_PREDICTION_EXAMPLE
 QUOTE_EMAIL_DELIVERY_EXAMPLE: dict[str, JsonValue] = {
     "status": "sent",
     "recipient_email": "client@nova-assurances.fr",
+    "detail": "Email accepted by Resend.",
+    "provider_status_code": 202,
 }
 
 QUOTE_RESPONSE_EXAMPLE: dict[str, JsonValue] = {
@@ -576,6 +578,14 @@ class QuoteEmailDeliveryResponse(BaseModel):
     recipient_email: EmailStr | None = Field(
         default=None,
         description="Recipient email address when an email delivery attempt was made.",
+    )
+    detail: str | None = Field(
+        default=None,
+        description="Diagnostic detail describing the delivery outcome.",
+    )
+    provider_status_code: int | None = Field(
+        default=None,
+        description="HTTP status code returned by the email provider when available.",
     )
 
 

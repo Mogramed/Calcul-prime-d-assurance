@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from insurance_pricing.api.auth_store import StoredUserRecord
 from insurance_pricing.api.dependencies import (
+    get_authenticated_user,
     get_client_id,
     get_current_user,
     get_prediction_service,
@@ -69,6 +70,8 @@ def _quote_response(
             QuoteEmailDeliveryResponse(
                 status=email_delivery.status,
                 recipient_email=email_delivery.recipient_email,
+                detail=email_delivery.detail,
+                provider_status_code=email_delivery.provider_status_code,
             )
             if email_delivery is not None
             else None
@@ -164,6 +167,60 @@ async def create_quote(
     )
 
     return _quote_response(stored_quote, email_delivery=email_delivery)
+
+
+@router.post(
+    "/quotes/{quote_id}/send-email",
+    response_model=QuoteEmailDeliveryResponse,
+    response_model_exclude_none=True,
+    summary="Send the recap email for one quote",
+    description=(
+        "Triggers a fresh recap email delivery for one persisted quote that belongs to the "
+        "authenticated account. The response includes a diagnostic status to help investigate "
+        "email delivery issues."
+    ),
+    operation_id="send_quote_email",
+    response_description="Delivery status returned by the quote recap email provider.",
+    responses={
+        400: {"description": "The required X-Client-ID header is missing or invalid."},
+        401: {"description": "Authentication is required to send a quote email."},
+        404: {"description": "The quote does not exist for the current customer context."},
+        503: {"description": "Quote persistence is unavailable because PostgreSQL is not ready."},
+    },
+)
+async def send_quote_email(
+    quote_id: str,
+    request: Request,
+    client_id: str = Depends(get_client_id),
+    current_user: StoredUserRecord = Depends(get_authenticated_user),
+    quote_store: QuoteStore = Depends(get_quote_store),
+    quote_email_sender: QuoteEmailSender = Depends(get_quote_email_sender),
+) -> QuoteEmailDeliveryResponse:
+    _mark_request(request, endpoint_kind="quote_email_send")
+    try:
+        stored_quote = await _get_accessible_quote(
+            quote_store=quote_store,
+            quote_id=quote_id,
+            client_id=client_id,
+            current_user=current_user,
+        )
+    except QuoteStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Quote persistence is unavailable.") from exc
+
+    if stored_quote is None or stored_quote.deleted_at_utc is not None:
+        raise HTTPException(status_code=404, detail="Quote not found.")
+
+    email_delivery = await _send_quote_email_if_possible(
+        stored_quote=stored_quote,
+        current_user=current_user,
+        quote_email_sender=quote_email_sender,
+    )
+    return QuoteEmailDeliveryResponse(
+        status=email_delivery.status,
+        recipient_email=email_delivery.recipient_email,
+        detail=email_delivery.detail,
+        provider_status_code=email_delivery.provider_status_code,
+    )
 
 
 @router.get(
@@ -297,25 +354,49 @@ async def _send_quote_email_if_possible(
     quote_email_sender: QuoteEmailSender,
 ) -> QuoteEmailDeliveryRecord:
     if current_user is None:
-        return QuoteEmailDeliveryRecord(status="skipped", recipient_email=None)
+        return QuoteEmailDeliveryRecord(
+            status="skipped",
+            recipient_email=None,
+            detail="Authentication is required to send a quote email.",
+        )
 
     try:
+        QUOTE_ROUTER_LOGGER.info(
+            "quote_email_delivery_requested",
+            extra={
+                "quote_id": stored_quote.id,
+                "recipient_email": current_user.email,
+            },
+        )
         pdf_bytes = await run_in_threadpool(build_quote_report_pdf, stored_quote)
-        return await quote_email_sender.send_quote_email(
+        delivery = await quote_email_sender.send_quote_email(
             quote=stored_quote,
             recipient_email=current_user.email,
             pdf_bytes=pdf_bytes,
         )
-    except Exception:
+        QUOTE_ROUTER_LOGGER.info(
+            "quote_email_delivery_completed",
+            extra={
+                "quote_id": stored_quote.id,
+                "recipient_email": current_user.email,
+                "delivery_status": delivery.status,
+                "delivery_detail": delivery.detail,
+                "provider_status_code": delivery.provider_status_code,
+            },
+        )
+        return delivery
+    except Exception as exc:
         QUOTE_ROUTER_LOGGER.warning(
             "quote_email_delivery_failed",
             extra={
                 "quote_id": stored_quote.id,
                 "recipient_email": current_user.email,
+                "delivery_detail": str(exc),
             },
             exc_info=True,
         )
         return QuoteEmailDeliveryRecord(
             status="failed",
             recipient_email=current_user.email,
+            detail=str(exc),
         )
