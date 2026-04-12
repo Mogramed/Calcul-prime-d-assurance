@@ -11,6 +11,7 @@ from typing import Literal, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from insurance_pricing import __version__
 from insurance_pricing.api.logging import get_logger
 from insurance_pricing.api.quote_store import StoredQuoteRecord
 
@@ -138,8 +139,11 @@ class ResendQuoteEmailSender:
         }
         headers = {
             "Authorization": f"Bearer {self.api_key}",
+            "Accept": "application/json",
+            "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
             "Content-Type": "application/json",
             "Idempotency-Key": f"quote-email:{quote.id}",
+            "User-Agent": f"NovaAssurances/{__version__} (Cloud Run; Resend API client)",
         }
 
         try:
