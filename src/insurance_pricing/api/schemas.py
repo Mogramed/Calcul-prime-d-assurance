@@ -711,6 +711,26 @@ class AuthCredentialsInput(BaseModel):
     password: str = Field(min_length=8, description="Plain-text password submitted by the user.")
 
 
+class EmailVerificationResendInput(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "title": "EmailVerificationResendInput",
+            "examples": [
+                {
+                    "email": "client@nova-assurances.fr",
+                    "password": "mon-mot-de-passe",
+                }
+            ],
+        }
+    )
+
+    email: EmailStr = Field(description="Email address of the existing account.")
+    password: str = Field(
+        min_length=8,
+        description="Plain-text password used to confirm ownership before resending the verification email.",
+    )
+
+
 class EmailVerificationInput(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={

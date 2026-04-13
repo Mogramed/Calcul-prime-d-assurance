@@ -543,6 +543,7 @@ def test_openapi_exposes_product_endpoints(
     assert "/auth/login" in schema["paths"]
     assert "/auth/session" in schema["paths"]
     assert "/auth/verify-email" in schema["paths"]
+    assert "/auth/resend-verification-email" in schema["paths"]
     assert "/quotes" in schema["paths"]
     assert "/quotes/{quote_id}" in schema["paths"]
     assert "put" in schema["paths"]["/quotes/{quote_id}"]
@@ -690,6 +691,97 @@ def test_verify_email_endpoint_activates_future_logins(
     assert verify_response.json()["email_verified_at_utc"] is not None
     assert login_response.status_code == 200
     assert login_response.json()["email_verification_required"] is False
+
+
+def test_resend_verification_email_endpoint_reissues_a_new_email(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    in_memory_account_email_sender,
+):
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
+
+    with TestClient(app) as client:
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": str(uuid4())},
+        )
+        first_token = in_memory_account_email_sender.sent_emails[0].verification_token
+        resend_response = client.post(
+            "/auth/resend-verification-email",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+        )
+
+    assert register_response.status_code == 201
+    assert resend_response.status_code == 200
+    assert resend_response.json()["status"] == "sent"
+    assert resend_response.json()["recipient_email"] == "client@nova-assurances.fr"
+    assert len(in_memory_account_email_sender.sent_emails) == 2
+    assert in_memory_account_email_sender.sent_emails[1].verification_token != first_token
+
+
+def test_resend_verification_email_endpoint_skips_verified_accounts(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    in_memory_account_email_sender,
+):
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
+
+    with TestClient(app) as client:
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": str(uuid4())},
+        )
+        verification_token = in_memory_account_email_sender.sent_emails[0].verification_token
+        verify_response = client.post("/auth/verify-email", json={"token": verification_token})
+        resend_response = client.post(
+            "/auth/resend-verification-email",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+        )
+
+    assert register_response.status_code == 201
+    assert verify_response.status_code == 200
+    assert resend_response.status_code == 200
+    assert resend_response.json()["status"] == "skipped"
+    assert resend_response.json()["detail"] == "This account is already verified."
+    assert len(in_memory_account_email_sender.sent_emails) == 1
+
+
+def test_resend_verification_email_endpoint_requires_valid_credentials(
+    api_settings: AppSettings,
+    in_memory_audit_store,
+    in_memory_account_email_sender,
+):
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
+
+    with TestClient(app) as client:
+        register_response = client.post(
+            "/auth/register",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": str(uuid4())},
+        )
+        resend_response = client.post(
+            "/auth/resend-verification-email",
+            json={"email": "client@nova-assurances.fr", "password": "mauvais-mot-de-passe"},
+        )
+
+    assert register_response.status_code == 201
+    assert resend_response.status_code == 401
+    assert resend_response.json()["detail"] == "Invalid email or password."
+    assert len(in_memory_account_email_sender.sent_emails) == 1
 
 
 def test_authenticated_user_can_download_quote_report(
