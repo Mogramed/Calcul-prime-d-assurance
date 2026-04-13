@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from html import escape
 from typing import Literal, Protocol
 from urllib.error import HTTPError, URLError
@@ -110,7 +111,10 @@ class ResendAccountEmailSender:
             "Accept": "application/json",
             "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
             "Content-Type": "application/json",
-            "Idempotency-Key": f"account-verification:{recipient_email.lower()}",
+            "Idempotency-Key": _build_account_verification_idempotency_key(
+                recipient_email=recipient_email,
+                verification_token=verification_token,
+            ),
             "User-Agent": f"NovaAssurances/{__version__} (Cloud Run; Resend API client)",
         }
 
@@ -227,6 +231,17 @@ def _build_verification_email_text(verification_url: str) -> str:
             verification_url,
         ]
     )
+
+
+def _build_account_verification_idempotency_key(
+    *,
+    recipient_email: str,
+    verification_token: str,
+) -> str:
+    token_fingerprint = sha256(
+        f"{recipient_email.strip().lower()}:{verification_token.strip()}".encode()
+    ).hexdigest()
+    return f"account-verification:{token_fingerprint}"
 
 
 def _post_resend_email(
