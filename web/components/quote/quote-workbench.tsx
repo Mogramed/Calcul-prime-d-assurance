@@ -232,9 +232,7 @@ export function QuoteWorkbench() {
                 <div className="rounded-[26px] border border-white/12 bg-white/10 px-4 py-3">
                   <p className="font-semibold text-white">Accessible</p>
                   <p className="mt-1 text-xs leading-6">
-                    {authSessionQuery.data?.authenticated
-                      ? "Vos devis suivent votre compte, meme sur un autre appareil."
-                      : "Vos derniers devis restent consultables sur cet appareil."}
+                    Vos devis restent accessibles depuis votre compte, sur toutes vos connexions.
                   </p>
                 </div>
               </div>
@@ -363,7 +361,12 @@ export function QuoteWorkbench() {
                           <Input
                             type={fieldConfig.inputMode === "decimal" || fieldConfig.inputMode === "numeric" ? "number" : "text"}
                             inputMode={fieldConfig.inputMode}
-                            step={fieldConfig.inputMode === "decimal" ? "any" : undefined}
+                            min={fieldConfig.min}
+                            max={fieldConfig.max}
+                            step={
+                              fieldConfig.step ??
+                              (fieldConfig.inputMode === "decimal" ? "any" : undefined)
+                            }
                             placeholder={fieldConfig.placeholder}
                             {...form.register(fieldName)}
                           />
@@ -377,9 +380,8 @@ export function QuoteWorkbench() {
                   <div className="space-y-2">
                     <p className="text-sm font-semibold text-[var(--foreground)]">Une estimation simple et lisible</p>
                     <p className="max-w-xl text-sm leading-7 text-[var(--muted)]">
-                      {authSessionQuery.data?.authenticated
-                        ? "Chaque devis est rattache a votre compte pour le retrouver plus tard et le modifier depuis n&rsquo;importe quelle machine."
-                        : "Chaque devis enregistre votre saisie sur cet appareil pour que vous puissiez le retrouver plus tard et le modifier si besoin."}
+                      Chaque devis est rattache a votre compte pour le retrouver plus tard et le
+                      modifier depuis n&rsquo;importe quelle machine.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
@@ -576,9 +578,7 @@ export function QuoteWorkbench() {
               <div className="flex items-start gap-3">
                 <ShieldCheck className="mt-0.5 h-4 w-4 text-[var(--accent)]" />
                 <p className="leading-7">
-                  {authSessionQuery.data?.authenticated
-                    ? "Vos devis restent disponibles dans votre compte."
-                    : "Vos derniers devis restent disponibles sur cet appareil."}
+                  Vos devis restent disponibles dans votre compte.
                 </p>
               </div>
             </div>

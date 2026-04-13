@@ -22,11 +22,13 @@ export function errorJsonResponse(error: unknown, fallbackDetail: string) {
 }
 
 export function publicSessionResponse(session: AuthSessionResponse): AuthSessionResponse {
+  const emailVerificationRequired = session.email_verification_required ?? false;
+
   return {
-    authenticated: session.authenticated,
+    authenticated: session.authenticated && !emailVerificationRequired,
     user: session.user,
     expires_at_utc: session.expires_at_utc ?? null,
-    email_verification_required: session.email_verification_required ?? false,
+    email_verification_required: emailVerificationRequired,
     email_verification_delivery: session.email_verification_delivery ?? null,
   };
 }

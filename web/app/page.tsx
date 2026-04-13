@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { getCurrentSessionUser } from "@/lib/server/current-user";
 
 const highlights = [
   {
@@ -23,7 +24,9 @@ const highlights = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const currentUser = await getCurrentSessionUser();
+
   return (
     <div className="space-y-8">
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_400px]">
@@ -49,19 +52,21 @@ export default function Home() {
                 et le vehicule, puis affiche une estimation lisible de votre prime.
               </p>
               <p>
-                Vous pouvez reprendre vos derniers devis sur cet appareil et les modifier sans avoir a
-                tout ressaisir.
+                Une fois connecte, vous pouvez retrouver vos devis sur votre compte et les modifier
+                sans avoir a tout ressaisir.
               </p>
             </div>
             <div className="flex flex-col gap-3">
               <Button asChild className="w-full sm:w-auto">
-                <Link href="/devis">
-                  Demarrer un devis
+                <Link href={currentUser ? "/devis" : "/inscription"}>
+                  {currentUser ? "Demarrer un devis" : "Creer mon espace"}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
               <Button asChild variant="secondary" className="w-full sm:w-auto">
-                <Link href="/mes-devis">Retrouver mes devis</Link>
+                <Link href={currentUser ? "/mes-devis" : "/connexion"}>
+                  {currentUser ? "Retrouver mes devis" : "Me connecter"}
+                </Link>
               </Button>
             </div>
           </CardContent>
@@ -128,7 +133,7 @@ export default function Home() {
             <Sparkles className="h-6 w-6 text-[var(--accent)]" />
             <h2 className="mt-4 font-display text-2xl text-[var(--foreground)]">Pense pour revenir plus tard</h2>
             <p className="mt-3 text-sm leading-7 text-[var(--muted)]">
-              Vos derniers devis restent disponibles sur cet appareil pour reprendre facilement votre saisie.
+              Vos devis restent disponibles dans votre espace pour reprendre facilement votre saisie.
             </p>
           </CardContent>
         </Card>

@@ -11,7 +11,10 @@ export async function GET(request: Request) {
   try {
     const session = await getUpstreamAuthSession(authSession.sessionToken);
     const response = NextResponse.json(publicSessionResponse(session));
-    if (!session.authenticated && authSession.sessionToken) {
+    if (
+      authSession.sessionToken &&
+      (!session.authenticated || session.email_verification_required)
+    ) {
       authSession.clear(response);
     }
     return response;

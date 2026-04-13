@@ -11,7 +11,7 @@ export async function getCurrentSessionUser() {
 
   try {
     const session = await getUpstreamAuthSession(sessionToken);
-    return session.authenticated ? session.user : null;
+    return session.authenticated && session.user?.email_verified_at_utc ? session.user : null;
   } catch {
     return null;
   }

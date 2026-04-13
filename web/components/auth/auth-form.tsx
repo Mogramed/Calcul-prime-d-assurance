@@ -29,6 +29,11 @@ export function AuthForm({ mode }: AuthFormProps) {
     onSuccess: async (session) => {
       await queryClient.invalidateQueries({ queryKey: ["auth-session"] });
       await queryClient.invalidateQueries({ queryKey: ["quotes"] });
+      if (mode === "register" && session.email_verification_required) {
+        router.push(`/confirmation-compte?email=${encodeURIComponent(email)}`);
+        router.refresh();
+        return;
+      }
       if (session.user?.role === "admin") {
         router.push("/admin");
       } else {

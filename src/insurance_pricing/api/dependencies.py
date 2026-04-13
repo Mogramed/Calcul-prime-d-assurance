@@ -98,7 +98,12 @@ async def get_current_user(
 ) -> StoredUserRecord | None:
     if session_token is None:
         return None
-    return await user_store.get_user_by_session_token_hash(hash_session_token(session_token))
+    user = await user_store.get_user_by_session_token_hash(hash_session_token(session_token))
+    if user is None:
+        return None
+    if not user.is_active or user.email_verified_at_utc is None:
+        return None
+    return user
 
 
 async def get_authenticated_user(
