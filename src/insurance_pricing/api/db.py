@@ -403,7 +403,7 @@ class PostgresAuditStore(AuditStore, QuoteStore, UserStore):
         try:
             async with self.session() as session, session.begin():
                 result = await session.execute(
-                    select(EmailVerificationTokenRow)
+                    select(EmailVerificationTokenRow, UserRow)
                     .join(UserRow, UserRow.id == EmailVerificationTokenRow.user_id)
                     .where(
                         EmailVerificationTokenRow.token_hash == token_hash,
@@ -412,10 +412,10 @@ class PostgresAuditStore(AuditStore, QuoteStore, UserStore):
                         UserRow.is_active.is_(True),
                     )
                 )
-                token_row = result.scalar_one_or_none()
-                if token_row is None:
+                row = result.one_or_none()
+                if row is None:
                     return None
-                user_row = token_row.user
+                token_row, user_row = row
                 if user_row.email_verified_at_utc is None:
                     user_row.email_verified_at_utc = datetime.now(UTC)
                 token_row.used_at_utc = datetime.now(UTC)
