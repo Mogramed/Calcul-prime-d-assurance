@@ -57,12 +57,12 @@ class ResendAccountEmailSender:
         api_key: str,
         sender_email: str,
         sender_name: str,
-        public_web_url: str,
+        public_web_url: str | None,
     ) -> None:
         self.api_key = api_key
         self.sender_email = sender_email
         self.sender_name = sender_name
-        self.public_web_url = public_web_url.rstrip("/")
+        self.public_web_url = public_web_url.rstrip("/") if public_web_url else None
 
     async def send_verification_email(
         self,
