@@ -1,6 +1,7 @@
 import { getAuthCookieSession } from "@/lib/server/auth-session";
 import { errorJsonResponse, publicSessionResponse } from "@/lib/server/bff-response";
 import { getClientSession } from "@/lib/server/client-session";
+import { getPublicWebUrlFromRequest } from "@/lib/server/public-web-url";
 import { registerUpstreamAccount } from "@/lib/server/upstream-auth";
 import { NextResponse } from "next/server";
 
@@ -9,9 +10,8 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const clientSession = await getClientSession(request);
   const authSession = await getAuthCookieSession(request);
-  const requestUrl = new URL(request.url);
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-  const publicWebUrl = `${requestUrl.origin}${basePath}`.replace(/\/$/, "");
+  const publicWebUrl = getPublicWebUrlFromRequest(request, basePath);
 
   try {
     const payload = (await request.json()) as { email: string; password: string };
