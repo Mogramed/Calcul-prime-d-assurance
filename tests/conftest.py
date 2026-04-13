@@ -398,7 +398,9 @@ class InMemoryAccountEmailSender(AccountEmailSender):
         *,
         recipient_email: str,
         verification_token: str,
+        public_web_url: str | None = None,
     ) -> AccountEmailDeliveryRecord:
+        del public_web_url
         if self.fail_send:
             raise RuntimeError("Account email delivery failed.")
         self.sent_emails.append(

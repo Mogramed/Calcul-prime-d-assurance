@@ -121,6 +121,8 @@ def create_app(
                 "admin_emails": resolved_settings.admin_emails,
                 "email_delivery_configured": resolved_settings.resend_api_key is not None
                 and resolved_settings.resend_sender_email is not None,
+                "account_email_default_link_configured": bool(resolved_settings.public_web_url),
+                "public_web_url": resolved_settings.public_web_url,
                 "root_path": resolved_settings.root_path,
             },
         )
