@@ -169,8 +169,12 @@ def _customer_flow(
         payload={"email": email, "password": password},
         expected=(200, 201),
     )
-    if register.get("authenticated") is not True:
-        raise _fail("customer registration", "the returned session is not authenticated.")
+    if register.get("authenticated") is not False:
+        raise _fail("customer registration", "an unverified account should not be authenticated yet.")
+    if register.get("session_token") is not None:
+        raise _fail("customer registration", "an unverified account should not receive a session token.")
+    if register.get("email_verification_required") is not True:
+        raise _fail("customer registration", "email verification should still be required.")
 
     user = register.get("user") or {}
     if user.get("email") != email:
@@ -178,9 +182,68 @@ def _customer_flow(
     _log_ok("customer registration", email)
 
     session = _get_json(client, "/app-api/auth/session", step="session lookup")
+    if session.get("authenticated") is not False:
+        raise _fail("session lookup", "the session endpoint should stay anonymous before email verification.")
+    _log_ok("session lookup", "unverified account remains blocked")
+
+    return SmokeArtifacts(
+        customer_email=email,
+        customer_user_id=str(user.get("id")) if user.get("id") else None,
+    )
+
+
+def _login_or_register_admin(
+    client: httpx.Client,
+    *,
+    email: str,
+    password: str,
+    register_if_missing: bool,
+) -> None:
+    login_response = client.post(
+        _request_path("/app-api/auth/login"),
+        json={"email": email, "password": password},
+    )
+    if login_response.status_code == 401 and register_if_missing:
+        register_response = client.post(
+            _request_path("/app-api/auth/register"),
+            json={"email": email, "password": password},
+        )
+        _expect_status(register_response, step="admin bootstrap", expected=(200, 201))
+        register_body = register_response.json()
+        role = (register_body.get("user") or {}).get("role")
+        if role != "admin" or register_body.get("authenticated") is not True:
+            raise _fail(
+                "admin bootstrap",
+                "the bootstrap account is not an authenticated admin. Check INSURANCE_PRICING_ADMIN_EMAILS.",
+            )
+        _log_ok("admin bootstrap", email)
+        return
+
+    _expect_status(login_response, step="admin login", expected=200)
+    login_body = login_response.json()
+    if (login_body.get("user") or {}).get("role") != "admin":
+        raise _fail("admin login", "the authenticated account is not an admin.")
+    _log_ok("admin login", email)
+
+
+def _authenticated_quote_flow(
+    client: httpx.Client,
+    *,
+    admin_email: str,
+    admin_password: str,
+    admin_register_if_missing: bool,
+) -> SmokeArtifacts:
+    _login_or_register_admin(
+        client,
+        email=admin_email,
+        password=admin_password,
+        register_if_missing=admin_register_if_missing,
+    )
+
+    session = _get_json(client, "/app-api/auth/session", step="authenticated session lookup")
     if session.get("authenticated") is not True:
-        raise _fail("session lookup", "the session endpoint did not confirm the login.")
-    _log_ok("session lookup", "authenticated session confirmed")
+        raise _fail("authenticated session lookup", "the admin session is not active.")
+    _log_ok("authenticated session lookup", "authenticated session confirmed")
 
     quote = _post_json(
         client,
@@ -204,7 +267,7 @@ def _customer_flow(
     history_ids = {item.get("id") for item in history.get("quotes", [])}
     if quote_id not in history_ids:
         raise _fail("quote history", "the created quote was not found in history.")
-    _log_ok("quote history", "quote visible in customer history")
+    _log_ok("quote history", "quote visible in account history")
 
     pdf_response = client.get(_request_path(f"/app-api/quotes/{quote_id}/report"))
     _expect_status(pdf_response, step="quote pdf", expected=200)
@@ -215,11 +278,7 @@ def _customer_flow(
         raise _fail("quote pdf", "downloaded file does not look like a PDF.")
     _log_ok("quote pdf", "PDF report downloaded")
 
-    return SmokeArtifacts(
-        customer_email=email,
-        customer_user_id=str(user.get("id")) if user.get("id") else None,
-        quote_id=quote_id,
-    )
+    return SmokeArtifacts(customer_email=admin_email, quote_id=quote_id)
 
 
 def _admin_cleanup(
@@ -383,8 +442,25 @@ def main() -> int:
                 email=customer_email,
                 password=args.customer_password,
             )
-            _check_page(client, "/devis", expected_text="Profil et formule")
-            _check_page(client, "/mes-devis", expected_text="Retrouvez vos derniers devis")
+
+            if args.admin_email and args.admin_password:
+                authenticated_artifacts = _authenticated_quote_flow(
+                    client,
+                    admin_email=args.admin_email,
+                    admin_password=args.admin_password,
+                    admin_register_if_missing=args.admin_register_if_missing,
+                )
+                artifacts.quote_id = authenticated_artifacts.quote_id
+                _check_page(client, "/devis", expected_text="Profil et formule")
+                _check_page(client, "/mes-devis", expected_text="Retrouvez vos derniers devis")
+            else:
+                _check_protected_page_redirect(
+                    client,
+                    "/devis",
+                    app_base_path=app_base_path,
+                    expected_redirect_path="/connexion",
+                    expected_text="Connexion a votre espace",
+                )
 
         if artifacts and args.admin_email and args.admin_password:
             _admin_cleanup(

@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StrictFloat, StrictInt, StrictStr
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    model_validator,
+)
 
 type NumericValue = StrictInt | StrictFloat
 type PostalCodeValue = StrictInt | StrictStr
@@ -277,33 +286,74 @@ class PredictionInput(BaseModel):
         },
     )
 
-    bonus: NumericValue = Field(description="Driver bonus-malus coefficient.")
+    bonus: NumericValue = Field(ge=0.5, le=3.5, description="Driver bonus-malus coefficient.")
     type_contrat: StrictStr = Field(description="Insurance contract type.")
-    duree_contrat: StrictInt = Field(description="Contract duration.")
-    anciennete_info: StrictInt = Field(description="Years of customer history available.")
+    duree_contrat: StrictInt = Field(ge=1, le=50, description="Contract duration.")
+    anciennete_info: StrictInt = Field(
+        ge=1,
+        le=50,
+        description="Years of customer history available.",
+    )
     freq_paiement: StrictStr = Field(description="Premium payment frequency.")
     paiement: StrictStr = Field(description="Whether the premium is currently paid.")
     utilisation: StrictStr = Field(description="Vehicle usage profile.")
     code_postal: PostalCodeValue = Field(description="Postal code of the insured risk.")
     conducteur2: StrictStr = Field(description="Whether a secondary driver is declared.")
-    age_conducteur1: StrictInt = Field(description="Age of the primary driver.")
-    age_conducteur2: StrictInt = Field(description="Age of the secondary driver, if any.")
+    age_conducteur1: StrictInt = Field(ge=18, le=100, description="Age of the primary driver.")
+    age_conducteur2: StrictInt = Field(ge=0, le=100, description="Age of the secondary driver, if any.")
     sex_conducteur1: StrictStr = Field(description="Sex of the primary driver.")
     sex_conducteur2: StrictStr = Field(description="Sex of the secondary driver.")
-    anciennete_permis1: StrictInt = Field(description="Driving licence seniority for driver 1.")
-    anciennete_permis2: StrictInt = Field(description="Driving licence seniority for driver 2.")
-    anciennete_vehicule: NumericValue = Field(description="Vehicle age.")
-    cylindre_vehicule: StrictInt = Field(description="Vehicle engine displacement.")
-    din_vehicule: StrictInt = Field(description="Vehicle power in DIN.")
+    anciennete_permis1: StrictInt = Field(
+        ge=0,
+        le=82,
+        description="Driving licence seniority for driver 1.",
+    )
+    anciennete_permis2: StrictInt = Field(
+        ge=0,
+        le=82,
+        description="Driving licence seniority for driver 2.",
+    )
+    anciennete_vehicule: NumericValue = Field(ge=0, le=80, description="Vehicle age.")
+    cylindre_vehicule: StrictInt = Field(ge=1, le=10000, description="Vehicle engine displacement.")
+    din_vehicule: StrictInt = Field(ge=1, le=2000, description="Vehicle power in DIN.")
     essence_vehicule: StrictStr = Field(description="Vehicle fuel type.")
     marque_vehicule: StrictStr = Field(description="Vehicle brand.")
     modele_vehicule: StrictStr = Field(description="Vehicle model.")
-    debut_vente_vehicule: StrictInt = Field(description="Vehicle sale start indicator.")
-    fin_vente_vehicule: StrictInt = Field(description="Vehicle sale end indicator.")
-    vitesse_vehicule: StrictInt = Field(description="Vehicle top speed.")
+    debut_vente_vehicule: StrictInt = Field(
+        ge=0,
+        le=99,
+        description="Vehicle sale start indicator.",
+    )
+    fin_vente_vehicule: StrictInt = Field(
+        ge=0,
+        le=99,
+        description="Vehicle sale end indicator.",
+    )
+    vitesse_vehicule: StrictInt = Field(ge=1, le=400, description="Vehicle top speed.")
     type_vehicule: StrictStr = Field(description="Vehicle category.")
-    prix_vehicule: StrictInt = Field(description="Vehicle price.")
-    poids_vehicule: StrictInt = Field(description="Vehicle weight.")
+    prix_vehicule: StrictInt = Field(ge=1, le=500000, description="Vehicle price.")
+    poids_vehicule: StrictInt = Field(ge=1, le=10000, description="Vehicle weight.")
+
+    @model_validator(mode="after")
+    def validate_driver_consistency(self) -> PredictionInput:
+        max_anciennete_permis1 = self.age_conducteur1 - 18
+        if self.anciennete_permis1 > max_anciennete_permis1:
+            raise ValueError(
+                "anciennete_permis1 cannot exceed age_conducteur1 - 18 years."
+            )
+
+        if self.conducteur2 == "Yes":
+            if self.age_conducteur2 < 18:
+                raise ValueError(
+                    "age_conducteur2 must be at least 18 when a second driver is declared."
+                )
+            max_anciennete_permis2 = self.age_conducteur2 - 18
+            if self.anciennete_permis2 > max_anciennete_permis2:
+                raise ValueError(
+                    "anciennete_permis2 cannot exceed age_conducteur2 - 18 years."
+                )
+
+        return self
 
 
 class PredictionBatchInput(BaseModel):

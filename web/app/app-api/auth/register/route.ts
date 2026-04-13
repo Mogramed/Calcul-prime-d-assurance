@@ -16,6 +16,8 @@ export async function POST(request: Request) {
     const response = clientSession.attach(NextResponse.json(publicSessionResponse(session)));
     if (session.session_token) {
       authSession.attach(response, session.session_token);
+    } else {
+      authSession.clear(response);
     }
     return response;
   } catch (error) {

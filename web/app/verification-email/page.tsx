@@ -67,7 +67,8 @@ export default function VerifyEmailPage() {
                   <div>
                     <p className="font-semibold">Adresse email confirmee</p>
                     <p className="mt-1">
-                      Votre compte est maintenant valide. Vous pouvez reprendre vos devis ou vous connecter depuis n&rsquo;importe quelle machine.
+                      Votre compte est maintenant valide. Vous pouvez desormais vous connecter et
+                      retrouver vos devis depuis n&rsquo;importe quelle machine.
                     </p>
                   </div>
                 </div>
@@ -75,10 +76,10 @@ export default function VerifyEmailPage() {
 
               <div className="flex flex-wrap gap-3">
                 <Button asChild>
-                  <Link href="/compte">Acceder a mon compte</Link>
+                  <Link href="/connexion">Me connecter</Link>
                 </Button>
                 <Button asChild variant="secondary">
-                  <Link href="/connexion">Me connecter</Link>
+                  <Link href="/">Retour a l&rsquo;accueil</Link>
                 </Button>
               </div>
             </div>

@@ -20,30 +20,43 @@ import {
 } from "@/lib/quote-catalog";
 import { formatCurrency, formatInteger, formatTitleCase } from "@/lib/format";
 
+const LEGAL_DRIVING_AGE = 18;
+const MAX_DRIVER_AGE = 100;
+
 const requiredText = z.string().trim().min(1, "Champ requis");
 const requiredInteger = z
   .string()
   .trim()
   .min(1, "Champ requis")
-  .refine((value) => /^-?\d+$/.test(value), "Entier requis");
+  .refine((value) => /^\d+$/.test(value), "Entier requis");
 const positiveInteger = requiredInteger.refine((value) => Number.parseInt(value, 10) > 0, "Valeur invalide");
 const requiredNumber = z
   .string()
   .trim()
   .min(1, "Champ requis")
-  .refine((value) => !Number.isNaN(Number(value)), "Nombre requis");
+  .refine((value) => /^\d+(\.\d+)?$/.test(value), "Nombre requis");
 const positiveNumber = requiredNumber.refine((value) => Number(value) > 0, "Valeur invalide");
+const nonNegativeNumber = requiredNumber.refine((value) => Number(value) >= 0, "Valeur invalide");
 const optionalInteger = z
   .string()
   .trim()
-  .refine((value) => value === "" || /^-?\d+$/.test(value), "Entier invalide");
+  .refine((value) => value === "" || /^\d+$/.test(value), "Entier invalide");
 
 export const quoteFormSchema = z
   .object({
-    bonus: positiveNumber,
+    bonus: requiredNumber.refine((value) => {
+      const numericValue = Number(value);
+      return numericValue >= 0.5 && numericValue <= 3.5;
+    }, "Le bonus-malus doit etre compris entre 0,50 et 3,50."),
     type_contrat: requiredText,
-    duree_contrat: positiveInteger,
-    anciennete_info: positiveInteger,
+    duree_contrat: positiveInteger.refine(
+      (value) => Number.parseInt(value, 10) <= 50,
+      "La duree du contrat doit rester inferieure ou egale a 50 ans.",
+    ),
+    anciennete_info: positiveInteger.refine(
+      (value) => Number.parseInt(value, 10) <= 50,
+      "L'anciennete du dossier doit rester inferieure ou egale a 50 ans.",
+    ),
     freq_paiement: requiredText,
     paiement: requiredText,
     utilisation: requiredText,
@@ -53,27 +66,59 @@ export const quoteFormSchema = z
       .min(1, "Champ requis")
       .refine((value) => /^\d{4,5}$/.test(value), "Code postal invalide"),
     conducteur2: requiredText,
-    age_conducteur1: positiveInteger,
+    age_conducteur1: requiredInteger.refine((value) => {
+      const numericValue = Number.parseInt(value, 10);
+      return numericValue >= LEGAL_DRIVING_AGE && numericValue <= MAX_DRIVER_AGE;
+    }, "L'age du conducteur doit etre compris entre 18 et 100 ans."),
     age_conducteur2: optionalInteger,
     sex_conducteur1: requiredText,
     sex_conducteur2: z.string().trim(),
-    anciennete_permis1: positiveInteger,
+    anciennete_permis1: requiredInteger.refine((value) => {
+      const numericValue = Number.parseInt(value, 10);
+      return numericValue >= 0 && numericValue <= MAX_DRIVER_AGE - LEGAL_DRIVING_AGE;
+    }, "L'anciennete du permis doit etre comprise entre 0 et 82 ans."),
     anciennete_permis2: optionalInteger,
-    anciennete_vehicule: positiveNumber,
+    anciennete_vehicule: nonNegativeNumber.refine(
+      (value) => Number(value) <= 80,
+      "L'age du vehicule doit rester inferieur ou egal a 80 ans.",
+    ),
     marque_vehicule: requiredText,
     modele_vehicule: requiredText,
     vehicle_variant_id: requiredText,
     cylindre_vehicule: requiredInteger,
     din_vehicule: requiredInteger,
     essence_vehicule: requiredText,
-    debut_vente_vehicule: positiveInteger,
-    fin_vente_vehicule: positiveInteger,
+    debut_vente_vehicule: requiredInteger.refine(
+      (value) => Number.parseInt(value, 10) <= 99,
+      "La valeur doit rester comprise entre 0 et 99.",
+    ),
+    fin_vente_vehicule: requiredInteger.refine(
+      (value) => Number.parseInt(value, 10) <= 99,
+      "La valeur doit rester comprise entre 0 et 99.",
+    ),
     vitesse_vehicule: requiredInteger,
     type_vehicule: requiredText,
-    prix_vehicule: positiveInteger,
+    prix_vehicule: positiveInteger.refine(
+      (value) => Number.parseInt(value, 10) <= 500_000,
+      "La valeur du vehicule doit rester inferieure ou egale a 500 000 EUR.",
+    ),
     poids_vehicule: requiredInteger,
   })
   .superRefine((values, context) => {
+    const ageConducteur1 = Number.parseInt(values.age_conducteur1, 10);
+    const anciennetePermis1 = Number.parseInt(values.anciennete_permis1, 10);
+
+    if (!Number.isNaN(ageConducteur1) && !Number.isNaN(anciennetePermis1)) {
+      const maxAnciennetePermis1 = ageConducteur1 - LEGAL_DRIVING_AGE;
+      if (anciennetePermis1 > maxAnciennetePermis1) {
+        context.addIssue({
+          code: "custom",
+          path: ["anciennete_permis1"],
+          message: `Avec un conducteur de ${ageConducteur1} ans, l'anciennete maximale du permis est de ${Math.max(maxAnciennetePermis1, 0)} ans.`,
+        });
+      }
+    }
+
     if (values.conducteur2 === "Yes") {
       if (!values.age_conducteur2.trim()) {
         context.addIssue({
@@ -97,6 +142,32 @@ export const quoteFormSchema = z
           path: ["anciennete_permis2"],
           message: "Champ requis",
         });
+      }
+
+      if (values.age_conducteur2.trim()) {
+        const ageConducteur2 = Number.parseInt(values.age_conducteur2, 10);
+        if (Number.isNaN(ageConducteur2) || ageConducteur2 < LEGAL_DRIVING_AGE || ageConducteur2 > MAX_DRIVER_AGE) {
+          context.addIssue({
+            code: "custom",
+            path: ["age_conducteur2"],
+            message: "L'age du deuxieme conducteur doit etre compris entre 18 et 100 ans.",
+          });
+        }
+      }
+
+      if (values.age_conducteur2.trim() && values.anciennete_permis2.trim()) {
+        const ageConducteur2 = Number.parseInt(values.age_conducteur2, 10);
+        const anciennetePermis2 = Number.parseInt(values.anciennete_permis2, 10);
+        if (!Number.isNaN(ageConducteur2) && !Number.isNaN(anciennetePermis2)) {
+          const maxAnciennetePermis2 = ageConducteur2 - LEGAL_DRIVING_AGE;
+          if (anciennetePermis2 > maxAnciennetePermis2) {
+            context.addIssue({
+              code: "custom",
+              path: ["anciennete_permis2"],
+              message: `Avec un conducteur de ${ageConducteur2} ans, l'anciennete maximale du permis est de ${Math.max(maxAnciennetePermis2, 0)} ans.`,
+            });
+          }
+        }
       }
     }
 
@@ -147,6 +218,9 @@ export type QuoteFieldConfig = {
   kind: FieldKind;
   placeholder?: string;
   inputMode?: "text" | "decimal" | "numeric";
+  min?: number;
+  max?: number;
+  step?: number;
   options?: readonly QuoteOption[];
 };
 
@@ -205,6 +279,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "decimal",
     placeholder: "0.58",
+    min: 0.5,
+    max: 3.5,
+    step: 0.01,
   },
   type_contrat: {
     name: "type_contrat",
@@ -220,6 +297,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "1",
+    min: 1,
+    max: 50,
+    step: 1,
   },
   anciennete_info: {
     name: "anciennete_info",
@@ -228,6 +308,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "1",
+    min: 1,
+    max: 50,
+    step: 1,
   },
   freq_paiement: {
     name: "freq_paiement",
@@ -272,6 +355,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "45",
+    min: 18,
+    max: 100,
+    step: 1,
   },
   age_conducteur2: {
     name: "age_conducteur2",
@@ -280,6 +366,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "38",
+    min: 18,
+    max: 100,
+    step: 1,
   },
   sex_conducteur1: {
     name: "sex_conducteur1",
@@ -302,6 +391,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "20",
+    min: 0,
+    max: 82,
+    step: 1,
   },
   anciennete_permis2: {
     name: "anciennete_permis2",
@@ -310,6 +402,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "12",
+    min: 0,
+    max: 82,
+    step: 1,
   },
   anciennete_vehicule: {
     name: "anciennete_vehicule",
@@ -318,6 +413,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "decimal",
     placeholder: "8",
+    min: 0,
+    max: 80,
+    step: 0.1,
   },
   marque_vehicule: {
     name: "marque_vehicule",
@@ -364,6 +462,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "16",
+    min: 0,
+    max: 99,
+    step: 1,
   },
   fin_vente_vehicule: {
     name: "fin_vente_vehicule",
@@ -372,6 +473,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "15",
+    min: 0,
+    max: 99,
+    step: 1,
   },
   vitesse_vehicule: {
     name: "vitesse_vehicule",
@@ -393,6 +497,9 @@ export const quoteFieldConfigs: Record<QuoteFieldName, QuoteFieldConfig> = {
     kind: "input",
     inputMode: "numeric",
     placeholder: "10321",
+    min: 1,
+    max: 500000,
+    step: 1,
   },
   poids_vehicule: {
     name: "poids_vehicule",

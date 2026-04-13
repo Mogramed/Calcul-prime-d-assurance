@@ -9,7 +9,6 @@ from insurance_pricing.api.auth_store import StoredUserRecord
 from insurance_pricing.api.dependencies import (
     get_authenticated_user,
     get_client_id,
-    get_current_user,
     get_prediction_service,
     get_quote_email_sender,
     get_quote_store,
@@ -96,14 +95,11 @@ async def _get_accessible_quote(
     *,
     quote_store: QuoteStore,
     quote_id: str,
-    client_id: str,
-    current_user: StoredUserRecord | None,
+    current_user: StoredUserRecord,
 ) -> StoredQuoteRecord | None:
-    if current_user is not None and current_user.role == "admin":
+    if current_user.role == "admin":
         return await quote_store.get_any_quote(quote_id)
-    if current_user is not None:
-        return await quote_store.get_user_quote(quote_id=quote_id, user_id=current_user.id)
-    return await quote_store.get_quote(quote_id=quote_id, client_id_hash=hash_client_id(client_id))
+    return await quote_store.get_user_quote(quote_id=quote_id, user_id=current_user.id)
 
 
 @router.post(
@@ -119,6 +115,7 @@ async def _get_accessible_quote(
     response_description="Persisted quote detail for the current customer context.",
     responses={
         400: {"description": "The required X-Client-ID header is missing or invalid."},
+        401: {"description": "Authentication is required to create a quote."},
         503: {"description": "Quote persistence is unavailable because PostgreSQL is not ready."},
     },
 )
@@ -137,7 +134,7 @@ async def create_quote(
         },
     ),
     client_id: str = Depends(get_client_id),
-    current_user: StoredUserRecord | None = Depends(get_current_user),
+    current_user: StoredUserRecord = Depends(get_authenticated_user),
     service: PredictionService = Depends(get_prediction_service),
     quote_store: QuoteStore = Depends(get_quote_store),
     quote_email_sender: QuoteEmailSender = Depends(get_quote_email_sender),
@@ -150,7 +147,7 @@ async def create_quote(
         stored_quote = await quote_store.create_quote(
             QuoteCreateRecord(
                 client_id_hash=hash_client_id(client_id),
-                user_id=current_user.id if current_user is not None else None,
+                user_id=current_user.id,
                 run_id=service.run_id,
                 input_payload=payload_obj,
                 frequency_prediction=float(prediction["frequency_prediction"]),
@@ -182,6 +179,7 @@ async def create_quote(
     operation_id="update_quote",
     responses={
         400: {"description": "The required X-Client-ID header is missing or invalid."},
+        401: {"description": "Authentication is required to update a quote."},
         404: {"description": "The quote does not exist for the current customer context."},
         503: {"description": "Quote persistence is unavailable because PostgreSQL is not ready."},
     },
@@ -190,8 +188,7 @@ async def update_quote(
     quote_id: str,
     request: Request,
     payload: PredictionInput = Body(),
-    client_id: str = Depends(get_client_id),
-    current_user: StoredUserRecord | None = Depends(get_current_user),
+    current_user: StoredUserRecord = Depends(get_authenticated_user),
     service: PredictionService = Depends(get_prediction_service),
     quote_store: QuoteStore = Depends(get_quote_store),
     quote_email_sender: QuoteEmailSender = Depends(get_quote_email_sender),
@@ -201,7 +198,6 @@ async def update_quote(
         existing_quote = await _get_accessible_quote(
             quote_store=quote_store,
             quote_id=quote_id,
-            client_id=client_id,
             current_user=current_user,
         )
     except QuoteStoreUnavailableError as exc:
@@ -217,7 +213,7 @@ async def update_quote(
         stored_quote = await quote_store.update_quote(
             QuoteUpdateRecord(
                 quote_id=existing_quote.id,
-                user_id=current_user.id if current_user is not None else existing_quote.user_id,
+                user_id=current_user.id,
                 run_id=service.run_id,
                 input_payload=payload_obj,
                 frequency_prediction=float(prediction["frequency_prediction"]),
@@ -261,7 +257,6 @@ async def update_quote(
 async def send_quote_email(
     quote_id: str,
     request: Request,
-    client_id: str = Depends(get_client_id),
     current_user: StoredUserRecord = Depends(get_authenticated_user),
     quote_store: QuoteStore = Depends(get_quote_store),
     quote_email_sender: QuoteEmailSender = Depends(get_quote_email_sender),
@@ -271,7 +266,6 @@ async def send_quote_email(
         stored_quote = await _get_accessible_quote(
             quote_store=quote_store,
             quote_id=quote_id,
-            client_id=client_id,
             current_user=current_user,
         )
     except QuoteStoreUnavailableError as exc:
@@ -306,22 +300,18 @@ async def send_quote_email(
     name="list_quotes",
     response_description="Persisted quote history for the current customer context.",
     responses={
-        400: {"description": "The required X-Client-ID header is missing or invalid."},
+        401: {"description": "Authentication is required to list quotes."},
         503: {"description": "Quote persistence is unavailable because PostgreSQL is not ready."},
     },
 )
 async def list_quotes(
     request: Request,
-    client_id: str = Depends(get_client_id),
-    current_user: StoredUserRecord | None = Depends(get_current_user),
+    current_user: StoredUserRecord = Depends(get_authenticated_user),
     quote_store: QuoteStore = Depends(get_quote_store),
 ) -> QuoteListResponse:
     _mark_request(request, endpoint_kind="quote_list")
     try:
-        if current_user is not None:
-            quote_records = await quote_store.list_user_quotes(current_user.id)
-        else:
-            quote_records = await quote_store.list_quotes(hash_client_id(client_id))
+        quote_records = await quote_store.list_user_quotes(current_user.id)
     except QuoteStoreUnavailableError as exc:
         raise HTTPException(status_code=503, detail="Quote persistence is unavailable.") from exc
 
@@ -343,7 +333,7 @@ async def list_quotes(
     operation_id="get_quote",
     response_description="Persisted quote detail for the current customer context.",
     responses={
-        400: {"description": "The required X-Client-ID header is missing or invalid."},
+        401: {"description": "Authentication is required to access a quote."},
         404: {"description": "The quote does not exist for the current customer context."},
         503: {"description": "Quote persistence is unavailable because PostgreSQL is not ready."},
     },
@@ -351,8 +341,7 @@ async def list_quotes(
 async def get_quote(
     quote_id: str,
     request: Request,
-    client_id: str = Depends(get_client_id),
-    current_user: StoredUserRecord | None = Depends(get_current_user),
+    current_user: StoredUserRecord = Depends(get_authenticated_user),
     quote_store: QuoteStore = Depends(get_quote_store),
 ) -> QuoteResponse:
     _mark_request(request, endpoint_kind="quote_get")
@@ -360,7 +349,6 @@ async def get_quote(
         stored_quote = await _get_accessible_quote(
             quote_store=quote_store,
             quote_id=quote_id,
-            client_id=client_id,
             current_user=current_user,
         )
     except QuoteStoreUnavailableError as exc:
@@ -376,6 +364,7 @@ async def get_quote(
     summary="Generate the PDF report for one quote",
     operation_id="download_quote_report",
     responses={
+        401: {"description": "Authentication is required to download the quote report."},
         200: {"content": {"application/pdf": {}}},
         404: {"description": "Quote not found."},
         503: {"description": "Quote report generation is unavailable."},
@@ -384,8 +373,7 @@ async def get_quote(
 async def download_quote_report(
     quote_id: str,
     request: Request,
-    client_id: str = Depends(get_client_id),
-    current_user: StoredUserRecord | None = Depends(get_current_user),
+    current_user: StoredUserRecord = Depends(get_authenticated_user),
     quote_store: QuoteStore = Depends(get_quote_store),
 ) -> Response:
     _mark_request(request, endpoint_kind="quote_report_download")
@@ -393,7 +381,6 @@ async def download_quote_report(
         quote = await _get_accessible_quote(
             quote_store=quote_store,
             quote_id=quote_id,
-            client_id=client_id,
             current_user=current_user,
         )
     except QuoteStoreUnavailableError as exc:
@@ -420,16 +407,9 @@ def _pdf_filename(quote: StoredQuoteRecord) -> str:
 async def _send_quote_email_if_possible(
     *,
     stored_quote: StoredQuoteRecord,
-    current_user: StoredUserRecord | None,
+    current_user: StoredUserRecord,
     quote_email_sender: QuoteEmailSender,
 ) -> QuoteEmailDeliveryRecord:
-    if current_user is None:
-        return QuoteEmailDeliveryRecord(
-            status="skipped",
-            recipient_email=None,
-            detail="Authentication is required to send a quote email.",
-        )
-
     try:
         QUOTE_ROUTER_LOGGER.info(
             "quote_email_delivery_requested",

@@ -32,14 +32,6 @@ export default async function AccountPage() {
         </CardHeader>
         <CardContent className="grid gap-6 pt-6 lg:grid-cols-[minmax(0,1fr)_auto]">
           <div className="space-y-4">
-            {!user.email_verified_at_utc ? (
-              <div className="rounded-[24px] border border-[color:color-mix(in_srgb,var(--warning)_22%,white)] bg-[color:color-mix(in_srgb,var(--warning)_8%,white)] p-4 text-sm leading-7 text-[var(--foreground)]">
-                Nous vous avons envoye un email de confirmation. Validez votre adresse pour securiser
-                l&rsquo;acces a votre compte sur la duree et conserver une connexion fiable sur tous vos
-                appareils.
-              </div>
-            ) : null}
-
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-[24px] border border-[var(--line)] bg-white/82 p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Adresse email</p>
@@ -63,18 +55,14 @@ export default async function AccountPage() {
               </div>
               <div className="rounded-[24px] border border-[var(--line)] bg-white/82 p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Email confirme</p>
+                <p className="mt-2 font-semibold text-[var(--foreground)]">Oui</p>
+              </div>
+              <div className="rounded-[24px] border border-[var(--line)] bg-white/82 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Confirmation recue le</p>
                 <p className="mt-2 font-semibold text-[var(--foreground)]">
-                  {user.email_verified_at_utc ? "Oui" : "En attente de confirmation"}
+                  {formatDateTime(user.email_verified_at_utc ?? user.created_at_utc)}
                 </p>
               </div>
-              {user.email_verified_at_utc ? (
-                <div className="rounded-[24px] border border-[var(--line)] bg-white/82 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Confirmation recue le</p>
-                  <p className="mt-2 font-semibold text-[var(--foreground)]">
-                    {formatDateTime(user.email_verified_at_utc)}
-                  </p>
-                </div>
-              ) : null}
             </div>
           </div>
 

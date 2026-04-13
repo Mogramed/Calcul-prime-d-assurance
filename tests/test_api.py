@@ -11,6 +11,30 @@ from insurance_pricing.api import AppSettings, create_app
 from insurance_pricing.api.dependencies import get_settings
 
 
+def _register_verify_and_login(
+    client: TestClient,
+    *,
+    client_id: str,
+    email: str,
+    password: str,
+    in_memory_account_email_sender,
+):
+    register_response = client.post(
+        "/auth/register",
+        json={"email": email, "password": password},
+        headers={"X-Client-ID": client_id},
+    )
+    verification_token = in_memory_account_email_sender.sent_emails[-1].verification_token
+    verify_response = client.post("/auth/verify-email", json={"token": verification_token})
+    login_response = client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+        headers={"X-Client-ID": client_id},
+    )
+    return register_response, verify_response, login_response
+
+
+
 def test_app_settings_require_run_id_and_database_url_without_env_sources(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -297,16 +321,32 @@ def test_prediction_persistence_failure_returns_503(
 def test_create_quote_persists_payload_and_returns_prediction(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
 ):
-    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
     client_id = str(uuid4())
 
     with TestClient(app) as client:
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
+        )
+        session_token = login_response.json()["session_token"]
         response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
-            headers={"X-Client-ID": client_id},
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
         )
 
     body = response.json()
@@ -316,24 +356,45 @@ def test_create_quote_persists_payload_and_returns_prediction(
     assert body["result"]["prime_prediction"] is not None
     assert body["email_delivery"] == {
         "status": "skipped",
-        "detail": "Authentication is required to send a quote email.",
+        "recipient_email": "client@nova-assurances.fr",
+        "detail": "Email delivery is not configured.",
     }
     assert len(in_memory_audit_store.quotes) == 1
-
 
 def test_create_quote_requires_valid_client_id_header(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
 ):
-    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
+    client_id = str(uuid4())
 
     with TestClient(app) as client:
-        missing_response = client.post("/quotes", json=sample_prediction_records[0])
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
+        )
+        session_token = login_response.json()["session_token"]
+        missing_response = client.post(
+            "/quotes",
+            json=sample_prediction_records[0],
+            headers={"X-Session-Token": session_token},
+        )
         invalid_response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
-            headers={"X-Client-ID": "not-a-uuid"},
+            headers={
+                "X-Client-ID": "not-a-uuid",
+                "X-Session-Token": session_token,
+            },
         )
 
     assert missing_response.status_code == 400
@@ -341,35 +402,61 @@ def test_create_quote_requires_valid_client_id_header(
     assert invalid_response.status_code == 400
     assert invalid_response.json()["detail"] == "X-Client-ID must be a valid UUID."
 
-
-def test_quote_history_is_scoped_to_current_client(
+def test_quote_history_is_scoped_to_current_account(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
 ):
-    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
     client_a = str(uuid4())
     client_b = str(uuid4())
 
     with TestClient(app) as client:
+        _, _, login_a = _register_verify_and_login(
+            client,
+            client_id=client_a,
+            email="client-a@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
+        )
+        _, _, login_b = _register_verify_and_login(
+            client,
+            client_id=client_b,
+            email="client-b@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
+        )
+        token_a = login_a.json()["session_token"]
+        token_b = login_b.json()["session_token"]
         first_quote = client.post(
             "/quotes",
             json=sample_prediction_records[0],
-            headers={"X-Client-ID": client_a},
+            headers={
+                "X-Client-ID": client_a,
+                "X-Session-Token": token_a,
+            },
         ).json()
         client.post(
             "/quotes",
             json=sample_prediction_records[1],
-            headers={"X-Client-ID": client_b},
+            headers={
+                "X-Client-ID": client_b,
+                "X-Session-Token": token_b,
+            },
         )
-        history_response = client.get("/quotes", headers={"X-Client-ID": client_a})
+        history_response = client.get("/quotes", headers={"X-Session-Token": token_a})
         own_quote_response = client.get(
             f"/quotes/{first_quote['id']}",
-            headers={"X-Client-ID": client_a},
+            headers={"X-Session-Token": token_a},
         )
         foreign_quote_response = client.get(
             f"/quotes/{first_quote['id']}",
-            headers={"X-Client-ID": client_b},
+            headers={"X-Session-Token": token_b},
         )
 
     history_body = history_response.json()
@@ -381,27 +468,39 @@ def test_quote_history_is_scoped_to_current_client(
     assert foreign_quote_response.status_code == 404
     assert foreign_quote_response.json()["detail"] == "Quote not found."
 
-
 def test_quote_persistence_failure_returns_503(
     api_settings: AppSettings,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
     audit_store_factory,
 ):
     app = create_app(
         api_settings,
         audit_store=audit_store_factory(fail_quote_persistence=True),
+        account_email_sender=in_memory_account_email_sender,
     )
+    client_id = str(uuid4())
 
     with TestClient(app) as client:
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
+        )
+        session_token = login_response.json()["session_token"]
         response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
-            headers={"X-Client-ID": str(uuid4())},
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
         )
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Quote persistence is unavailable."
-
 
 def test_runtime_error_persists_api_error(
     api_settings: AppSettings,
@@ -478,11 +577,10 @@ def test_swagger_ui_keeps_models_visible(
     assert app.swagger_ui_parameters["defaultModelRendering"] == "model"
 
 
-def test_register_claims_anonymous_quotes_and_exposes_session(
+def test_register_requires_email_confirmation_before_quote_access(
     api_settings: AppSettings,
     in_memory_audit_store,
     in_memory_account_email_sender,
-    sample_prediction_records: list[dict],
 ):
     app = create_app(
         api_settings,
@@ -492,55 +590,44 @@ def test_register_claims_anonymous_quotes_and_exposes_session(
     client_id = str(uuid4())
 
     with TestClient(app) as client:
-        anonymous_quote = client.post(
-            "/quotes",
-            json=sample_prediction_records[0],
-            headers={"X-Client-ID": client_id},
-        )
         register_response = client.post(
             "/auth/register",
             json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
             headers={"X-Client-ID": client_id},
         )
-        session_token = register_response.json()["session_token"]
-        session_response = client.get(
-            "/auth/session",
-            headers={"X-Session-Token": session_token},
+        session_response = client.get("/auth/session")
+        blocked_history_response = client.get("/quotes")
+        verification_token = in_memory_account_email_sender.sent_emails[0].verification_token
+        verify_response = client.post("/auth/verify-email", json={"token": verification_token})
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": client_id},
         )
-        history_response = client.get(
-            "/quotes",
-            headers={
-                "X-Client-ID": client_id,
-                "X-Session-Token": session_token,
-            },
-        )
+        session_token = login_response.json()["session_token"]
+        history_response = client.get("/quotes", headers={"X-Session-Token": session_token})
         logout_response = client.post("/auth/logout", headers={"X-Session-Token": session_token})
         after_logout_response = client.get(
             "/auth/session",
             headers={"X-Session-Token": session_token},
         )
 
-    assert anonymous_quote.status_code == 200
     assert register_response.status_code == 201
-    assert register_response.json()["user"]["role"] == "customer"
+    assert register_response.json()["authenticated"] is False
+    assert register_response.json()["session_token"] is None
     assert register_response.json()["email_verification_required"] is True
-    assert register_response.json()["email_verification_delivery"] == {
-        "status": "sent",
-        "recipient_email": "client@nova-assurances.fr",
-        "detail": "Verification email accepted by the in-memory sender.",
-        "provider_status_code": 202,
-    }
     assert session_response.status_code == 200
-    assert session_response.json()["authenticated"] is True
-    assert session_response.json()["email_verification_required"] is True
+    assert session_response.json()["authenticated"] is False
+    assert blocked_history_response.status_code == 401
+    assert blocked_history_response.json()["detail"] == "Authentication is required."
+    assert verify_response.status_code == 200
+    assert login_response.status_code == 200
+    assert login_response.json()["email_verification_required"] is False
     assert history_response.status_code == 200
-    assert history_response.json()["count"] == 1
-    assert history_response.json()["quotes"][0]["id"] == anonymous_quote.json()["id"]
+    assert history_response.json()["count"] == 0
     assert logout_response.status_code == 204
     assert after_logout_response.status_code == 200
     assert after_logout_response.json()["authenticated"] is False
-    assert len(in_memory_account_email_sender.sent_emails) == 1
-
 
 def test_unverified_user_must_confirm_email_before_logging_in(
     api_settings: AppSettings,
@@ -608,18 +695,25 @@ def test_verify_email_endpoint_activates_future_logins(
 def test_authenticated_user_can_download_quote_report(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
 ):
-    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
     client_id = str(uuid4())
 
     with TestClient(app) as client:
-        register_response = client.post(
-            "/auth/register",
-            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
-            headers={"X-Client-ID": client_id},
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
         )
-        session_token = register_response.json()["session_token"]
+        session_token = login_response.json()["session_token"]
         quote_response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
@@ -630,10 +724,7 @@ def test_authenticated_user_can_download_quote_report(
         )
         pdf_response = client.get(
             f"/quotes/{quote_response.json()['id']}/report.pdf",
-            headers={
-                "X-Client-ID": client_id,
-                "X-Session-Token": session_token,
-            },
+            headers={"X-Session-Token": session_token},
         )
 
     assert quote_response.status_code == 200
@@ -641,27 +732,30 @@ def test_authenticated_user_can_download_quote_report(
     assert pdf_response.headers["content-type"] == "application/pdf"
     assert pdf_response.content.startswith(b"%PDF")
 
-
 def test_authenticated_quote_creation_sends_recap_email_with_pdf(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     in_memory_quote_email_sender,
     sample_prediction_records: list[dict],
 ):
     app = create_app(
         api_settings,
         audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
         quote_email_sender=in_memory_quote_email_sender,
     )
     client_id = str(uuid4())
 
     with TestClient(app) as client:
-        register_response = client.post(
-            "/auth/register",
-            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
-            headers={"X-Client-ID": client_id},
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
         )
-        session_token = register_response.json()["session_token"]
+        session_token = login_response.json()["session_token"]
         quote_response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
@@ -684,10 +778,10 @@ def test_authenticated_quote_creation_sends_recap_email_with_pdf(
     assert sent_email.recipient_email == "client@nova-assurances.fr"
     assert sent_email.pdf_bytes.startswith(b"%PDF")
 
-
 def test_quote_creation_still_succeeds_when_email_delivery_fails(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     in_memory_quote_email_sender,
     sample_prediction_records: list[dict],
 ):
@@ -695,17 +789,20 @@ def test_quote_creation_still_succeeds_when_email_delivery_fails(
     app = create_app(
         api_settings,
         audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
         quote_email_sender=in_memory_quote_email_sender,
     )
     client_id = str(uuid4())
 
     with TestClient(app) as client:
-        register_response = client.post(
-            "/auth/register",
-            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
-            headers={"X-Client-ID": client_id},
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
         )
-        session_token = register_response.json()["session_token"]
+        session_token = login_response.json()["session_token"]
         quote_response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
@@ -723,25 +820,31 @@ def test_quote_creation_still_succeeds_when_email_delivery_fails(
     }
     assert in_memory_quote_email_sender.sent_emails == []
 
-
 def test_updating_a_quote_reuses_the_same_quote_identifier(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
 ):
-    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
     client_id = str(uuid4())
     updated_payload = dict(sample_prediction_records[0])
     updated_payload["bonus"] = 0.77
     updated_payload["marque_vehicule"] = "PEUGEOT"
 
     with TestClient(app) as client:
-        register_response = client.post(
-            "/auth/register",
-            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
-            headers={"X-Client-ID": client_id},
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
         )
-        session_token = register_response.json()["session_token"]
+        session_token = login_response.json()["session_token"]
         quote_response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
@@ -753,10 +856,7 @@ def test_updating_a_quote_reuses_the_same_quote_identifier(
         update_response = client.put(
             f"/quotes/{quote_response.json()['id']}",
             json=updated_payload,
-            headers={
-                "X-Client-ID": client_id,
-                "X-Session-Token": session_token,
-            },
+            headers={"X-Session-Token": session_token},
         )
 
     assert quote_response.status_code == 200
@@ -766,27 +866,30 @@ def test_updating_a_quote_reuses_the_same_quote_identifier(
     assert update_response.json()["input_payload"]["marque_vehicule"] == "PEUGEOT"
     assert len(in_memory_audit_store.quotes) == 1
 
-
 def test_authenticated_user_can_trigger_quote_email_endpoint(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     in_memory_quote_email_sender,
     sample_prediction_records: list[dict],
 ):
     app = create_app(
         api_settings,
         audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
         quote_email_sender=in_memory_quote_email_sender,
     )
     client_id = str(uuid4())
 
     with TestClient(app) as client:
-        register_response = client.post(
-            "/auth/register",
-            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
-            headers={"X-Client-ID": client_id},
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
         )
-        session_token = register_response.json()["session_token"]
+        session_token = login_response.json()["session_token"]
         quote_response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
@@ -797,10 +900,7 @@ def test_authenticated_user_can_trigger_quote_email_endpoint(
         )
         send_response = client.post(
             f"/quotes/{quote_response.json()['id']}/send-email",
-            headers={
-                "X-Client-ID": client_id,
-                "X-Session-Token": session_token,
-            },
+            headers={"X-Session-Token": session_token},
         )
 
     assert send_response.status_code == 200
@@ -812,36 +912,52 @@ def test_authenticated_user_can_trigger_quote_email_endpoint(
     }
     assert len(in_memory_quote_email_sender.sent_emails) == 2
 
-
 def test_quote_email_endpoint_requires_authentication(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
 ):
-    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
     client_id = str(uuid4())
 
     with TestClient(app) as client:
+        _, _, login_response = _register_verify_and_login(
+            client,
+            client_id=client_id,
+            email="client@nova-assurances.fr",
+            password="motdepasse123",
+            in_memory_account_email_sender=in_memory_account_email_sender,
+        )
+        session_token = login_response.json()["session_token"]
         quote_response = client.post(
             "/quotes",
             json=sample_prediction_records[0],
-            headers={"X-Client-ID": client_id},
+            headers={
+                "X-Client-ID": client_id,
+                "X-Session-Token": session_token,
+            },
         )
-        send_response = client.post(
-            f"/quotes/{quote_response.json()['id']}/send-email",
-            headers={"X-Client-ID": client_id},
-        )
+        send_response = client.post(f"/quotes/{quote_response.json()['id']}/send-email")
 
     assert send_response.status_code == 401
     assert send_response.json()["detail"] == "Authentication is required."
 
-
 def test_admin_can_list_and_moderate_users_and_quotes(
     api_settings: AppSettings,
     in_memory_audit_store,
+    in_memory_account_email_sender,
     sample_prediction_records: list[dict],
 ):
-    app = create_app(api_settings, audit_store=in_memory_audit_store)
+    app = create_app(
+        api_settings,
+        audit_store=in_memory_audit_store,
+        account_email_sender=in_memory_account_email_sender,
+    )
     admin_client_id = str(uuid4())
     customer_client_id = str(uuid4())
 
@@ -851,12 +967,21 @@ def test_admin_can_list_and_moderate_users_and_quotes(
             json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
             headers={"X-Client-ID": customer_client_id},
         )
+        verify_customer = client.post(
+            "/auth/verify-email",
+            json={"token": in_memory_account_email_sender.sent_emails[0].verification_token},
+        )
+        customer_login = client.post(
+            "/auth/login",
+            json={"email": "client@nova-assurances.fr", "password": "motdepasse123"},
+            headers={"X-Client-ID": customer_client_id},
+        )
         admin_register = client.post(
             "/auth/register",
             json={"email": "admin@nova-assurances.fr", "password": "motdepasse123"},
             headers={"X-Client-ID": admin_client_id},
         )
-        customer_token = customer_register.json()["session_token"]
+        customer_token = customer_login.json()["session_token"]
         admin_token = admin_register.json()["session_token"]
         customer_quote = client.post(
             "/quotes",
@@ -874,16 +999,16 @@ def test_admin_can_list_and_moderate_users_and_quotes(
         )
         deleted_quote_response = client.get(
             f"/quotes/{customer_quote.json()['id']}",
-            headers={
-                "X-Client-ID": customer_client_id,
-                "X-Session-Token": customer_token,
-            },
+            headers={"X-Session-Token": customer_token},
         )
         delete_user_response = client.delete(
             f"/admin/users/{customer_register.json()['user']['id']}",
             headers={"X-Session-Token": admin_token},
         )
 
+    assert customer_register.status_code == 201
+    assert verify_customer.status_code == 200
+    assert customer_login.status_code == 200
     assert admin_register.status_code == 201
     assert admin_register.json()["user"]["role"] == "admin"
     assert users_response.status_code == 200

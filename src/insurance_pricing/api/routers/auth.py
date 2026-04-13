@@ -76,9 +76,10 @@ def _session_response(
     session_token: str | None = None,
     expires_at_utc: datetime | None = None,
     email_verification_delivery: AccountEmailDeliveryRecord | None = None,
+    authenticated: bool | None = None,
 ) -> AuthSessionResponse:
     return AuthSessionResponse(
-        authenticated=user is not None,
+        authenticated=user is not None if authenticated is None else authenticated,
         user=_user_response(user) if user is not None else None,
         session_token=session_token,
         expires_at_utc=expires_at_utc,
@@ -125,18 +126,11 @@ async def register_account(
     except UserStoreUnavailableError as exc:
         raise HTTPException(status_code=503, detail="Account creation is unavailable.") from exc
 
-    session_token = generate_session_token()
-    expires_at_utc = session_expiry(ttl_hours=settings.session_ttl_hours)
+    session_token: str | None = None
+    expires_at_utc: datetime | None = None
     email_verification_delivery: AccountEmailDeliveryRecord | None = None
 
     try:
-        await user_store.create_session(
-            SessionCreateRecord(
-                user_id=user.id,
-                token_hash=hash_session_token(session_token),
-                expires_at_utc=expires_at_utc,
-            )
-        )
         if client_id is not None:
             await user_store.attach_quotes_to_user(
                 client_id_hash=hash_client_id(client_id),
@@ -155,6 +149,16 @@ async def register_account(
                 recipient_email=user.email,
                 verification_token=verification_token,
             )
+        else:
+            session_token = generate_session_token()
+            expires_at_utc = session_expiry(ttl_hours=settings.session_ttl_hours)
+            await user_store.create_session(
+                SessionCreateRecord(
+                    user_id=user.id,
+                    token_hash=hash_session_token(session_token),
+                    expires_at_utc=expires_at_utc,
+                )
+            )
     except UserStoreUnavailableError as exc:
         raise HTTPException(status_code=503, detail="Account creation is unavailable.") from exc
 
@@ -163,6 +167,7 @@ async def register_account(
         session_token=session_token,
         expires_at_utc=expires_at_utc,
         email_verification_delivery=email_verification_delivery,
+        authenticated=user.email_verified_at_utc is not None,
     )
 
 
