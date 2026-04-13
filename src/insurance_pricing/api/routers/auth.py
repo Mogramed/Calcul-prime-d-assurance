@@ -27,6 +27,7 @@ from insurance_pricing.api.dependencies import (
     get_optional_session_token,
     get_user_store,
 )
+from insurance_pricing.api.logging import get_logger
 from insurance_pricing.api.quote_store import hash_client_id
 from insurance_pricing.api.schemas import (
     AuthCredentialsInput,
@@ -45,6 +46,7 @@ from insurance_pricing.api.security import (
 from insurance_pricing.api.settings import AppSettings
 
 router = APIRouter(tags=["auth"])
+AUTH_ROUTER_LOGGER = get_logger("insurance_pricing.api.routers.auth")
 
 
 def _user_response(user: StoredUserRecord | StoredAuthUserRecord) -> UserResponse:
@@ -126,6 +128,16 @@ async def register_account(
     except UserAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail="An account already exists for this email.") from exc
     except UserStoreUnavailableError as exc:
+        AUTH_ROUTER_LOGGER.warning(
+            "account_register_user_creation_failed",
+            extra={
+                "email": email,
+                "role": role,
+                "client_id_present": client_id is not None,
+                "cause": repr(exc.__cause__) if exc.__cause__ is not None else str(exc),
+            },
+            exc_info=True,
+        )
         raise HTTPException(status_code=503, detail="Account creation is unavailable.") from exc
 
     session_token: str | None = None
@@ -138,8 +150,23 @@ async def register_account(
                 client_id_hash=hash_client_id(client_id),
                 user_id=user.id,
             )
-        if user.email_verified_at_utc is None:
-            verification_token = generate_session_token()
+    except UserStoreUnavailableError as exc:
+        AUTH_ROUTER_LOGGER.warning(
+            "account_register_post_create_persistence_failed",
+            extra={
+                "email": email,
+                "user_id": user.id,
+                "client_id_present": client_id is not None,
+                "email_verified": user.email_verified_at_utc is not None,
+                "cause": repr(exc.__cause__) if exc.__cause__ is not None else str(exc),
+            },
+            exc_info=True,
+        )
+        raise HTTPException(status_code=503, detail="Account creation is unavailable.") from exc
+
+    if user.email_verified_at_utc is None:
+        verification_token = generate_session_token()
+        try:
             await user_store.create_email_verification(
                 EmailVerificationCreateRecord(
                     user_id=user.id,
@@ -147,12 +174,40 @@ async def register_account(
                     expires_at_utc=email_verification_expiry(),
                 )
             )
+        except UserStoreUnavailableError as exc:
+            AUTH_ROUTER_LOGGER.warning(
+                "account_register_email_token_creation_failed",
+                extra={
+                    "email": email,
+                    "user_id": user.id,
+                    "cause": repr(exc.__cause__) if exc.__cause__ is not None else str(exc),
+                },
+                exc_info=True,
+            )
+            raise HTTPException(status_code=503, detail="Account creation is unavailable.") from exc
+
+        try:
             email_verification_delivery = await account_email_sender.send_verification_email(
                 recipient_email=user.email,
                 verification_token=verification_token,
                 public_web_url=public_web_url or settings.public_web_url,
             )
-        else:
+        except Exception as exc:
+            AUTH_ROUTER_LOGGER.warning(
+                "account_register_verification_email_failed",
+                extra={
+                    "email": email,
+                    "user_id": user.id,
+                },
+                exc_info=True,
+            )
+            email_verification_delivery = AccountEmailDeliveryRecord(
+                status="failed",
+                recipient_email=user.email,
+                detail=str(exc),
+            )
+    else:
+        try:
             session_token = generate_session_token()
             expires_at_utc = session_expiry(ttl_hours=settings.session_ttl_hours)
             await user_store.create_session(
@@ -162,8 +217,17 @@ async def register_account(
                     expires_at_utc=expires_at_utc,
                 )
             )
-    except UserStoreUnavailableError as exc:
-        raise HTTPException(status_code=503, detail="Account creation is unavailable.") from exc
+        except UserStoreUnavailableError as exc:
+            AUTH_ROUTER_LOGGER.warning(
+                "account_register_session_creation_failed",
+                extra={
+                    "email": email,
+                    "user_id": user.id,
+                    "cause": repr(exc.__cause__) if exc.__cause__ is not None else str(exc),
+                },
+                exc_info=True,
+            )
+            raise HTTPException(status_code=503, detail="Account creation is unavailable.") from exc
 
     return _session_response(
         user,

@@ -43,6 +43,14 @@ class NoOpAccountEmailSender:
         public_web_url: str | None = None,
     ) -> AccountEmailDeliveryRecord:
         del verification_token, public_web_url
+        ACCOUNT_EMAIL_LOGGER.info(
+            "account_verification_email_skipped",
+            extra={
+                "recipient_email": recipient_email,
+                "provider": "noop",
+                "reason": "email_verification_delivery_not_configured",
+            },
+        )
         return AccountEmailDeliveryRecord(
             status="skipped",
             recipient_email=recipient_email,
