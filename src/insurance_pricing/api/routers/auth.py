@@ -34,6 +34,7 @@ from insurance_pricing.api.schemas import (
     AuthSessionResponse,
     EmailVerificationDeliveryResponse,
     EmailVerificationInput,
+    EmailVerificationResendInput,
     UserResponse,
 )
 from insurance_pricing.api.security import (
@@ -332,6 +333,99 @@ async def verify_account_email(
         )
 
     return _user_response(user)
+
+
+@router.post(
+    "/auth/resend-verification-email",
+    response_model=EmailVerificationDeliveryResponse,
+    summary="Resend the account verification email",
+    operation_id="resend_account_verification_email",
+    responses={
+        401: {"description": "Invalid credentials."},
+        403: {"description": "The account is inactive."},
+        503: {"description": "Verification email delivery is unavailable."},
+    },
+)
+async def resend_account_verification_email(
+    payload: EmailVerificationResendInput = Body(),
+    public_web_url: str | None = Depends(get_optional_public_web_url),
+    user_store: UserStore = Depends(get_user_store),
+    settings: AppSettings = Depends(get_app_settings),
+    account_email_sender: AccountEmailSender = Depends(get_account_email_sender),
+) -> EmailVerificationDeliveryResponse:
+    email = normalize_email(str(payload.email))
+
+    try:
+        user = await user_store.get_user_auth_by_email(email)
+    except UserStoreUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Verification email delivery is unavailable.",
+        ) from exc
+
+    if user is None or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="This account is inactive.")
+    if user.email_verified_at_utc is not None:
+        return EmailVerificationDeliveryResponse(
+            status="skipped",
+            recipient_email=user.email,
+            detail="This account is already verified.",
+        )
+
+    verification_token = generate_session_token()
+    try:
+        await user_store.create_email_verification(
+            EmailVerificationCreateRecord(
+                user_id=user.id,
+                token_hash=hash_session_token(verification_token),
+                expires_at_utc=email_verification_expiry(),
+            )
+        )
+    except UserStoreUnavailableError as exc:
+        AUTH_ROUTER_LOGGER.warning(
+            "account_resend_email_token_creation_failed",
+            extra={
+                "email": email,
+                "user_id": user.id,
+                "cause": repr(exc.__cause__) if exc.__cause__ is not None else str(exc),
+            },
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Verification email delivery is unavailable.",
+        ) from exc
+
+    try:
+        delivery = await account_email_sender.send_verification_email(
+            recipient_email=user.email,
+            verification_token=verification_token,
+            public_web_url=public_web_url or settings.public_web_url,
+        )
+    except Exception as exc:
+        AUTH_ROUTER_LOGGER.warning(
+            "account_resend_verification_email_failed",
+            extra={
+                "email": email,
+                "user_id": user.id,
+            },
+            exc_info=True,
+        )
+        delivery = AccountEmailDeliveryRecord(
+            status="failed",
+            recipient_email=user.email,
+            detail=str(exc),
+        )
+
+    delivery_response = _email_delivery_response(delivery)
+    if delivery_response is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Verification email delivery is unavailable.",
+        )
+    return delivery_response
 
 
 @router.post(
