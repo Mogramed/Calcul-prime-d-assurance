@@ -19,6 +19,8 @@ from insurance_pricing.api.quote_store import CLIENT_ID_HEADER, QuoteStore
 from insurance_pricing.api.service import PredictionService
 from insurance_pricing.api.settings import AppSettings
 
+PUBLIC_WEB_URL_HEADER = "X-Public-Web-Url"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
@@ -90,6 +92,22 @@ def get_optional_session_token(
     if not normalized:
         raise HTTPException(status_code=400, detail=f"{SESSION_TOKEN_HEADER} must not be empty.")
     return normalized
+
+
+def get_optional_public_web_url(
+    public_web_url: Annotated[str | None, Header(alias=PUBLIC_WEB_URL_HEADER)] = None,
+) -> str | None:
+    if public_web_url is None:
+        return None
+    normalized = public_web_url.strip()
+    if not normalized:
+        return None
+    if not normalized.startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{PUBLIC_WEB_URL_HEADER} must be an absolute http(s) URL.",
+        )
+    return normalized.rstrip("/")
 
 
 async def get_current_user(

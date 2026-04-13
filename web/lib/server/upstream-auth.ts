@@ -15,6 +15,7 @@ type RequestOptions = {
   method: "GET" | "POST" | "DELETE";
   sessionToken?: string | null;
   clientId?: string | null;
+  publicWebUrl?: string | null;
   body?: unknown;
 };
 
@@ -25,6 +26,7 @@ async function upstreamRequest<T>(path: string, options: RequestOptions): Promis
     ...(options.body ? { "Content-Type": "application/json" } : {}),
     ...(options.clientId ? { "X-Client-ID": options.clientId } : {}),
     ...(options.sessionToken ? { "X-Session-Token": options.sessionToken } : {}),
+    ...(options.publicWebUrl ? { "X-Public-Web-Url": options.publicWebUrl } : {}),
     ...authorizationHeaders,
   };
 
@@ -53,11 +55,16 @@ async function upstreamRequest<T>(path: string, options: RequestOptions): Promis
   return parsedBody as T;
 }
 
-export function registerUpstreamAccount(body: AuthCredentialsInput, clientId?: string | null) {
+export function registerUpstreamAccount(
+  body: AuthCredentialsInput,
+  clientId?: string | null,
+  publicWebUrl?: string | null,
+) {
   return upstreamRequest<AuthSessionResponse>("/auth/register", {
     method: "POST",
     body,
     clientId,
+    publicWebUrl,
   });
 }
 

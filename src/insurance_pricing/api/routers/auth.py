@@ -23,6 +23,7 @@ from insurance_pricing.api.dependencies import (
     get_app_settings,
     get_current_user,
     get_optional_client_id,
+    get_optional_public_web_url,
     get_optional_session_token,
     get_user_store,
 )
@@ -102,6 +103,7 @@ def _session_response(
 async def register_account(
     payload: AuthCredentialsInput = Body(),
     client_id: str | None = Depends(get_optional_client_id),
+    public_web_url: str | None = Depends(get_optional_public_web_url),
     user_store: UserStore = Depends(get_user_store),
     settings: AppSettings = Depends(get_app_settings),
     account_email_sender: AccountEmailSender = Depends(get_account_email_sender),
@@ -148,6 +150,7 @@ async def register_account(
             email_verification_delivery = await account_email_sender.send_verification_email(
                 recipient_email=user.email,
                 verification_token=verification_token,
+                public_web_url=public_web_url or settings.public_web_url,
             )
         else:
             session_token = generate_session_token()

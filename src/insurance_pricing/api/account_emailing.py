@@ -30,6 +30,7 @@ class AccountEmailSender(Protocol):
         *,
         recipient_email: str,
         verification_token: str,
+        public_web_url: str | None = None,
     ) -> AccountEmailDeliveryRecord: ...
 
 
@@ -39,7 +40,9 @@ class NoOpAccountEmailSender:
         *,
         recipient_email: str,
         verification_token: str,
+        public_web_url: str | None = None,
     ) -> AccountEmailDeliveryRecord:
+        del verification_token, public_web_url
         return AccountEmailDeliveryRecord(
             status="skipped",
             recipient_email=recipient_email,
@@ -66,8 +69,27 @@ class ResendAccountEmailSender:
         *,
         recipient_email: str,
         verification_token: str,
+        public_web_url: str | None = None,
     ) -> AccountEmailDeliveryRecord:
-        verification_url = f"{self.public_web_url}/verification-email?token={verification_token}"
+        resolved_public_web_url = (public_web_url or self.public_web_url or "").strip().rstrip("/")
+        if not resolved_public_web_url:
+            ACCOUNT_EMAIL_LOGGER.warning(
+                "account_verification_email_skipped",
+                extra={
+                    "recipient_email": recipient_email,
+                    "provider": "resend",
+                    "reason": "missing_public_web_url",
+                },
+            )
+            return AccountEmailDeliveryRecord(
+                status="skipped",
+                recipient_email=recipient_email,
+                detail="Public web URL is not configured for email verification.",
+            )
+
+        verification_url = (
+            f"{resolved_public_web_url}/verification-email?token={verification_token}"
+        )
         payload: Mapping[str, object] = {
             "from": f"{self.sender_name} <{self.sender_email}>",
             "to": [recipient_email],
@@ -145,7 +167,7 @@ def build_account_email_sender(
     resend_sender_name: str,
     public_web_url: str | None,
 ) -> AccountEmailSender:
-    if not resend_api_key or not resend_sender_email or not public_web_url:
+    if not resend_api_key or not resend_sender_email:
         return NoOpAccountEmailSender()
     return ResendAccountEmailSender(
         api_key=resend_api_key,
