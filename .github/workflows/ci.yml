@@ -66,12 +66,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package.json
 
       - name: Install frontend dependencies
         working-directory: web
-        run: npm install
+        run: npm install --no-fund --no-audit
 
       - name: Generate frontend SDK
         working-directory: web
